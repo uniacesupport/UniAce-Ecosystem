@@ -48,38 +48,51 @@ export default function PricingPage() {
       return;
     }
 
+    const publicKey = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY;
+    if (!publicKey) {
+      alert('Payment gateway is not configured. Please contact support.');
+      return;
+    }
+
     setLoading(true);
     setSelectedPlan(plan);
 
-    const paystack = new PaystackPop();
-    
-    paystack.newTransaction({
-      key: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY,
-      email: user.email,
-      amount: plan.price * 100,
-      metadata: { uid: user.uid, plan_id: plan.id },
-      onSuccess: async (transaction: any) => {
-        try {
-          const response = await fetch('/api/verify-payment', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ reference: transaction.reference }),
-          });
-          if (!response.ok) throw new Error('Verification failed');
-          setTransactionRef(transaction.reference);
-          setShowSuccessModal(true);
-        } catch (error) {
-          console.error("Payment verification error:", error);
-          alert("Payment successful, but verification failed.");
-        } finally {
+    try {
+      const paystack = new PaystackPop();
+      
+      paystack.newTransaction({
+        key: publicKey,
+        email: user.email,
+        amount: plan.price * 100,
+        metadata: { uid: user.uid, plan_id: plan.id },
+        onSuccess: async (transaction: any) => {
+          try {
+            const response = await fetch('/api/verify-payment', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ reference: transaction.reference }),
+            });
+            if (!response.ok) throw new Error('Verification failed');
+            setTransactionRef(transaction.reference);
+            setShowSuccessModal(true);
+          } catch (error) {
+            console.error("Payment verification error:", error);
+            alert("Payment successful, but verification failed.");
+          } finally {
+            setLoading(false);
+          }
+        },
+        onCancel: () => {
           setLoading(false);
+          setSelectedPlan(null);
         }
-      },
-      onCancel: () => {
-        setLoading(false);
-        setSelectedPlan(null);
-      }
-    });
+      });
+    } catch (error) {
+      console.error("Paystack initialization error:", error);
+      alert("Failed to initialize payment gateway. Please try again later.");
+      setLoading(false);
+      setSelectedPlan(null);
+    }
   };
 
   return (
