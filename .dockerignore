@@ -5,4 +5,3 @@ dist
 .env.local
 .DS_Store
 npm-debug.log
-firebase-applet-config.json
