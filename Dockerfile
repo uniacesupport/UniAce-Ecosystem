@@ -1,5 +1,5 @@
-# Use the official Node.js 20 Alpine image for a lightweight footprint
-FROM node:20-alpine
+# Use the official Node.js 22 Alpine image for a lightweight footprint
+FROM node:22-alpine
 
 # Set the working directory inside the container
 WORKDIR /app
