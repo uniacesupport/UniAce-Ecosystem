@@ -41,7 +41,25 @@ process.on('unhandledRejection', (reason, promise) => {
   console.error('UNHANDLED REJECTION at:', promise, 'reason:', reason);
 });
 
-app.use(cors());
+const allowedOrigins = [
+  process.env.APP_URL,
+  process.env.SHARED_APP_URL,
+  'http://localhost:3000',
+  'http://localhost:5173'
+].filter(Boolean) as string[];
+
+app.use(cors({
+  origin: function (origin, callback) {
+    // allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) === -1) {
+      var msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+      return callback(new Error(msg), false);
+    }
+    return callback(null, true);
+  },
+  credentials: true
+}));
 app.use(cookieParser());
 
 // Trust the first proxy (the platform's reverse proxy)
@@ -85,6 +103,7 @@ app.use('/api/openrouter/stream', aiGenerationLimiter);
 app.use('/api/chat', aiGenerationLimiter);
 
 app.use(express.json({
+  limit: '5mb', // Prevent payload bloat attacks
   verify: (req: any, res, buf) => {
     req.rawBody = buf;
   }
@@ -942,7 +961,10 @@ app.post('/api/chat', verifyAuth, async (req, res) => {
       return res.status(429).json({ error: error.message });
     }
     
-    return res.status(500).json({ error: error.message || 'Failed to generate response' });
+    // Prevent leaking internal error details to the client
+    const isValidationError = error.message && error.message.includes('AI validation failed');
+    const safeErrorMessage = isValidationError ? error.message : 'Failed to generate response due to an internal error.';
+    return res.status(500).json({ error: safeErrorMessage });
   }
 });
 
@@ -1126,7 +1148,7 @@ app.post('/api/openrouter/generate', verifyAuth, async (req, res) => {
 
   } catch (error: any) {
     console.error('OpenRouter Generate Error:', error);
-    res.status(500).json({ error: error.message || 'Failed to generate response' });
+    res.status(500).json({ error: 'Failed to generate response due to an internal error.' });
   }
 });
 
@@ -1206,7 +1228,7 @@ app.post('/api/openrouter/stream', verifyAuth, async (req, res) => {
   } catch (error: any) {
     console.error('OpenRouter Stream Error:', error);
     if (!res.headersSent) {
-      res.status(500).json({ error: error.message || 'Failed to stream response' });
+      res.status(500).json({ error: 'Failed to stream response due to an internal error.' });
     } else {
       res.end();
     }
@@ -1301,7 +1323,7 @@ app.post('/api/course/generate', verifyAuth, async (req, res) => {
 
   } catch (error: any) {
     console.error('Course Generate Error:', error);
-    res.status(500).json({ error: error.message || 'Failed to generate course' });
+    res.status(500).json({ error: 'Failed to generate course due to an internal error.' });
   }
 });
 
