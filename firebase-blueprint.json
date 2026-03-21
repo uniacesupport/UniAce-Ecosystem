@@ -1,0 +1,145 @@
+{
+  "entities": {
+    "Course": {
+      "title": "Course",
+      "description": "A university course",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Course ID (e.g., MAT101)" },
+        "title": { "type": "string", "description": "Course title" },
+        "description": { "type": "string", "description": "Course description" },
+        "subject": { "type": "string", "description": "Subject area" },
+        "isAIGenerated": { "type": "boolean", "description": "Whether the content was AI generated" }
+      },
+      "required": ["id", "title", "subject"]
+    },
+    "Module": {
+      "title": "Module",
+      "description": "A module within a course",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "courseId": { "type": "string" },
+        "title": { "type": "string" },
+        "order": { "type": "number" }
+      },
+      "required": ["id", "courseId", "title", "order"]
+    },
+    "Lesson": {
+      "title": "Lesson",
+      "description": "A lesson within a module",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "moduleId": { "type": "string" },
+        "courseId": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string", "description": "Markdown content of the lesson" },
+        "order": { "type": "number" }
+      },
+      "required": ["id", "moduleId", "courseId", "title", "content", "order"]
+    },
+    "Quiz": {
+      "title": "Quiz",
+      "description": "A quiz for a module",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "moduleId": { "type": "string" },
+        "courseId": { "type": "string" },
+        "questions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "type": { "type": "string", "enum": ["multiple-choice", "fill-in-the-blank"] },
+              "question": { "type": "string" },
+              "options": { "type": "array", "items": { "type": "string" } },
+              "correctAnswer": { "type": "string" },
+              "explanation": { "type": "string" },
+              "hint": { "type": "string" }
+            }
+          }
+        }
+      },
+      "required": ["id", "moduleId", "courseId", "questions"]
+    },
+    "Formula": {
+      "title": "Formula",
+      "description": "A mathematical formula",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "courseId": { "type": "string" },
+        "title": { "type": "string" },
+        "latex": { "type": "string" },
+        "description": { "type": "string" },
+        "category": { "type": "string" }
+      },
+      "required": ["id", "courseId", "title", "latex"]
+    },
+    "User": {
+      "title": "User",
+      "description": "A user profile and progress",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "bio": { "type": "string" },
+        "photoURL": { "type": "string", "format": "uri" },
+        "role": { "type": "string", "enum": ["student", "admin", "editor"] },
+        "fcmToken": { "type": "string" },
+        "plan_type": { "type": "string", "enum": ["free", "pro", "scholar"] },
+        "subscription_expiry": { "type": "string", "format": "date-time" },
+        "subscription_start_date": { "type": "string", "format": "date-time" },
+        "subscription_status": { "type": "string", "enum": ["active", "expired", "none"] },
+        "ai_sparks": { "type": "number" },
+        "xp": { "type": "number" },
+        "level": { "type": "number" },
+        "streak": { "type": "number" },
+        "themeColor": { "type": "string" },
+        "rank": { "type": "number" },
+        "sessionId": { "type": "string", "description": "Unique ID for the current active session" },
+        "learningProfile": {
+          "type": "object",
+          "properties": {
+            "strengths": { "type": "array", "items": { "type": "string" } },
+            "weaknesses": { "type": "array", "items": { "type": "string" } },
+            "lastUpdated": { "type": "string", "format": "date-time" }
+          }
+        },
+        "last_nudge_date": { "type": "string" },
+        "last_nudge_message": { "type": "string" }
+      },
+      "required": ["uid", "email", "displayName", "role", "plan_type"]
+    }
+  },
+  "firestore": {
+    "/courses/{courseId}": {
+      "schema": "Course",
+      "description": "Top-level courses"
+    },
+    "/courses/{courseId}/modules/{moduleId}": {
+      "schema": "Module",
+      "description": "Modules for a specific course"
+    },
+    "/courses/{courseId}/modules/{moduleId}/lessons/{lessonId}": {
+      "schema": "Lesson",
+      "description": "Lessons within a module"
+    },
+    "/courses/{courseId}/modules/{moduleId}/quizzes/{quizId}": {
+      "schema": "Quiz",
+      "description": "Quizzes for a module"
+    },
+    "/courses/{courseId}/formulas/{formulaId}": {
+      "schema": "Formula",
+      "description": "Formulas for a course"
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles and progress data"
+    }
+  }
+}

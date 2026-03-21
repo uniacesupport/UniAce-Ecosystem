@@ -1,0 +1,194 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    // Based on firebase-blueprint.json
+    // Collection: /users/{userId}
+    // Fields:
+    //   - uid: string (immutable, matches userId)
+    //   - email: string (format: email)
+    //   - displayName: string (size < 100)
+    //   - photoURL: string (format: uri)
+    //   - role: string (enum: 'student', 'admin', 'editor', immutable by user)
+    //   - plan_type: string (enum: 'free', 'pro', 'scholar')
+    //   - All other fields are optional numbers, strings, or booleans.
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      // A user is an admin if their Firestore document says so, OR if they are a bootstrap admin.
+      let isBootstrapAdmin = (request.auth.token.email == 'uniace.support@gmail.com' || request.auth.token.email == 'olalekan4565@gmail.com') && request.auth.token.email_verified;
+      let isRoleAdmin = isAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      return isBootstrapAdmin || isRoleAdmin;
+    }
+    
+    function isEditor() {
+      return isAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'editor'];
+    }
+    
+    function isUnchanged(field) {
+      return request.resource.data.get(field, null) == resource.data.get(field, null);
+    }
+
+    // Validate a user document on create and update operations.
+    function isValidUser(data) {
+      return data.uid == request.auth.uid &&
+             (!('email' in data) || (data.email is string && data.email.size() < 200)) &&
+             (!('displayName' in data) || (data.displayName is string && data.displayName.size() < 100)) &&
+             (!('bio' in data) || (data.bio is string && data.bio.size() < 500)) &&
+             (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() < 2000)) &&
+             (!('role' in data) || (data.role in ['student', 'admin', 'editor'])) &&
+             (!('plan_type' in data) || (data.plan_type in ['free', 'pro', 'scholar', 'exam_cram', 'semester'])) &&
+             (!('xp' in data) || (data.xp is number)) &&
+             (!('level' in data) || (data.level is number)) &&
+             (!('streak' in data) || (data.streak is number)) &&
+             (!('themeColor' in data) || (data.themeColor is string)) &&
+             (!('rank' in data) || (data.rank is string)) &&
+             (!('sessionId' in data) || (data.sessionId is string)) &&
+             (!('fcmToken' in data) || (data.fcmToken is string)) &&
+             // Allow UserProgress fields
+             (!('lastStudyDate' in data) || (data.lastStudyDate is string)) &&
+             (!('mastery' in data) || (data.mastery is map)) &&
+             (!('achievements' in data) || (data.achievements is list)) &&
+             (!('studyTime' in data) || (data.studyTime is map)) &&
+             (!('topicLastStudied' in data) || (data.topicLastStudied is map)) &&
+             (!('bookmarks' in data) || (data.bookmarks is list)) &&
+             (!('enrolledCourses' in data) || (data.enrolledCourses is list)) &&
+             (!('assignments' in data) || (data.assignments is list)) &&
+             (!('learningProfile' in data) || (data.learningProfile is map && 
+               (!('strengths' in data.learningProfile) || data.learningProfile.strengths is list) &&
+               (!('weaknesses' in data.learningProfile) || data.learningProfile.weaknesses is list) &&
+               (!('lastUpdated' in data.learningProfile) || data.learningProfile.lastUpdated is string)
+             )) &&
+             (!('last_nudge_date' in data) || (data.last_nudge_date is string)) &&
+             (!('last_nudge_message' in data) || (data.last_nudge_message is string));
+    }
+
+    function isValidStudyPlan(data) {
+      return data.userId == request.auth.uid &&
+             data.timetable is list && data.timetable.size() < 100 &&
+             data.exams is list && data.exams.size() < 50 &&
+             data.sessions is list && data.sessions.size() < 200 &&
+             data.lastGenerated is string && data.lastGenerated.size() < 50 &&
+             data.id is string && data.id.size() < 100 &&
+             data.keys().hasOnly(['id', 'userId', 'timetable', 'exams', 'sessions', 'lastGenerated']);
+    }
+
+    // ===============================================================
+    // Collection Rules
+    // ===============================================================
+
+    match /study_plans/{userId} {
+      allow read, write: if isAdmin();
+      allow get: if isOwner(userId);
+      allow update, create: if isOwner(userId) && isValidStudyPlan(request.resource.data);
+    }
+
+    match /users/{userId} {
+      // Admins can read/write any user document.
+      allow get, list, write: if isAdmin();
+
+      // A user can read their own document.
+      allow get: if isOwner(userId);
+      
+      // A user can update their own document.
+      allow update: if isOwner(userId) && 
+                      isValidUser(request.resource.data) &&
+                      // Protect sensitive fields from being changed by the user
+                      (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'plan_type', 'ai_sparks', 'subscription_expiry', 'subscription_status', 'subscription_start_date', 'last_spark_reset', 'last_payment_ref']) || isAdmin());
+      
+      // A user can create their own document.
+      // Disallow creation of admin/editor roles by non-admins.
+      allow create: if isOwner(userId) && 
+                      isValidUser(request.resource.data) &&
+                      (request.resource.data.get('role', 'student') == 'student' || isAdmin()) &&
+                      (request.resource.data.get('plan_type', 'free') == 'free' || isAdmin()) &&
+                      (request.resource.data.get('ai_sparks', 0) <= 50 || isAdmin());
+    }
+
+    match /notifications/{notificationId} {
+      allow read, write: if isAdmin();
+      allow read: if isAuthenticated() && 
+                    (notificationId == 'global_alert' || resource == null || resource.data.userId == request.auth.uid || resource.data.userId == 'global');
+      allow update: if isOwner(resource.data.userId);
+    }
+
+    match /support_tickets/{ticketId} {
+      allow read, write: if isAdmin();
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow read: if isOwner(resource.data.userId);
+    }
+
+    match /support_chats/{chatId} {
+      allow read, write: if isAdmin();
+      allow create: if isAuthenticated();
+      allow read, update: if isOwner(resource.data.userId);
+      
+      match /messages/{messageId} {
+        allow read, write: if isAuthenticated(); // Should be tightened to participants.
+      }
+    }
+
+    match /payments/{paymentId} {
+      allow read, write: if isAdmin();
+      allow create: if isOwner(request.resource.data.uid);
+      allow read: if isOwner(resource.data.uid);
+    }
+
+    match /battles/{battleId} {
+      // Any authenticated user can create/read/update battles.
+      // This could be tightened to only allow participants to update.
+      allow read, create, update: if isAuthenticated();
+      allow delete: if isAdmin();
+    }
+
+    match /courses/{courseId} {
+      allow read: if true;
+      allow write: if isEditor(); // Admins or editors can modify courses.
+
+      match /{subcollection}/{docId=**} {
+         allow read: if isAuthenticated(); // Must be logged in to view course content.
+         allow write: if isEditor();
+      }
+    }
+
+    match /analytics/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /system_config/{configId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /system_logs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated();
+      allow update, delete: if false;
+    }
+
+    match /knowledge_base/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isEditor();
+    }
+
+    match /test/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+  }
+}

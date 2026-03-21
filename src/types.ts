@@ -1,0 +1,209 @@
+
+export type CourseId = 'MAT101' | 'MAT102' | 'MAT103' | 'STA112' | 'BIO101' | 'BIO102' | 'BIO107' | 'BIO108' | 'PHY101' | 'PHY104' | 'PHY107' | 'PHY108' | 'CHM101' | 'CHM102' | 'CHM107' | 'CHM108' | 'COS101' | 'COS102' | 'GST111' | 'GST112' | 'GET101' | 'GET102' | 'ZOO101' | 'ZOO102';
+
+export type Subject = 'Mathematics' | 'Physics' | 'Chemistry' | 'General Studies' | 'Computer Science' | 'Biology' | 'General Engineering Training' | 'Zoology';
+
+export interface Course {
+  id: CourseId;
+  title: string;
+  description: string;
+  syllabus: Module[];
+  formulas?: Formula[];
+  subject: Subject;
+  objectives?: string[];
+}
+
+export type View = 'hub' | 'dashboard' | 'study' | 'past-questions' | 'quizzes' | 'module-topics' | 'course-syllabus' | 'mastery' | 'formulas' | 'ai-tutor' | 'notebook' | 'profile' | 'help-support' | 'admin-support' | 'admin-dashboard' | 'pricing' | 'flashcards' | 'arena' | 'concept-map' | 'study-plan';
+
+export interface Assignment {
+  id: string;
+  courseId: CourseId;
+  title: string;
+  dueDate: string;
+  status: 'pending' | 'submitted' | 'graded';
+  grade?: number;
+}
+
+export interface Flashcard {
+  id: string;
+  front: string; // Question or concept
+  back: string; // Answer or explanation
+  moduleId: string;
+  subTopicId?: string;
+}
+
+export interface SRSData {
+  cardId: string;
+  interval: number; // Days until next review
+  repetition: number; // Number of times reviewed
+  efactor: number; // Easiness factor
+  nextReviewDate: string; // ISO date string
+}
+
+export type AIPersonality = 'encouraging' | 'strict' | 'socratic' | 'humorous' | 'master' | 'debate';
+
+export interface TimetableEntry {
+  id: string;
+  day: 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday';
+  startTime: string; // HH:mm
+  endTime: string; // HH:mm
+  courseId: string;
+  type: 'lecture' | 'lab' | 'tutorial' | 'other';
+}
+
+export interface ExamDate {
+  id: string;
+  courseId: string;
+  date: string; // ISO date
+  time?: string;
+}
+
+export interface StudySession {
+  id: string;
+  title: string;
+  startTime: string;
+  endTime: string;
+  type: 'prime' | 'consolidation' | 'deep_work' | 'review';
+  courseId: string;
+  moduleId?: string;
+  status: 'pending' | 'completed' | 'missed';
+}
+
+export interface StudyPlan {
+  id: string;
+  userId: string;
+  timetable: TimetableEntry[];
+  exams: ExamDate[];
+  sessions: StudySession[];
+  lastGenerated: string;
+}
+
+export type PlanType = 'free' | 'exam_cram' | 'scholar' | 'semester';
+
+export interface UserProfile {
+  uid: string;
+  email: string;
+  displayName: string;
+  photoURL: string;
+  role: 'student' | 'admin';
+  plan_type: PlanType;
+  subscription_end_date?: string;
+  created_at: string;
+  themeColor?: string;
+  rank?: number;
+}
+
+export interface LearningProfile {
+  strengths: string[];
+  weaknesses: string[];
+  lastUpdated: string;
+}
+
+export interface UserProgress {
+  xp: number;
+  level: number;
+  streak: number;
+  lastStudyDate: string | null;
+  mastery: Record<string, number>; // topicId -> mastery percentage (0-100)
+  achievements: Achievement[];
+  studyTime: Record<string, number>; // topicId -> seconds spent
+  topicLastStudied: Record<string, string>; // topicId -> ISO date string
+  bookmarks: Bookmark[];
+  enrolledCourses: CourseId[];
+  assignments: Assignment[];
+  srsData?: Record<string, SRSData>; // cardId -> SRSData
+  aiPersonality?: AIPersonality;
+  learningProfile?: LearningProfile;
+}
+
+export interface Bookmark {
+  id: string;
+  type: 'formula' | 'question';
+  content: any; // Formula or QuizQuestion
+  timestamp: string;
+  note?: string;
+}
+
+export interface Achievement {
+  id: string;
+  title: string;
+  description: string;
+  icon: string;
+  unlockedAt: string | null;
+}
+
+export interface Formula {
+  id: string;
+  title: string;
+  latex: string;
+  description: string;
+  category: string;
+}
+
+export interface SubTopic {
+  id: string;
+  title: string;
+  content: string;
+  relatedTo?: string[];
+}
+
+export interface Module {
+  id: string;
+  title: string;
+  subTopics: SubTopic[];
+}
+
+export interface ChatMessage {
+  role: 'user' | 'model';
+  text: string;
+  image?: string;
+  sources?: { title: string; uri: string }[];
+}
+
+export type QuestionType = 'multiple-choice' | 'fill-in-the-blank';
+
+export interface QuizQuestion {
+  id: string;
+  type: QuestionType;
+  question: string;
+  options?: string[]; // For multiple choice
+  correctAnswer: string;
+  explanation: string;
+  hint: string;
+  difficulty?: number; // 1 to 5
+}
+
+export interface Quiz {
+  moduleId: string;
+  questions: QuizQuestion[];
+}
+
+export interface BattlePlayer {
+  uid: string;
+  name: string;
+  avatar: string;
+  score: number;
+  currentQuestionIndex: number;
+  health: number; // 0-100
+  status: 'ready' | 'playing' | 'finished';
+}
+
+export interface Battle {
+  id: string;
+  status: 'waiting' | 'active' | 'finished';
+  player1: BattlePlayer;
+  player2: BattlePlayer | null;
+  questions: QuizQuestion[];
+  winner: string | null; // uid or 'draw'
+  createdAt: string;
+  topicId: string; // e.g., 'MAT101'
+}
+
+export interface LeaderboardEntry {
+  userId: string;
+  displayName: string;
+  photoURL: string;
+  xp: number;
+  rank: number;
+  streak: number;
+}

@@ -1,0 +1,537 @@
+import { useState, useEffect } from 'react';
+import Sidebar from './components/Sidebar';
+import BottomNav from './components/BottomNav';
+import ContentArea from './components/ContentArea';
+import ChatBot from './components/ChatBot';
+import Dashboard from './components/Dashboard';
+import QuizHub from './components/QuizHub';
+import FlashcardHub from './components/FlashcardHub';
+import PastQuestions from './components/PastQuestions';
+import ModuleTopics from './components/ModuleTopics';
+import CourseSyllabus from './components/CourseSyllabus';
+import MasteryCenter from './components/MasteryCenter';
+import FormulaReference from './components/FormulaReference';
+import CourseHub from './components/CourseHub';
+import Notebook from './components/Notebook';
+import PricingPage from './components/PricingPage';
+import UserProfile from './components/UserProfile';
+import HelpSupport from './components/HelpSupport';
+import AdminSupport from './components/AdminSupport';
+import AdminDashboard from './components/AdminDashboard';
+import Arena from './components/Arena';
+import ConceptMap from './components/ConceptMap';
+import StudyPlan from './components/StudyPlan';
+import FirebaseSetup from './components/FirebaseSetup';
+import LandingPage from './components/LandingPage';
+import PushNotificationPrompt from './components/PushNotificationPrompt';
+import GlobalNotification from './components/GlobalNotification';
+import PaywallManager from './components/PaywallManager';
+import PWAInstallPrompt from './components/PWAInstallPrompt';
+import { useUserProgress } from './hooks/useUserProgress';
+import { useAuth } from './context/AuthContext';
+import { useCourses } from './context/CourseContext';
+import { Menu } from 'lucide-react';
+import { Toaster } from 'react-hot-toast';
+import { View, ChatMessage, CourseId, Subject } from './types';
+import { generateModuleContent, generateCourseSkeleton } from './services/aiCourseGenerator';
+
+export default function App() {
+  console.log('App.tsx: Rendering...');
+  const { isConfigured, user, profile, loading, signInWithGoogle } = useAuth();
+  const { courses, refreshCourses } = useCourses();
+  const { progress, addXp, updateMastery, recordStudyTime, addBookmark, removeBookmark, enrollCourse, updateAIPersonality, isOnline } = useUserProgress();
+  const [activeCourseId, setActiveCourseId] = useState<CourseId | null>(null);
+  const [activeView, setActiveView] = useState<View>('hub');
+  const [activeSubject, setActiveSubject] = useState<Subject>('Mathematics');
+  
+  const activeCourse = activeCourseId ? courses[activeCourseId] : null;
+  const syllabus = activeCourse?.syllabus || [];
+
+  const [activeModuleId, setActiveModuleId] = useState('');
+  const [activeSubTopicId, setActiveSubTopicId] = useState('');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(() => 
+    typeof window !== 'undefined' ? window.innerWidth >= 1024 : false
+  );
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [autoStartQuiz, setAutoStartQuiz] = useState(false);
+  const [regenerationProgress, setRegenerationProgress] = useState(0);
+  const [regenerationStatus, setRegenerationStatus] = useState('');
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < 1024) {
+        setIsSidebarOpen(false);
+      } else {
+        setIsSidebarOpen(true);
+      }
+    };
+
+    const handleCustomNavigate = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail) {
+        handleViewSelect(customEvent.detail);
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('navigate', handleCustomNavigate);
+    
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('navigate', handleCustomNavigate);
+    };
+  }, []);
+
+  const activeModule = syllabus.find(m => m.id === activeModuleId) || syllabus[0];
+  const activeSubTopicContent = activeModule?.subTopics.find(s => s.id === activeSubTopicId)?.content;
+
+  const handleCourseSelect = (id: CourseId) => {
+    setActiveCourseId(id);
+    const course = courses[id];
+    setActiveModuleId(course.syllabus[0].id);
+    setActiveSubTopicId(course.syllabus[0].subTopics[0].id);
+    setActiveView('course-syllabus');
+  };
+
+  const handleModuleSelect = (id: string) => {
+    setActiveModuleId(id);
+    setActiveView('module-topics');
+    if (window.innerWidth < 1024) {
+      setIsSidebarOpen(false);
+    }
+  };
+
+  const handleSubTopicSelect = (subTopicId: string) => {
+    setActiveSubTopicId(subTopicId);
+    setActiveView('study');
+    setAutoStartQuiz(false);
+    if (window.innerWidth < 1024) {
+      setIsSidebarOpen(false);
+    }
+  };
+
+  const handleTakeQuiz = (subTopicId: string) => {
+    setActiveSubTopicId(subTopicId);
+    setActiveView('study');
+    setAutoStartQuiz(true);
+    if (window.innerWidth < 1024) {
+      setIsSidebarOpen(false);
+    }
+  };
+
+  const handleViewSelect = (view: View) => {
+    setActiveView(view);
+    if (window.innerWidth < 1024) {
+      setIsSidebarOpen(false);
+    }
+  };
+
+  useEffect(() => {
+    // Check backend connectivity on mount
+    fetch('/api/debug')
+      .then(res => res.json())
+      .then(data => console.log('Backend connectivity check:', data))
+      .catch(err => console.error('Backend connectivity check failed:', err));
+  }, []);
+
+  useEffect(() => {
+    if (user && chatMessages.length === 0) {
+      user.getIdToken().then(token => {
+        fetch('/api/chat/nudge', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        })
+        .then(res => res.json())
+        .then(data => {
+          if (data.message) {
+            setChatMessages([{
+              role: 'model',
+              text: data.message
+            }]);
+          }
+        })
+        .catch(err => console.error('Failed to fetch nudge:', err));
+      });
+    }
+  }, [user]);
+
+  if (!isConfigured) {
+    return <FirebaseSetup />;
+  }
+
+  if (loading) {
+    return (
+      <div className="h-screen w-full flex items-center justify-center bg-slate-50">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500"></div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <LandingPage />;
+  }
+
+  return (
+    <div className="flex h-screen w-full bg-slate-50 font-sans overflow-hidden relative">
+      {user && (
+        <PaywallManager onUpgrade={() => setActiveView('pricing')} />
+      )}
+      {/* Sidebar Navigation (Desktop) */}
+      <Sidebar 
+        activeModuleId={activeModuleId} 
+        onModuleSelect={(id) => {
+          setActiveModuleId(id);
+          setActiveView('study');
+          const module = syllabus.find(m => m.id === id);
+          if (module) setActiveSubTopicId(module.subTopics[0].id);
+          if (window.innerWidth < 1024) setIsSidebarOpen(false);
+        }} 
+        activeView={activeView}
+        onViewSelect={handleViewSelect}
+        isOpen={isSidebarOpen}
+        onClose={() => setIsSidebarOpen(false)}
+        progress={progress}
+        activeCourseId={activeCourseId}
+        syllabus={syllabus}
+        isOnline={isOnline}
+      />
+
+      {/* Main Content Area */}
+      <div className={`flex-1 flex flex-col h-full overflow-y-auto relative ${activeView === 'ai-tutor' ? '' : 'pb-20 lg:pb-0'}`}>
+        {/* Toggle Button for Sidebar (Visible when sidebar is closed on Desktop) */}
+        {!isSidebarOpen && activeView !== 'study' && (
+          <div className="hidden lg:block absolute top-4 left-4 z-40">
+            <button 
+              onClick={() => setIsSidebarOpen(true)}
+              className="p-2 bg-white border border-slate-200 rounded-xl shadow-sm text-slate-600 hover:text-slate-900 transition-all hover:scale-105 active:scale-95"
+            >
+              <Menu size={20} />
+            </button>
+          </div>
+        )}
+
+        {/* View Switcher */}
+        {activeView === 'hub' && (
+          <CourseHub 
+            activeSubject={activeSubject}
+            onSubjectChange={setActiveSubject}
+            onSelectCourse={handleCourseSelect} 
+            onProfileClick={() => setActiveView('profile')}
+            onViewSelect={handleViewSelect}
+            enrolledCourses={progress.enrolledCourses || []}
+          />
+        )}
+
+        {activeView === 'dashboard' && (
+          <Dashboard 
+            activeSubject={activeSubject}
+            onModuleSelect={handleModuleSelect} 
+            onSubTopicSelect={handleSubTopicSelect}
+            onViewSelect={handleViewSelect}
+            onProfileClick={() => setActiveView('profile')}
+            onCourseSelect={handleCourseSelect}
+            progress={progress}
+            activeCourseId={activeCourseId}
+            syllabus={syllabus}
+          />
+        )}
+
+        {activeView === 'profile' && (
+          <UserProfile 
+            onBack={() => setActiveView(activeCourseId ? 'dashboard' : 'hub')}
+            onNavigate={handleViewSelect}
+          />
+        )}
+
+        {activeView === 'course-syllabus' && (
+          <CourseSyllabus 
+            onModuleSelect={handleModuleSelect}
+            onBack={() => setActiveView('dashboard')}
+            onViewSelect={handleViewSelect}
+            activeCourseId={activeCourseId}
+            syllabus={syllabus}
+            isEnrolled={activeCourseId ? (progress.enrolledCourses || []).includes(activeCourseId) : false}
+            onEnroll={() => {
+              if (activeCourseId && activeCourse) {
+                enrollCourse(activeCourseId, activeCourse.title, activeCourse.description);
+              }
+            }}
+            onRegenerate={async () => {
+              if (!activeCourseId || !activeCourse || regenerationProgress > 0) return;
+              
+              setRegenerationProgress(5);
+              setRegenerationStatus("Scanning structure...");
+
+              try {
+                // 1. Generate full skeleton (10 modules)
+                const existingTitlesForAI = syllabus.map(m => m.title);
+                const fullSkeleton = await generateCourseSkeleton(activeCourse.title, activeCourse.description, undefined, 'mistral', existingTitlesForAI);
+                setRegenerationProgress(15);
+                
+                // 2. Identify tasks: New modules or Repairs
+                const tasks: { type: 'new' | 'repair', skeleton: any, id?: string }[] = [];
+                const existingTitles = syllabus.map(m => m.title.toLowerCase().trim());
+                
+                // Check each module from the new skeleton
+                fullSkeleton.modules.forEach((moduleSkeleton: any) => {
+                  const title = moduleSkeleton.title.toLowerCase().trim();
+                  const existing = syllabus.find(m => m.title.toLowerCase().trim() === title);
+                  
+                  if (!existing) {
+                    tasks.push({ type: 'new', skeleton: moduleSkeleton });
+                  } else {
+                    // Check if existing module needs repair (missing content)
+                    const isIncomplete = existing.subTopics.some(st => !st.content || st.content.trim() === '');
+                    if (isIncomplete) {
+                      tasks.push({ type: 'repair', skeleton: moduleSkeleton, id: existing.id });
+                    }
+                  }
+                });
+
+                if (tasks.length === 0) {
+                  setRegenerationProgress(100);
+                  setRegenerationStatus("Syllabus is already complete and healthy!");
+                  setTimeout(() => {
+                    setRegenerationProgress(0);
+                    setRegenerationStatus("");
+                  }, 3000);
+                  return;
+                }
+
+                const totalTasks = tasks.length;
+                let completedTasks = 0;
+
+                setRegenerationStatus(`Processing ${totalTasks} updates...`);
+
+                const { db } = await import('./firebase');
+                const { doc, setDoc, collection, getDocs } = await import('firebase/firestore');
+
+                for (const task of tasks) {
+                  try {
+                    const isNew = task.type === 'new';
+                    setRegenerationStatus(`${isNew ? 'Generating' : 'Repairing'}: ${task.skeleton.title}`);
+                    
+                    const regeneratedModule = await generateModuleContent(activeCourse.title, task.skeleton, 'gemini', (msg) => console.log(msg));
+                    
+                    if (isNew) {
+                      // Add new module document with a fresh ID
+                      // We calculate the next ID based on current count
+                      const newModuleId = `m${syllabus.length + completedTasks + 1}`;
+                      await setDoc(doc(db, `courses/${activeCourseId}/modules`, newModuleId), {
+                        ...regeneratedModule,
+                        createdAt: new Date().toISOString()
+                      });
+                    } else if (task.id) {
+                      // Update existing module
+                      await setDoc(doc(db, `courses/${activeCourseId}/modules`, task.id), {
+                        ...regeneratedModule,
+                        updatedAt: new Date().toISOString()
+                      }, { merge: true });
+                    }
+                    
+                    completedTasks++;
+                    setRegenerationProgress(15 + (completedTasks / totalTasks) * 80);
+                  } catch (error) {
+                    console.error(`Failed to process task for ${task.skeleton.title}:`, error);
+                  }
+                }
+                
+                setRegenerationProgress(100);
+                setRegenerationStatus("All tasks complete!");
+                refreshCourses();
+                
+                setTimeout(() => {
+                  setRegenerationProgress(0);
+                  setRegenerationStatus("");
+                }, 5000);
+
+              } catch (error) {
+                console.error("Regeneration failed:", error);
+                setRegenerationStatus("Error occurred");
+                setRegenerationProgress(0);
+              }
+            }}
+            regenerationProgress={regenerationProgress}
+            regenerationStatus={regenerationStatus}
+          />
+        )}
+
+        {activeView === 'module-topics' && activeModule && (
+          <ModuleTopics 
+            module={activeModule}
+            onBack={() => setActiveView('course-syllabus')}
+            onSubTopicSelect={handleSubTopicSelect}
+            onTakeQuiz={handleTakeQuiz}
+            onOpenChat={() => setActiveView('ai-tutor')}
+            progress={progress}
+          />
+        )}
+        
+        {activeView === 'study' && (
+          <ContentArea 
+            courseId={activeCourseId}
+            courseTitle={activeCourse?.title || 'Course'}
+            module={activeModule}
+            activeSubTopicId={activeSubTopicId}
+            onSubTopicSelect={handleSubTopicSelect}
+            onBackToSyllabus={() => setActiveView('module-topics')}
+            isSidebarOpen={isSidebarOpen}
+            toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
+            onQuizComplete={(topicId, score) => {
+              updateMastery(topicId, score);
+              addXp(score * 2); // 2 XP per percentage point
+            }}
+            onQuickCheckComplete={(topicId) => {
+              addXp(20); // Bonus XP for quick check
+              updateMastery(topicId, 100); // Mark as mastered if correct
+            }}
+            autoStartQuiz={autoStartQuiz}
+            onViewSelect={handleViewSelect}
+            progress={progress}
+          />
+        )}
+
+        {activeView === 'quizzes' && (
+          <QuizHub 
+            onQuizComplete={(topicId, score) => {
+              updateMastery(topicId, score);
+              addXp(score * 2);
+            }}
+            syllabus={syllabus}
+          />
+        )}
+
+        {activeView === 'flashcards' && (
+          <FlashcardHub syllabus={syllabus} />
+        )}
+
+        {activeView === 'past-questions' && (
+          <PastQuestions activeCourseId={activeCourseId} />
+        )}
+
+        {activeView === 'mastery' && (
+          <MasteryCenter 
+            progress={progress}
+            onBack={() => setActiveView('dashboard')}
+            activeCourseId={activeCourseId}
+            syllabus={syllabus}
+          />
+        )}
+
+        {activeView === 'notebook' && (
+          <Notebook 
+            bookmarks={progress.bookmarks}
+            onRemoveBookmark={removeBookmark}
+          />
+        )}
+
+        {activeView === 'formulas' && (
+          <FormulaReference 
+            onBack={() => setActiveView('dashboard')}
+            activeCourseId={activeCourseId}
+            formulas={activeCourse?.formulas || []}
+            onBookmark={(item) => addBookmark(item, 'formula')}
+          />
+        )}
+
+        {activeView === 'pricing' && (
+          <PricingPage />
+        )}
+
+        {activeView === 'help-support' && (
+          <HelpSupport 
+            onBack={() => setActiveView('profile')}
+          />
+        )}
+
+        {activeView === 'admin-support' && (
+          <AdminSupport 
+            onBack={() => setActiveView('profile')}
+          />
+        )}
+
+        {activeView === 'admin-dashboard' && (
+          profile?.role === 'admin' || user?.email === 'olalekan4565@gmail.com' || user?.email === 'uniace.support@gmail.com' ? (
+            <AdminDashboard />
+          ) : (
+            <Dashboard 
+              activeSubject={activeSubject}
+              onModuleSelect={handleModuleSelect} 
+              onSubTopicSelect={handleSubTopicSelect}
+              onViewSelect={handleViewSelect}
+              onProfileClick={() => setActiveView('profile')}
+              onCourseSelect={handleCourseSelect}
+              progress={progress}
+              activeCourseId={activeCourseId}
+              syllabus={syllabus}
+            />
+          )
+        )}
+
+        {activeView === 'arena' && (
+          <Arena 
+            activeCourseId={activeCourseId}
+          />
+        )}
+
+        {activeView === 'concept-map' && (
+          <ConceptMap 
+            syllabus={syllabus}
+            onSubTopicSelect={handleSubTopicSelect}
+            onClose={() => setActiveView('dashboard')}
+          />
+        )}
+
+        {activeView === 'study-plan' && (
+          <StudyPlan progress={progress} syllabus={syllabus} />
+        )}
+
+        {activeView === 'ai-tutor' && (
+          <ChatBot 
+            isFullPage={true} 
+            onToggleFullPage={() => setActiveView('dashboard')} 
+            messages={chatMessages}
+            setMessages={setChatMessages}
+            activeCourseId={activeCourseId}
+            activeModule={activeModule?.title}
+            activeSubTopic={activeModule?.subTopics.find(s => s.id === activeSubTopicId)?.title}
+            subTopicContent={activeSubTopicContent}
+            progress={progress}
+            profile={profile}
+            onUpdatePersonality={updateAIPersonality}
+          />
+        )}
+      </div>
+
+      {/* AI Chatbot Overlay */}
+      {activeView !== 'ai-tutor' && (
+        <ChatBot 
+          onToggleFullPage={() => setActiveView('ai-tutor')} 
+          messages={chatMessages}
+          setMessages={setChatMessages}
+          activeCourseId={activeCourseId}
+          activeModule={activeModule?.title}
+          activeSubTopic={activeModule?.subTopics.find(s => s.id === activeSubTopicId)?.title}
+          subTopicContent={activeSubTopicContent}
+          progress={progress}
+          profile={profile}
+          onUpdatePersonality={updateAIPersonality}
+        />
+      )}
+
+      {/* Bottom Navigation (Mobile) */}
+      <BottomNav activeView={activeView} onViewSelect={handleViewSelect} />
+
+      {/* Push Notification Prompt */}
+      <PushNotificationPrompt />
+
+      {/* PWA Install Prompt */}
+      <PWAInstallPrompt />
+
+      {/* Global Admin Alert */}
+      <GlobalNotification />
+
+      {/* Toaster for notifications */}
+      <Toaster position="top-center" />
+    </div>
+  );
+}

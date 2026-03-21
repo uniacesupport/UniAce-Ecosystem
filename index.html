@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>UniAce Mastery Hub | One Hub Ecosystems 🎓</title>
+    
+    <!-- Primary Meta Tags -->
+    <meta name="title" content="UniAce Mastery Hub | One Hub Ecosystems 🎓" />
+    <meta name="description" content="AI-powered university course generation, interactive quizzes, and smart tutoring. Master your subjects with UniAce." />
+
+    <!-- Open Graph / Facebook / WhatsApp -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://ais-pre-ezdkg7fl7i6zbyg4fb3uaj-565282327567.europe-west2.run.app" />
+    <meta property="og:title" content="UniAce Mastery Hub | One Hub Ecosystems 🎓" />
+    <meta property="og:description" content="AI-powered university course generation, interactive quizzes, and smart tutoring. Master your subjects with UniAce." />
+    <meta property="og:image" content="https://images.unsplash.com/photo-1523050854058-8df90110c9f1?q=80&w=1200&auto=format&fit=crop" />
+
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image" />
+    <meta property="twitter:url" content="https://ais-pre-ezdkg7fl7i6zbyg4fb3uaj-565282327567.europe-west2.run.app" />
+    <meta property="twitter:title" content="UniAce Mastery Hub | One Hub Ecosystems 🎓" />
+    <meta property="twitter:description" content="AI-powered university course generation, interactive quizzes, and smart tutoring. Master your subjects with UniAce." />
+    <meta property="twitter:image" content="https://images.unsplash.com/photo-1523050854058-8df90110c9f1?q=80&w=1200&auto=format&fit=crop" />
+
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#10b981" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="UniAce Hub" />
+    <link rel="apple-touch-icon" href="/icon.svg" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css" integrity="sha384-Gnz9852yE/zvTSc7q7K0P0AkMCknCtVwjL/QoV/Z7n1M1jZvgMnLkeWgbUtPg167" crossorigin="anonymous">
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      window.onerror = function(message, source, lineno, colno, error) {
+        const errorDiv = document.createElement('div');
+        errorDiv.style.position = 'fixed';
+        errorDiv.style.top = '0';
+        errorDiv.style.left = '0';
+        errorDiv.style.width = '100%';
+        errorDiv.style.backgroundColor = '#fee2e2';
+        errorDiv.style.color = '#991b1b';
+        errorDiv.style.padding = '1rem';
+        errorDiv.style.zIndex = '9999';
+        errorDiv.style.fontFamily = 'monospace';
+        errorDiv.style.whiteSpace = 'pre-wrap';
+        errorDiv.innerHTML = `<strong>Runtime Error:</strong><br>${message}<br><small>${source}:${lineno}:${colno}</small><br><pre>${error?.stack || ''}</pre>`;
+        document.body.appendChild(errorDiv);
+      };
+      window.onunhandledrejection = function(event) {
+        const errorDiv = document.createElement('div');
+        errorDiv.style.position = 'fixed';
+        errorDiv.style.top = '0';
+        errorDiv.style.left = '0';
+        errorDiv.style.width = '100%';
+        errorDiv.style.backgroundColor = '#fee2e2';
+        errorDiv.style.color = '#991b1b';
+        errorDiv.style.padding = '1rem';
+        errorDiv.style.zIndex = '9999';
+        errorDiv.style.fontFamily = 'monospace';
+        errorDiv.style.whiteSpace = 'pre-wrap';
+        errorDiv.innerHTML = `<strong>Unhandled Promise Rejection:</strong><br>${event.reason}`;
+        document.body.appendChild(errorDiv);
+      };
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+

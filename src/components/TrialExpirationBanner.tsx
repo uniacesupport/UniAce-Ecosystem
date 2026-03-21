@@ -1,0 +1,29 @@
+import { AlertTriangle, X } from 'lucide-react';
+import { useState } from 'react';
+import { usePremiumStatus } from '../hooks/usePremiumStatus';
+
+export const TrialExpirationBanner = () => {
+  const { isTrialActive, daysRemaining } = usePremiumStatus();
+  const [isVisible, setIsVisible] = useState(true);
+
+  if (!isTrialActive || daysRemaining > 2 || !isVisible) {
+    return null;
+  }
+
+  return (
+    <div className="bg-amber-500 text-white p-4 rounded-xl flex items-center justify-between shadow-lg mb-6">
+      <div className="flex items-center gap-3">
+        <AlertTriangle size={24} />
+        <div>
+          <h4 className="font-bold">Trial Ending Soon!</h4>
+          <p className="text-sm text-amber-50">
+            Your premium trial ends in {daysRemaining} day{daysRemaining === 1 ? '' : 's'}. Upgrade now to keep your access.
+          </p>
+        </div>
+      </div>
+      <button onClick={() => setIsVisible(false)} className="text-white hover:text-amber-100">
+        <X size={20} />
+      </button>
+    </div>
+  );
+};

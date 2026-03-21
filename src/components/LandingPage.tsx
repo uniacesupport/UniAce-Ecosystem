@@ -1,0 +1,229 @@
+import { motion } from 'motion/react';
+import { Sparkles, Brain, Trophy, Rocket, CheckCircle2, ArrowRight, Play } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+
+export default function LandingPage() {
+  const { signInWithGoogle } = useAuth();
+
+  return (
+    <div className="min-h-screen bg-slate-50 dark:bg-zinc-950 font-sans selection:bg-emerald-100 selection:text-emerald-900 transition-colors">
+      {/* Navigation */}
+      <nav className="fixed w-full bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md z-50 border-b border-slate-100 dark:border-zinc-800">
+        <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-200 dark:shadow-none text-2xl">
+              🎓
+            </div>
+            <span className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">UniAce</span>
+          </div>
+          <button 
+            onClick={signInWithGoogle}
+            className="px-6 py-2.5 text-sm font-semibold text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors"
+          >
+            Log In
+          </button>
+        </div>
+      </nav>
+
+      {/* Hero Section */}
+      <section className="pt-32 pb-20 lg:pt-48 lg:pb-32 px-6 overflow-hidden">
+        <div className="max-w-7xl mx-auto grid lg:grid-cols-2 gap-16 items-center">
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6 }}
+            className="space-y-8"
+          >
+            <h1 className="text-5xl lg:text-7xl font-black text-slate-900 dark:text-white tracking-tight leading-[1.1]">
+              Ace Your Hardest Courses <br />
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-500 to-teal-500">
+                with Premium AI Tutoring
+              </span>
+            </h1>
+            
+            <p className="text-xl text-slate-500 dark:text-zinc-400 leading-relaxed max-w-lg">
+              Master complex science formulas and theories in half the time. 
+              Your personalized, 24/7 intelligent study companion is here.
+            </p>
+
+            <div className="flex flex-col sm:flex-row gap-4 pt-4 w-full">
+              <button 
+                onClick={signInWithGoogle}
+                className="px-8 py-4 bg-emerald-500 text-white rounded-2xl font-bold text-lg hover:bg-emerald-400 hover:scale-[1.02] transition-all shadow-xl shadow-emerald-200 dark:shadow-none flex items-center justify-center gap-2 group w-full"
+              >
+                Start My 7-Day Premium Trial
+              </button>
+            </div>
+            <p className="text-sm text-slate-500 dark:text-zinc-400">No credit card required. Full access for 7 days.</p>
+
+            <div className="pt-8 grid grid-cols-3 gap-4 text-sm text-slate-600 dark:text-zinc-400 font-medium">
+              <div className="flex flex-col items-center gap-2 text-center">
+                <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-zinc-800 flex items-center justify-center">
+                  <Brain size={24} />
+                </div>
+                <span>Personalized AI Tutoring</span>
+              </div>
+              <div className="flex flex-col items-center gap-2 text-center">
+                <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-zinc-800 flex items-center justify-center">
+                  <Rocket size={24} />
+                </div>
+                <span>Smart Progress Tracking</span>
+              </div>
+              <div className="flex flex-col items-center gap-2 text-center">
+                <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-zinc-800 flex items-center justify-center">
+                  <CheckCircle2 size={24} />
+                </div>
+                <span>Verified & Expert-Vetted Content</span>
+              </div>
+            </div>
+
+            <div className="pt-8 flex items-center gap-4 text-sm text-slate-400 dark:text-zinc-500 font-medium">
+              <div className="flex -space-x-3">
+                {[1,2,3,4].map(i => (
+                  <div key={i} className="w-10 h-10 rounded-full border-2 border-white dark:border-zinc-900 bg-slate-200 dark:bg-zinc-800 overflow-hidden">
+                    <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${i}`} alt="User" />
+                  </div>
+                ))}
+              </div>
+              <p className="text-lg font-black text-slate-900 dark:text-white">10k+ Learners</p>
+            </div>
+          </motion.div>
+
+          {/* Hero Visual */}
+          <motion.div 
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.8, delay: 0.2 }}
+            className="relative hidden lg:block"
+          >
+            <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-emerald-500/10 rounded-full blur-3xl -z-10" />
+            
+            {/* Main App Preview Card */}
+            <div className="relative bg-white dark:bg-zinc-900 rounded-[2.5rem] shadow-2xl shadow-slate-200/50 dark:shadow-none border border-slate-100 dark:border-zinc-800 p-6 rotate-[-2deg] hover:rotate-0 transition-transform duration-500">
+              <div className="absolute -top-6 -right-6 bg-white dark:bg-zinc-800 p-4 rounded-2xl shadow-xl border border-slate-100 dark:border-zinc-700 animate-bounce [animation-duration:3s]">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center text-amber-600 dark:text-amber-400">
+                    <Trophy size={20} />
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-400 dark:text-zinc-500 font-bold uppercase">Current Streak</p>
+                    <p className="text-lg font-black text-slate-900 dark:text-white">12 Days 🔥</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-slate-50 dark:bg-zinc-950 rounded-3xl p-6 space-y-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center text-white">
+                      <Brain size={20} />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-slate-900 dark:text-white">AI Tutor</h3>
+                      <p className="text-xs text-slate-500 dark:text-zinc-500">Online</p>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="space-y-4">
+                  <div className="bg-white dark:bg-zinc-900 p-4 rounded-2xl rounded-tl-none shadow-sm border border-slate-100 dark:border-zinc-800 max-w-[80%]">
+                    <p className="text-sm text-slate-600 dark:text-zinc-300">Here's a practice problem for Calculus II. Ready to solve it?</p>
+                  </div>
+                  <div className="bg-slate-900 dark:bg-emerald-600 p-4 rounded-2xl rounded-tr-none shadow-sm text-white ml-auto max-w-[80%]">
+                    <p className="text-sm">Yes, let's do it! 🚀</p>
+                  </div>
+                </div>
+
+                <div className="h-2 bg-slate-200 dark:bg-zinc-800 rounded-full overflow-hidden">
+                  <div className="h-full w-3/4 bg-emerald-500 rounded-full" />
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* Features Grid */}
+      <section className="py-24 bg-white dark:bg-zinc-900 transition-colors">
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="text-center max-w-2xl mx-auto mb-16">
+            <h2 className="text-3xl font-black text-slate-900 dark:text-white mb-4">Everything you need to excel</h2>
+            <p className="text-slate-500 dark:text-zinc-400 text-lg">Stop struggling with textbooks. Get an intelligent study companion that adapts to your learning style.</p>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-8">
+            {[
+              {
+                icon: Brain,
+                title: "AI-Powered Tutoring",
+                desc: "Get instant answers, step-by-step explanations, and personalized study plans generated by advanced AI.",
+                color: "bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400"
+              },
+              {
+                icon: Trophy,
+                title: "Competitive Arena",
+                desc: "Challenge friends or random opponents to real-time quiz battles. Climb the leaderboard and earn badges.",
+                color: "bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400"
+              },
+              {
+                icon: Rocket,
+                title: "Smart Progress Tracking",
+                desc: "Visualize your mastery of every topic. Identify weak spots and focus your study time where it matters most.",
+                color: "bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400"
+              }
+            ].map((feature, i) => (
+              <motion.div 
+                key={i}
+                whileHover={{ y: -5 }}
+                className="p-8 rounded-3xl bg-slate-50 dark:bg-zinc-950 border border-slate-100 dark:border-zinc-800 hover:shadow-xl hover:shadow-slate-100/50 dark:hover:shadow-none transition-all"
+              >
+                <div className={`w-14 h-14 ${feature.color} rounded-2xl flex items-center justify-center mb-6`}>
+                  <feature.icon size={28} />
+                </div>
+                <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-3">{feature.title}</h3>
+                <p className="text-slate-500 dark:text-zinc-400 leading-relaxed">{feature.desc}</p>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* CTA Section */}
+      <section className="py-24 px-6">
+        <div className="max-w-5xl mx-auto bg-slate-900 rounded-[3rem] p-12 md:p-20 text-center relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-full h-full bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10" />
+          <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500 rounded-full blur-[100px] opacity-20" />
+          
+          <div className="relative z-10 space-y-8">
+            <h2 className="text-4xl md:text-5xl font-black text-white tracking-tight">
+              Ready to boost your grades?
+            </h2>
+            <p className="text-slate-400 text-xl max-w-xl mx-auto">
+              Join the community of students mastering their subjects with UniAce today. Claim your premium access.
+            </p>
+            <button 
+              onClick={signInWithGoogle}
+              className="px-10 py-5 bg-emerald-500 text-white rounded-2xl font-bold text-xl hover:bg-emerald-400 hover:scale-105 transition-all shadow-lg shadow-emerald-500/25"
+            >
+              Start My 7-Day Premium Trial
+            </button>
+            <p className="text-sm text-slate-500">No credit card required • Cancel anytime</p>
+          </div>
+        </div>
+      </section>
+
+      {/* Footer */}
+      <footer className="py-12 border-t border-slate-100 dark:border-zinc-800 bg-white dark:bg-zinc-950 transition-colors">
+        <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-6">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 bg-slate-900 dark:bg-zinc-800 rounded-lg flex items-center justify-center text-xl">
+              🎓
+            </div>
+            <span className="font-bold text-slate-900 dark:text-white">UniAce</span>
+          </div>
+          <p className="text-slate-400 dark:text-zinc-500 text-sm">© 2024 UniAce Mastery Hub. All rights reserved.</p>
+        </div>
+      </footer>
+    </div>
+  );
+}

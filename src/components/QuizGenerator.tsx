@@ -1,0 +1,792 @@
+import { useState, useEffect } from 'react';
+import { Module, SubTopic, QuizQuestion, QuestionType } from '../types';
+import { motion, AnimatePresence } from 'motion/react';
+import { Brain, Loader2, CheckCircle2, XCircle, ArrowRight, RefreshCw, Settings2, Bookmark, Timer, Flag, LayoutGrid, ChevronLeft, ChevronRight, Lock } from 'lucide-react';
+import MarkdownRenderer from './MarkdownRenderer';
+import { AIService } from '../services/ai';
+import { useAuth } from '../context/AuthContext';
+import { usePremiumStatus } from '../hooks/usePremiumStatus';
+import PricingModal from './PricingModal';
+
+interface QuizGeneratorProps {
+  module: Module;
+  subTopic?: SubTopic;
+  onClose: () => void;
+  onComplete?: (score: number) => void;
+  onNextTopic?: () => void;
+  isNextTopicLocked?: boolean;
+  onBookmark?: (question: QuizQuestion) => void;
+  isProactive?: boolean;
+}
+
+export default function QuizGenerator({ module, subTopic, onClose, onComplete, onNextTopic, isNextTopicLocked, onBookmark, isProactive }: QuizGeneratorProps) {
+  const [step, setStep] = useState<'config' | 'loading' | 'quiz' | 'results'>('config');
+  const [isClaimingReward, setIsClaimingReward] = useState(false);
+  const [rewardMessage, setRewardMessage] = useState<string | null>(null);
+  const [mode, setMode] = useState<'practice' | 'exam' | 'adaptive'>('practice');
+  const [numQuestions, setNumQuestions] = useState(3);
+  const [questionType, setQuestionType] = useState<QuestionType>('multiple-choice');
+  const [questions, setQuestions] = useState<QuizQuestion[]>([]);
+  const [adaptiveQuestions, setAdaptiveQuestions] = useState<QuizQuestion[]>([]);
+  const [currentDifficulty, setCurrentDifficulty] = useState(3);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [userAnswers, setUserAnswers] = useState<Record<string, string>>({});
+  const [showExplanation, setShowExplanation] = useState(false);
+  const [showHint, setShowHint] = useState(false);
+  const [hintsUsed, setHintsUsed] = useState<Record<string, boolean>>({});
+  const [progressiveHint, setProgressiveHint] = useState<string | null>(null);
+  const [isFetchingHint, setIsFetchingHint] = useState(false);
+  const [showPricingModal, setShowPricingModal] = useState(false);
+  
+  const { user, profile } = useAuth();
+  const { isPremium } = usePremiumStatus();
+  const isAdmin = profile?.role === 'admin' || user?.email === 'olalekan4565@gmail.com' || user?.email === 'uniace.support@gmail.com';
+  const isLocked = !isPremium && !isAdmin;
+  
+  // Exam Mode State
+  const [timeLeft, setTimeLeft] = useState(0); // in seconds
+  const [flaggedQuestions, setFlaggedQuestions] = useState<Record<string, boolean>>({});
+  const [showPalette, setShowPalette] = useState(false);
+
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (step === 'quiz' && mode === 'exam' && timeLeft > 0) {
+      timer = setInterval(() => {
+        setTimeLeft((prev) => {
+          if (prev <= 1) {
+            submitExam();
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [step, mode, timeLeft]);
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const generateQuiz = async () => {
+    setStep('loading');
+    try {
+      const isAdaptive = mode === 'adaptive';
+      const data = await AIService.generateQuiz(module, subTopic, numQuestions, questionType, isAdaptive);
+      
+      if (isAdaptive) {
+        setAdaptiveQuestions(data);
+        const firstQ = data.find(q => q.difficulty === 3) || data[0];
+        setQuestions([firstQ]);
+        setCurrentDifficulty(firstQ.difficulty || 3);
+      } else {
+        setQuestions(data);
+        if (mode === 'exam') {
+          setTimeLeft(numQuestions * 90); // 1.5 minutes per question
+        }
+      }
+      setStep('quiz');
+    } catch (error) {
+      console.error("Quiz generation error:", error);
+      alert("Failed to generate quiz. Please try again.");
+      setStep('config');
+    }
+  };
+
+  const handleAnswer = (answer: string) => {
+    if ((mode === 'practice' || mode === 'adaptive') && showExplanation) return;
+    
+    setUserAnswers(prev => ({ ...prev, [questions[currentQuestionIndex].id]: answer }));
+    
+    if (mode === 'practice' || mode === 'adaptive') {
+      setShowExplanation(true);
+    }
+  };
+
+  const nextQuestion = () => {
+    if (mode === 'adaptive') {
+      if (questions.length < numQuestions) {
+        const currentQ = questions[currentQuestionIndex];
+        const isCorrect = userAnswers[currentQ.id]?.toLowerCase().trim() === currentQ.correctAnswer.toLowerCase().trim();
+        
+        let nextDiff = currentDifficulty;
+        if (isCorrect) nextDiff = Math.min(5, currentDifficulty + 1);
+        else nextDiff = Math.max(1, currentDifficulty - 1);
+        
+        const usedIds = new Set(questions.map(q => q.id));
+        let nextQ = adaptiveQuestions.find(q => q.difficulty === nextDiff && !usedIds.has(q.id));
+        
+        if (!nextQ) {
+          nextQ = adaptiveQuestions.find(q => !usedIds.has(q.id));
+        }
+        
+        if (nextQ) {
+          setQuestions(prev => [...prev, nextQ!]);
+          setCurrentQuestionIndex(prev => prev + 1);
+          setCurrentDifficulty(nextQ!.difficulty || nextDiff);
+          setShowExplanation(false);
+          setShowHint(false);
+          setProgressiveHint(null);
+        } else {
+          finishQuiz();
+        }
+      } else {
+        finishQuiz();
+      }
+    } else {
+      if (currentQuestionIndex < questions.length - 1) {
+        setCurrentQuestionIndex(prev => prev + 1);
+        setShowExplanation(false);
+        setShowHint(false);
+        setProgressiveHint(null);
+      } else if (mode === 'practice') {
+        finishQuiz();
+      }
+    }
+  };
+
+  const prevQuestion = () => {
+    if (currentQuestionIndex > 0) {
+      setCurrentQuestionIndex(prev => prev - 1);
+      setShowExplanation(false);
+      setShowHint(false);
+      setProgressiveHint(null);
+    }
+  };
+
+  const toggleFlag = () => {
+    const qId = questions[currentQuestionIndex].id;
+    setFlaggedQuestions(prev => ({ ...prev, [qId]: !prev[qId] }));
+  };
+
+  const submitExam = () => {
+    finishQuiz();
+  };
+
+  const finishQuiz = async () => {
+    const score = calculateScore();
+    const percentage = Math.round((score / questions.length) * 100);
+    if (onComplete) onComplete(percentage);
+    setStep('results');
+
+    // Claim reward if proactive and score is decent (e.g., > 60%)
+    if (isProactive && subTopic && percentage >= 60) {
+      setIsClaimingReward(true);
+      try {
+        const result = await AIService.claimReward(subTopic.id, 'proactive_quiz');
+        if (result.success) {
+          setRewardMessage(`🎉 You earned ${result.amount} Sparks for completing the proactive quiz!`);
+        }
+      } catch (error) {
+        console.error('Failed to claim reward:', error);
+      } finally {
+        setIsClaimingReward(false);
+      }
+    }
+  };
+
+  const calculateScore = () => {
+    let score = 0;
+    questions.forEach(q => {
+      if (userAnswers[q.id]?.toLowerCase().trim() === q.correctAnswer.toLowerCase().trim()) {
+        score++;
+      }
+    });
+    return score;
+  };
+
+  const fetchProgressiveHint = async () => {
+    if (isFetchingHint) return;
+    setIsFetchingHint(true);
+    try {
+      const currentQuestion = questions[currentQuestionIndex];
+      const hint = await AIService.generateHint(currentQuestion.question, currentQuestion.correctAnswer);
+      setProgressiveHint(hint);
+    } catch (error) {
+      console.error("Hint fetch error:", error);
+    } finally {
+      setIsFetchingHint(false);
+    }
+  };
+
+  const resetQuiz = () => {
+    setStep('config');
+    setQuestions([]);
+    setCurrentQuestionIndex(0);
+    setUserAnswers({});
+    setShowExplanation(false);
+    setFlaggedQuestions({});
+    setTimeLeft(0);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        className="bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col"
+      >
+        {/* Header */}
+        <div className="p-6 border-b border-slate-100 dark:border-zinc-800 flex justify-between items-center bg-slate-50 dark:bg-zinc-900">
+          <div className="flex items-center gap-3">
+            <div className={`p-2 rounded-xl text-white ${mode === 'exam' ? 'bg-amber-500' : mode === 'adaptive' ? 'bg-purple-500' : 'bg-emerald-500'}`}>
+              <Brain size={20} />
+            </div>
+            <div>
+              <h2 className="font-bold text-slate-900 dark:text-white leading-none">{mode === 'exam' ? 'Exam Mode' : mode === 'adaptive' ? 'Adaptive Quiz' : 'Practice Quiz'}</h2>
+              <p className="text-slate-500 dark:text-zinc-400 text-[10px] uppercase tracking-wider mt-1 font-bold">{module.title}</p>
+            </div>
+          </div>
+
+          {step === 'quiz' && mode === 'exam' && (
+            <div className="flex items-center gap-2 sm:gap-4">
+              <div className={`flex items-center gap-2 px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl font-mono font-bold text-sm sm:text-lg ${timeLeft < 60 ? 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 animate-pulse' : 'bg-slate-900 dark:bg-white text-white dark:text-zinc-900'}`}>
+                <Timer size={16} className="sm:w-5 sm:h-5" />
+                {formatTime(timeLeft)}
+              </div>
+              <button 
+                onClick={() => setShowPalette(!showPalette)}
+                className={`p-2 rounded-xl transition-colors ${showPalette ? 'bg-slate-200 dark:bg-zinc-800 text-slate-900 dark:text-white' : 'bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'}`}
+              >
+                <LayoutGrid size={20} />
+              </button>
+            </div>
+          )}
+
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-900 dark:hover:text-white p-2 rounded-full hover:bg-slate-200 dark:hover:bg-zinc-800 transition-colors">
+            <XCircle size={24} />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-hidden flex">
+          {/* Question Palette (Exam Mode Only) */}
+          <AnimatePresence>
+            {showPalette && mode === 'exam' && step === 'quiz' && (
+              <motion.div 
+                initial={{ width: 0, opacity: 0 }}
+                animate={{ width: "100%", opacity: 1 }}
+                exit={{ width: 0, opacity: 0 }}
+                className="absolute inset-0 z-20 bg-slate-50 dark:bg-zinc-950 sm:static sm:w-64 sm:border-r border-slate-100 dark:border-zinc-800 overflow-y-auto"
+              >
+                <div className="p-4 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-widest">Question Palette</h3>
+                    <button 
+                      onClick={() => setShowPalette(false)}
+                      className="sm:hidden p-2 text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                    >
+                      <XCircle size={20} />
+                    </button>
+                  </div>
+                  
+                  <div className="grid grid-cols-5 sm:grid-cols-4 gap-2">
+                    {questions.map((q, i) => {
+                      const isAnswered = !!userAnswers[q.id];
+                      const isFlagged = !!flaggedQuestions[q.id];
+                      const isCurrent = currentQuestionIndex === i;
+                      
+                      let bgClass = "bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-800 text-slate-500 dark:text-zinc-400";
+                      if (isCurrent) bgClass = "bg-slate-900 dark:bg-white text-white dark:text-zinc-900 border-slate-900 dark:border-white";
+                      else if (isFlagged) bgClass = "bg-amber-100 dark:bg-amber-900/30 border-amber-300 dark:border-amber-700 text-amber-600 dark:text-amber-400";
+                      else if (isAnswered) bgClass = "bg-emerald-100 dark:bg-emerald-900/30 border-emerald-300 dark:border-emerald-700 text-emerald-600 dark:text-emerald-400";
+
+                      return (
+                        <button
+                          key={i}
+                          onClick={() => {
+                            setCurrentQuestionIndex(i);
+                            if (window.innerWidth < 640) setShowPalette(false);
+                          }}
+                          className={`aspect-square rounded-lg border flex items-center justify-center text-sm font-bold transition-all ${bgClass}`}
+                        >
+                          {isFlagged ? <Flag size={12} /> : i + 1}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="space-y-2 pt-4 border-t border-slate-200 dark:border-zinc-800">
+                    <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-zinc-400">
+                      <div className="w-3 h-3 bg-slate-900 dark:bg-white rounded" /> Current
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-zinc-400">
+                      <div className="w-3 h-3 bg-emerald-100 dark:bg-emerald-900/30 border border-emerald-300 dark:border-emerald-700 rounded" /> Answered
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-zinc-400">
+                      <div className="w-3 h-3 bg-amber-100 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-700 rounded" /> Flagged
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-zinc-400">
+                      <div className="w-3 h-3 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded" /> Unvisited
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <div className="flex-1 overflow-y-auto p-6 sm:p-10">
+            <AnimatePresence mode="wait">
+              {step === 'config' && (
+                <motion.div 
+                  key="config"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  className="space-y-8 max-w-xl mx-auto"
+                >
+                  <div className="text-center space-y-2">
+                    <h3 className="text-2xl font-bold text-slate-900 dark:text-white">Configure Your Quiz</h3>
+                    <p className="text-slate-500 dark:text-zinc-400">Test your knowledge of {module.title.split('. ')[1]}</p>
+                  </div>
+
+                  <div className="grid gap-6">
+                    <div className="space-y-3">
+                      <label className="text-sm font-bold text-slate-700 dark:text-zinc-300 flex items-center gap-2">
+                        <Brain size={16} className="text-emerald-500" />
+                        Quiz Mode
+                      </label>
+                      <div className="flex flex-col sm:flex-row gap-4">
+                        <button
+                          onClick={() => setMode('practice')}
+                          className={`flex-1 p-4 rounded-2xl text-left border-2 transition-all ${
+                            mode === 'practice' 
+                              ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' 
+                              : 'border-slate-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-slate-200 dark:hover:border-zinc-700'
+                          }`}
+                        >
+                          <div className="font-bold text-slate-900 dark:text-white mb-1">Practice Mode</div>
+                          <div className="text-xs text-slate-500 dark:text-zinc-400">Immediate feedback, hints, and explanations.</div>
+                        </button>
+                        <button
+                          onClick={() => setMode('adaptive')}
+                          className={`flex-1 p-4 rounded-2xl text-left border-2 transition-all ${
+                            mode === 'adaptive' 
+                              ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20' 
+                              : 'border-slate-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-slate-200 dark:hover:border-zinc-700'
+                          }`}
+                        >
+                          <div className="font-bold text-slate-900 dark:text-white mb-1">Adaptive Mode</div>
+                          <div className="text-xs text-slate-500 dark:text-zinc-400">Difficulty adjusts based on your performance.</div>
+                        </button>
+                        <button
+                          onClick={() => setMode('exam')}
+                          className={`flex-1 p-4 rounded-2xl text-left border-2 transition-all ${
+                            mode === 'exam' 
+                              ? 'border-amber-500 bg-amber-50 dark:bg-amber-900/20' 
+                              : 'border-slate-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-slate-200 dark:hover:border-zinc-700'
+                          }`}
+                        >
+                          <div className="font-bold text-slate-900 dark:text-white mb-1">Exam Mode</div>
+                          <div className="text-xs text-slate-500 dark:text-zinc-400">Timed, no hints, submit at the end.</div>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <label className="text-sm font-bold text-slate-700 dark:text-zinc-300 flex items-center gap-2">
+                        <Settings2 size={16} className="text-emerald-500" />
+                        Number of Questions
+                      </label>
+                      <div className="flex gap-2">
+                        {[3, 5, 10, 15].map(n => {
+                          const isLockedOption = isLocked && n > 3;
+                          return (
+                          <button
+                            key={n}
+                            onClick={() => {
+                              if (isLockedOption) {
+                                setShowPricingModal(true);
+                                return;
+                              }
+                              setNumQuestions(n);
+                            }}
+                            className={`flex-1 py-3 rounded-2xl font-bold transition-all flex items-center justify-center gap-1 ${
+                              numQuestions === n 
+                                ? 'bg-slate-900 dark:bg-white text-white dark:text-zinc-900 shadow-lg scale-105' 
+                                : 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400 hover:bg-slate-200 dark:hover:bg-zinc-700'
+                            } ${isLockedOption ? 'opacity-60' : ''}`}
+                          >
+                            {n}
+                            {isLockedOption && <Lock size={12} />}
+                          </button>
+                        )})}
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <label className="text-sm font-bold text-slate-700 dark:text-zinc-300 flex items-center gap-2">
+                        <Settings2 size={16} className="text-emerald-500" />
+                        Question Type
+                      </label>
+                      <div className="flex gap-4">
+                        {(['multiple-choice', 'fill-in-the-blank'] as QuestionType[]).map(t => (
+                          <button
+                            key={t}
+                            onClick={() => setQuestionType(t)}
+                            className={`flex-1 py-4 px-4 rounded-2xl font-bold text-sm transition-all border-2 ${
+                              questionType === t 
+                                ? 'border-slate-900 dark:border-white bg-slate-900 dark:bg-white text-white dark:text-zinc-900 shadow-lg' 
+                                : 'border-slate-100 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 text-slate-500 dark:text-zinc-400 hover:border-slate-200 dark:hover:border-zinc-700'
+                            }`}
+                          >
+                            {t === 'multiple-choice' ? 'Multiple Choice' : 'Fill in the Blank'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={generateQuiz}
+                    className="w-full bg-emerald-500 hover:bg-emerald-600 text-white py-5 rounded-2xl font-bold text-lg shadow-xl shadow-emerald-500/20 transition-all active:scale-95 flex items-center justify-center gap-2"
+                  >
+                    Start {mode === 'exam' ? 'Exam' : 'Quiz'}
+                    <ArrowRight size={20} />
+                  </button>
+                </motion.div>
+              )}
+
+              {step === 'loading' && (
+                <motion.div 
+                  key="loading"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="flex flex-col items-center justify-center py-20 space-y-6"
+                >
+                  <div className="relative">
+                    <Loader2 size={64} className="text-emerald-500 animate-spin" />
+                    <Brain size={32} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-slate-900 dark:text-white" />
+                  </div>
+                  <div className="text-center space-y-2">
+                    <h3 className="text-xl font-bold text-slate-900 dark:text-white">Generating Quiz...</h3>
+                    <p className="text-slate-500 dark:text-zinc-400 animate-pulse">Gemini is crafting questions based on your study material.</p>
+                  </div>
+                </motion.div>
+              )}
+
+              {step === 'quiz' && questions.length > 0 && (
+                <motion.div 
+                  key="quiz"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  className="space-y-8 max-w-3xl mx-auto"
+                >
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-widest">
+                      Question {currentQuestionIndex + 1} of {mode === 'adaptive' ? numQuestions : questions.length}
+                    </span>
+                    {(mode === 'practice' || mode === 'adaptive') && (
+                      <div className="h-1.5 w-32 bg-slate-100 dark:bg-zinc-800 rounded-full overflow-hidden">
+                        <div 
+                          className={`h-full transition-all duration-500 ${mode === 'adaptive' ? 'bg-purple-500' : 'bg-emerald-500'}`}
+                          style={{ width: `${((currentQuestionIndex + 1) / (mode === 'adaptive' ? numQuestions : questions.length)) * 100}%` }}
+                        />
+                      </div>
+                    )}
+                    {mode === 'exam' && (
+                      <button 
+                        onClick={toggleFlag}
+                        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors ${
+                          flaggedQuestions[questions[currentQuestionIndex].id] 
+                            ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400' 
+                            : 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400 hover:bg-slate-200 dark:hover:bg-zinc-700'
+                        }`}
+                      >
+                        <Flag size={14} />
+                        {flaggedQuestions[questions[currentQuestionIndex].id] ? 'Flagged' : 'Flag'}
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="space-y-6">
+                    <div className="flex justify-between items-start gap-4">
+                      <div className="text-xl font-bold text-slate-900 dark:text-white leading-relaxed markdown-body flex-1">
+                        <MarkdownRenderer content={questions[currentQuestionIndex].question} />
+                      </div>
+                      {onBookmark && (
+                        <button
+                          onClick={() => onBookmark(questions[currentQuestionIndex])}
+                          className="text-slate-400 hover:text-emerald-500 transition-colors p-2 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-xl flex-shrink-0"
+                          title="Save to Notebook"
+                        >
+                          <Bookmark size={20} />
+                        </button>
+                      )}
+                    </div>
+
+                    {(mode === 'practice' || mode === 'adaptive') && !showExplanation && !showHint && (
+                      <button 
+                        onClick={() => {
+                          setShowHint(true);
+                          setHintsUsed(prev => ({ ...prev, [questions[currentQuestionIndex].id]: true }));
+                        }}
+                        className={`${mode === 'adaptive' ? 'text-purple-500 hover:text-purple-600' : 'text-emerald-500 hover:text-emerald-600'} text-xs font-bold uppercase tracking-widest flex items-center gap-1 transition-colors`}
+                      >
+                        <Brain size={14} />
+                        Need a hint?
+                      </button>
+                    )}
+
+                    {(mode === 'practice' || mode === 'adaptive') && showHint && !showExplanation && (
+                      <motion.div 
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="space-y-3"
+                      >
+                        <div className={`${mode === 'adaptive' ? 'bg-purple-50 dark:bg-purple-900/20 border-purple-100 dark:border-purple-900/30 text-purple-800 dark:text-purple-300' : 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-100 dark:border-emerald-900/30 text-emerald-800 dark:text-emerald-300'} border p-4 rounded-2xl text-sm italic`}>
+                          <span className="font-bold not-italic mr-2">Hint:</span>
+                          {questions[currentQuestionIndex].hint}
+                        </div>
+                        
+                        {!progressiveHint ? (
+                          <button 
+                            onClick={fetchProgressiveHint}
+                            disabled={isFetchingHint}
+                            className="text-emerald-600 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 hover:underline disabled:opacity-50"
+                          >
+                            {isFetchingHint ? <Loader2 size={10} className="animate-spin" /> : <Brain size={10} />}
+                            Still stuck? Get a deeper hint
+                          </button>
+                        ) : (
+                          <motion.div 
+                            initial={{ opacity: 0, x: -10 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            className="bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-900/30 p-4 rounded-2xl text-sm text-amber-800 dark:text-amber-300 italic"
+                          >
+                            <span className="font-bold not-italic mr-2">Tutor Insight:</span>
+                            {progressiveHint}
+                          </motion.div>
+                        )}
+                      </motion.div>
+                    )}
+
+                    {questions[currentQuestionIndex].type === 'multiple-choice' ? (
+                      <div className="grid gap-3">
+                        {questions[currentQuestionIndex].options?.map((opt, i) => {
+                          const isSelected = userAnswers[questions[currentQuestionIndex].id] === opt;
+                          const isCorrect = opt === questions[currentQuestionIndex].correctAnswer;
+                          
+                          let btnClass = "bg-slate-50 dark:bg-zinc-800 border-2 border-slate-100 dark:border-zinc-700 text-slate-700 dark:text-zinc-300 hover:border-slate-200 dark:hover:border-zinc-600";
+                          
+                          if ((mode === 'practice' || mode === 'adaptive') && showExplanation) {
+                            if (isCorrect) btnClass = "bg-emerald-50 dark:bg-emerald-900/20 border-emerald-500 dark:border-emerald-500/50 text-emerald-700 dark:text-emerald-400";
+                            else if (isSelected) btnClass = "bg-red-50 dark:bg-red-900/20 border-red-500 dark:border-red-500/50 text-red-700 dark:text-red-400";
+                            else btnClass = "bg-slate-50 dark:bg-zinc-800 border-slate-100 dark:border-zinc-800 text-slate-400 dark:text-zinc-500 opacity-50";
+                          } else if (isSelected) {
+                            btnClass = "bg-slate-900 dark:bg-white border-slate-900 dark:border-white text-white dark:text-zinc-900";
+                          }
+
+                          return (
+                            <button
+                              key={i}
+                              disabled={(mode === 'practice' || mode === 'adaptive') && showExplanation}
+                              onClick={() => handleAnswer(opt)}
+                              className={`w-full p-5 rounded-2xl text-left font-medium transition-all flex items-center justify-between ${btnClass}`}
+                            >
+                              <span className="markdown-body">
+                                <MarkdownRenderer content={opt} />
+                              </span>
+                              {(mode === 'practice' || mode === 'adaptive') && showExplanation && isCorrect && <CheckCircle2 size={20} className="text-emerald-500 shrink-0" />}
+                              {(mode === 'practice' || mode === 'adaptive') && showExplanation && isSelected && !isCorrect && <XCircle size={20} className="text-red-500 shrink-0" />}
+                              {mode === 'exam' && isSelected && <div className="w-4 h-4 bg-white rounded-full" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        <input
+                          type="text"
+                          disabled={(mode === 'practice' || mode === 'adaptive') && showExplanation}
+                          placeholder="Type your answer here..."
+                          value={userAnswers[questions[currentQuestionIndex].id] || ''}
+                          className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-zinc-800 border-2 border-slate-100 dark:border-zinc-700 focus:border-slate-900 dark:focus:border-white focus:ring-0 transition-all font-medium text-slate-900 dark:text-white"
+                          onChange={(e) => {
+                            if (mode === 'exam') {
+                              setUserAnswers(prev => ({ ...prev, [questions[currentQuestionIndex].id]: e.target.value }));
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              if (mode === 'practice' || mode === 'adaptive') handleAnswer((e.target as HTMLInputElement).value);
+                            }
+                          }}
+                        />
+                        {(mode === 'practice' || mode === 'adaptive') && showExplanation && (
+                          <div className={`p-4 rounded-2xl flex items-center gap-3 ${
+                            userAnswers[questions[currentQuestionIndex].id]?.toLowerCase().trim() === questions[currentQuestionIndex].correctAnswer.toLowerCase().trim()
+                              ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400'
+                              : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400'
+                          }`}>
+                            {userAnswers[questions[currentQuestionIndex].id]?.toLowerCase().trim() === questions[currentQuestionIndex].correctAnswer.toLowerCase().trim()
+                              ? <CheckCircle2 size={20} />
+                              : <XCircle size={20} />
+                            }
+                            <span className="font-bold">Correct Answer: {questions[currentQuestionIndex].correctAnswer}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {(mode === 'practice' || mode === 'adaptive') && showExplanation && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="space-y-6"
+                    >
+                      <div className="bg-slate-50 dark:bg-zinc-800 p-6 rounded-2xl border border-slate-100 dark:border-zinc-700">
+                        <h4 className="text-xs font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-widest mb-2">Explanation</h4>
+                        <div className="text-sm text-slate-600 dark:text-zinc-300 leading-relaxed markdown-body">
+                          <MarkdownRenderer content={questions[currentQuestionIndex].explanation} />
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={nextQuestion}
+                        className="w-full bg-slate-900 dark:bg-white text-white dark:text-zinc-900 py-5 rounded-2xl font-bold transition-all hover:bg-slate-800 dark:hover:bg-zinc-100 flex items-center justify-center gap-2"
+                      >
+                        {mode === 'adaptive' 
+                          ? (questions.length === numQuestions ? 'Finish Quiz' : 'Next Question')
+                          : (currentQuestionIndex === questions.length - 1 ? 'Finish Quiz' : 'Next Question')}
+                        <ArrowRight size={20} />
+                      </button>
+                    </motion.div>
+                  )}
+
+                  {mode === 'exam' && (
+                    <div className="flex gap-4 pt-4">
+                      <button
+                        onClick={prevQuestion}
+                        disabled={currentQuestionIndex === 0}
+                        className="flex-1 bg-slate-100 dark:bg-zinc-800 text-slate-900 dark:text-white py-4 rounded-2xl font-bold transition-all hover:bg-slate-200 dark:hover:bg-zinc-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                      >
+                        <ChevronLeft size={20} />
+                        Previous
+                      </button>
+                      
+                      {currentQuestionIndex === questions.length - 1 ? (
+                        <button
+                          onClick={submitExam}
+                          className="flex-1 bg-emerald-500 text-white py-4 rounded-2xl font-bold transition-all hover:bg-emerald-600 flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20"
+                        >
+                          Submit Exam
+                          <CheckCircle2 size={20} />
+                        </button>
+                      ) : (
+                        <button
+                          onClick={nextQuestion}
+                          className="flex-1 bg-slate-900 dark:bg-white text-white dark:text-zinc-900 py-4 rounded-2xl font-bold transition-all hover:bg-slate-800 dark:hover:bg-zinc-100 flex items-center justify-center gap-2"
+                        >
+                          Next
+                          <ChevronRight size={20} />
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </motion.div>
+              )}
+
+              {step === 'results' && (
+                <motion.div 
+                  key="results"
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="text-center space-y-8 max-w-2xl mx-auto"
+                >
+                  <div className="relative inline-block">
+                    <div className="w-48 h-48 rounded-full border-8 border-slate-100 dark:border-zinc-800 flex flex-col items-center justify-center">
+                      <span className="text-5xl font-black text-slate-900 dark:text-white">{calculateScore()}</span>
+                      <span className="text-slate-400 dark:text-zinc-500 font-bold uppercase tracking-widest text-xs">of {questions.length}</span>
+                    </div>
+                    <div className="absolute -bottom-2 -right-2 bg-emerald-500 text-white p-3 rounded-2xl shadow-lg">
+                      <CheckCircle2 size={32} />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <h3 className="text-3xl font-bold text-slate-900 dark:text-white">
+                      {calculateScore() === questions.length ? 'Perfect Score!' : calculateScore() > questions.length / 2 ? 'Great Job!' : 'Keep Studying!'}
+                    </h3>
+                    <p className="text-slate-500 dark:text-zinc-400">You've completed the {mode} for {module.title.split('. ')[1]}</p>
+                  </div>
+
+                  {/* Review Section for Exam Mode */}
+                  {(mode === 'exam' || mode === 'adaptive') && (
+                    <div className="text-left space-y-4 max-h-60 overflow-y-auto p-4 bg-slate-50 dark:bg-zinc-800 rounded-2xl border border-slate-100 dark:border-zinc-700">
+                      <h4 className="font-bold text-slate-900 dark:text-white">Review</h4>
+                      {questions.map((q, i) => {
+                        const isCorrect = userAnswers[q.id]?.toLowerCase().trim() === q.correctAnswer.toLowerCase().trim();
+                        return (
+                          <div key={i} className="flex items-start gap-3 text-sm border-b border-slate-200 dark:border-zinc-700 pb-3 last:border-0">
+                            <div className={`mt-0.5 ${isCorrect ? 'text-emerald-500' : 'text-red-500'}`}>
+                              {isCorrect ? <CheckCircle2 size={16} /> : <XCircle size={16} />}
+                            </div>
+                            <div>
+                              <p className="font-medium text-slate-900 dark:text-white">Q{i+1}: {q.question.substring(0, 60)}...</p>
+                              {!isCorrect && <p className="text-slate-500 dark:text-zinc-400 text-xs">Correct: {q.correctAnswer}</p>}
+                              {mode === 'adaptive' && <p className="text-purple-500 text-xs">Difficulty: {q.difficulty}/5</p>}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {rewardMessage && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="p-4 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-900/30 rounded-2xl text-emerald-700 dark:text-emerald-400 font-medium flex items-center justify-center gap-2"
+                    >
+                      {rewardMessage}
+                    </motion.div>
+                  )}
+
+                  <div className="flex flex-col sm:flex-row gap-4">
+                    <button
+                      onClick={resetQuiz}
+                      className="flex-1 bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-900 dark:text-white py-5 rounded-2xl font-bold transition-all flex items-center justify-center gap-2"
+                    >
+                      <RefreshCw size={20} />
+                      Take Another
+                    </button>
+                    
+                    {onNextTopic && (
+                      <button
+                        onClick={onNextTopic}
+                        className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white py-5 rounded-2xl font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20"
+                      >
+                        {isNextTopicLocked && <Lock size={20} className="text-amber-300" />}
+                        Next Topic
+                        <ArrowRight size={20} />
+                      </button>
+                    )}
+
+                    <button
+                      onClick={onClose}
+                      className="flex-1 bg-slate-900 dark:bg-white hover:bg-slate-800 dark:hover:bg-zinc-100 text-white dark:text-zinc-900 py-5 rounded-2xl font-bold transition-all"
+                    >
+                      Back to Study
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
+      </motion.div>
+
+      <PricingModal 
+        isOpen={showPricingModal}
+        onClose={() => setShowPricingModal(false)}
+        featureName="Full Length Quizzes"
+        onUpgradeClick={() => {
+          onClose();
+          window.dispatchEvent(new CustomEvent('navigate', { detail: 'pricing' }));
+        }}
+      />
+    </div>
+  );
+}
