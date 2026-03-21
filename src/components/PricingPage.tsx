@@ -42,15 +42,9 @@ export default function PricingPage() {
     }
   ];
 
-  const handlePayment = (plan: any) => {
+  const handlePayment = async (plan: any) => {
     if (!user) {
       alert('Please sign in to subscribe!');
-      return;
-    }
-
-    const publicKey = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY;
-    if (!publicKey) {
-      alert('Payment gateway is not configured. Please contact support.');
       return;
     }
 
@@ -58,6 +52,18 @@ export default function PricingPage() {
     setSelectedPlan(plan);
 
     try {
+      // 1. Fetch the public key from the server (more robust than build-time env)
+      const configResponse = await fetch('/api/config/paystack');
+      if (!configResponse.ok) {
+        throw new Error('Could not fetch payment configuration from server');
+      }
+      const { publicKey } = await configResponse.json();
+
+      if (!publicKey) {
+        throw new Error('Payment gateway key is missing on the server');
+      }
+
+      // 2. Initialize Paystack
       const paystack = new PaystackPop();
       
       paystack.newTransaction({
@@ -87,9 +93,9 @@ export default function PricingPage() {
           setSelectedPlan(null);
         }
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Paystack initialization error:", error);
-      alert("Failed to initialize payment gateway. Please try again later.");
+      alert(error.message || "Failed to initialize payment gateway. Please try again later.");
       setLoading(false);
       setSelectedPlan(null);
     }

@@ -89,6 +89,16 @@ const apiLimiter = rateLimit({
 // Apply to /api/ routes
 app.use('/api/', apiLimiter);
 
+// Paystack Public Key Config Endpoint
+app.get('/api/config/paystack', (req, res) => {
+  const publicKey = process.env.VITE_PAYSTACK_PUBLIC_KEY;
+  if (!publicKey) {
+    console.warn('CRITICAL: VITE_PAYSTACK_PUBLIC_KEY is not set in server environment.');
+    return res.status(404).json({ error: 'Payment configuration not found on server' });
+  }
+  res.json({ publicKey });
+});
+
 // Strict Rate Limiter for AI Generation Endpoints (Denial of Wallet Protection)
 const aiGenerationLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
