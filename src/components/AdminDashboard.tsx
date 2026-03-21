@@ -812,20 +812,12 @@ export default function AdminDashboard() {
     setStatusMessage('Initializing upload...');
 
     try {
-      // 1. Upload to Firebase Storage
-      setStatusMessage('Uploading PDF to secure storage...');
-      if (!storage) throw new Error("Firebase Storage not initialized");
-      
-      const storageRef = ref(storage, `course-pdfs/${Date.now()}_${selectedFile.name}`);
-      await uploadBytes(storageRef, selectedFile);
-      setUploadProgress(30);
-
-      // 2. Prepare for Gemini
+      // 1. Prepare for Gemini
       setStatusMessage('Processing PDF with Gemini 3.0 Flash Preview...');
       const pdfPart = await fileToGenerativePart(selectedFile);
       setUploadProgress(40);
 
-      // 3. Call Gemini API
+      // 2. Call Gemini API
       setStatusMessage(`Analyzing with Gemini 3.0 Flash Preview...`);
 
       const prompt = `

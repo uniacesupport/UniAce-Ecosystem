@@ -132,24 +132,61 @@ export default function UserProfile({ onBack, onNavigate }: UserProfileProps) {
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !user?.uid || !storage) return;
+    if (!file || !user?.uid) return;
 
     // Basic validation
-    if (file.size > 2 * 1024 * 1024) {
-      alert("Image size should be less than 2MB");
+    if (file.size > 5 * 1024 * 1024) {
+      alert("Image size should be less than 5MB");
       return;
     }
 
     setIsUploading(true);
     try {
-      const storageRef = ref(storage, `profiles/${user.uid}/${Date.now()}_${file.name}`);
-      const snapshot = await uploadBytes(storageRef, file);
-      const downloadURL = await getDownloadURL(snapshot.ref);
-      setSelectedAvatar(downloadURL);
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 250;
+          const MAX_HEIGHT = 250;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height *= MAX_WIDTH / width;
+              width = MAX_WIDTH;
+            }
+          } else {
+            if (height > MAX_HEIGHT) {
+              width *= MAX_HEIGHT / height;
+              height = MAX_HEIGHT;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            // Compress to JPEG with 0.8 quality
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+            setSelectedAvatar(dataUrl);
+            setIsUploading(false);
+          } else {
+            throw new Error("Could not get canvas context");
+          }
+        };
+        img.onerror = () => {
+          alert("Failed to read image file.");
+          setIsUploading(false);
+        };
+        img.src = event.target?.result as string;
+      };
+      reader.readAsDataURL(file);
     } catch (error) {
-      console.error("Error uploading image:", error);
-      alert("Failed to upload image. Please try again.");
-    } finally {
+      console.error("Error processing image:", error);
+      alert("Failed to process image. Please try again.");
       setIsUploading(false);
     }
   };

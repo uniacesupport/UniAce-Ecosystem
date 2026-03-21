@@ -45,7 +45,8 @@ const allowedOrigins = [
   process.env.APP_URL,
   process.env.SHARED_APP_URL,
   'http://localhost:3000',
-  'http://localhost:5173'
+  'http://localhost:5173',
+  'https://uniace-ecosystem.onrender.com'
 ].filter(Boolean) as string[];
 
 app.use(cors({
