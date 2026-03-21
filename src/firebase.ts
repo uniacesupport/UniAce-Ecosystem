@@ -1,6 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { getFirestore, doc, getDocFromServer } from "firebase/firestore";
+import { getFirestore, doc, getDocFromServer, initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 import { getMessaging, isSupported } from "firebase/messaging";
 import firebaseConfig from "../firebase-applet-config.json";
@@ -12,12 +12,16 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const storage = getStorage(app);
 
-// Initialize Firestore with optional database ID
+// Initialize Firestore with offline caching to save quota!
+const firestoreSettings = {
+  localCache: persistentLocalCache({tabManager: persistentMultipleTabManager()})
+};
+
 export const db = firebaseConfig.firestoreDatabaseId && 
                   firebaseConfig.firestoreDatabaseId !== "(default)" && 
                   firebaseConfig.firestoreDatabaseId !== firebaseConfig.projectId
-  ? getFirestore(app, firebaseConfig.firestoreDatabaseId)
-  : getFirestore(app);
+  ? initializeFirestore(app, firestoreSettings, firebaseConfig.firestoreDatabaseId)
+  : initializeFirestore(app, firestoreSettings);
 
 // Connection test
 async function testConnection() {
