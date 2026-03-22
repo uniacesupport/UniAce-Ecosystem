@@ -392,6 +392,7 @@ export default function App() {
 
         {activeView === 'quizzes' && (
           <QuizHub 
+            courseId={activeCourseId || undefined}
             onQuizComplete={(topicId, score) => {
               updateMastery(topicId, score);
               addXp(score * 2);

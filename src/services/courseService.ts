@@ -56,8 +56,7 @@ export const CourseService = {
       title: m.title || `Module ${mIdx + 1}`,
       subTopics: (m.lessons || []).map((l: any, lIdx: number) => ({
         id: `m${mIdx + 1}-l${lIdx + 1}`,
-        title: l.title || `Lesson ${lIdx + 1}`,
-        content: l.content || ''
+        title: l.title || `Lesson ${lIdx + 1}`
       }))
     }));
 
@@ -78,7 +77,7 @@ export const CourseService = {
       });
 
       (moduleData.lessons || []).forEach((lessonData: any, lIndex: number) => {
-        const lessonId = `l${lIndex + 1}`;
+        const lessonId = `m${mIndex + 1}-l${lIndex + 1}`;
         const lessonRef = doc(db, `courses/${courseId}/modules/${moduleId}/lessons`, lessonId);
         batch.set(lessonRef, {
           title: lessonData.title || `Lesson ${lIndex + 1}`,

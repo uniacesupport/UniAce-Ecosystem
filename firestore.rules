@@ -70,6 +70,37 @@ service cloud.firestore {
              data.id is string && data.id.size() < 100;
     }
 
+    function isValidMessage(data) {
+      return data.senderId == request.auth.uid &&
+             data.text is string && data.text.size() < 2000 &&
+             (!('createdAt' in data) || data.createdAt is string || data.createdAt is timestamp);
+    }
+
+    function isValidSupportChat(data) {
+      return data.userId == request.auth.uid &&
+             (!('subject' in data) || (data.subject is string && data.subject.size() < 200)) &&
+             (!('status' in data) || data.status in ['open', 'closed', 'pending']);
+    }
+
+    function isValidBattle(data) {
+      return (!('creatorId' in data) || (data.creatorId is string && data.creatorId.size() < 100)) &&
+             (!('opponentId' in data) || (data.opponentId is string && data.opponentId.size() < 100)) &&
+             (!('status' in data) || data.status in ['waiting', 'active', 'completed', 'cancelled']) &&
+             (!('courseId' in data) || (data.courseId is string && data.courseId.size() < 100));
+    }
+
+    function isValidSpacedRepetition(data) {
+      return data.userId == request.auth.uid &&
+             data.topicId is string && data.topicId.size() < 100 &&
+             data.courseId is string && data.courseId.size() < 100 &&
+             data.topicTitle is string && data.topicTitle.size() < 200 &&
+             data.easinessFactor is number && data.easinessFactor >= 1.3 &&
+             data.interval is number && data.interval >= 0 &&
+             data.repetitions is number && data.repetitions >= 0 &&
+             (data.nextReviewDate is string || data.nextReviewDate is timestamp) &&
+             (data.lastReviewed is string || data.lastReviewed is timestamp);
+    }
+
     // ===============================================================
     // Collection Rules
     // ===============================================================
@@ -96,6 +127,13 @@ service cloud.firestore {
                       (request.resource.data.plan_type == 'free' || isAdmin()) &&
                       (request.resource.data.get('ai_sparks', 0) <= 50 || isAdmin()) &&
                       (!('subscription_status' in request.resource.data) || request.resource.data.subscription_status == 'none' || isAdmin());
+
+      match /spaced_repetition/{topicId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && isValidSpacedRepetition(request.resource.data);
+        allow update: if isOwner(userId) && isValidSpacedRepetition(request.resource.data) && request.resource.data.userId == resource.data.userId;
+        allow delete: if isAdmin();
+      }
     }
 
     match /notifications/{notificationId} {
@@ -113,25 +151,38 @@ service cloud.firestore {
 
     match /support_chats/{chatId} {
       allow read, write: if isAdmin();
-      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      allow read, update: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid && isValidSupportChat(request.resource.data);
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid && 
+                    isValidSupportChat(request.resource.data) &&
+                    request.resource.data.userId == resource.data.userId;
       
       match /messages/{messageId} {
         allow read, write: if isAdmin();
-        allow read, create: if isAuthenticated() && get(/databases/$(database)/documents/support_chats/$(chatId)).data.userId == request.auth.uid;
+        allow read: if isAuthenticated() && get(/databases/$(database)/documents/support_chats/$(chatId)).data.userId == request.auth.uid;
+        allow create: if isAuthenticated() && 
+                      get(/databases/$(database)/documents/support_chats/$(chatId)).data.userId == request.auth.uid &&
+                      isValidMessage(request.resource.data);
       }
     }
 
     match /payments/{paymentId} {
       allow read, write: if isAdmin();
-      allow create: if isAuthenticated() && request.resource.data.uid == request.auth.uid;
+      allow create: if isAuthenticated() && request.resource.data.uid == request.auth.uid && 
+                    (!('status' in request.resource.data) || request.resource.data.status == 'pending');
       allow read: if isAuthenticated() && resource.data.uid == request.auth.uid;
     }
 
     match /battles/{battleId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && request.resource.data.creatorId == request.auth.uid;
-      allow update: if isAuthenticated() && (resource.data.creatorId == request.auth.uid || resource.data.opponentId == request.auth.uid || !('opponentId' in resource.data));
+      allow create: if isAuthenticated() && request.resource.data.creatorId == request.auth.uid && isValidBattle(request.resource.data);
+      allow update: if isAuthenticated() && 
+                    isValidBattle(request.resource.data) &&
+                    (
+                      (resource.data.creatorId == request.auth.uid && request.resource.data.creatorId == resource.data.creatorId) ||
+                      (request.auth.uid == request.resource.data.opponentId && (!('opponentId' in resource.data) || resource.data.opponentId == request.auth.uid))
+                    ) && 
+                    request.resource.data.creatorId == resource.data.creatorId;
       allow delete: if isAdmin();
     }
 
@@ -155,7 +206,9 @@ service cloud.firestore {
 
     match /system_logs/{logId} {
       allow read: if isAdmin();
-      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid &&
+                    (!('message' in request.resource.data) || (request.resource.data.message is string && request.resource.data.message.size() < 5000)) &&
+                    (!('details' in request.resource.data) || (request.resource.data.details is string && request.resource.data.details.size() < 10000) || request.resource.data.details is map);
       allow update, delete: if false;
     }
 

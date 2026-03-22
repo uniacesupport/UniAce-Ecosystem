@@ -272,7 +272,8 @@ ALWAYS use LaTeX for ALL mathematical formulas and variables (e.g., use $x$ inst
     subTopic: SubTopic | undefined, 
     numQuestions: number, 
     questionType: QuestionType,
-    adaptive: boolean = false
+    adaptive: boolean = false,
+    userSkillLevel: number = 3
   ): Promise<QuizQuestion[]> => {
     const contextInfo = subTopic 
       ? `Generate a quiz for the specific subtopic: "${subTopic.title}" within the module "${module.title}". 
@@ -282,7 +283,7 @@ ALWAYS use LaTeX for ALL mathematical formulas and variables (e.g., use $x$ inst
          ${module.subTopics.map(st => `--- Subtopic: ${st.title} ---\n${st.content}`).join('\n\n')}`;
 
     const adaptiveInstruction = adaptive 
-      ? `Generate exactly 15 questions, 3 for each difficulty level from 1 (very easy) to 5 (very hard). Ensure the difficulty field is set correctly.`
+      ? `Generate exactly 15 questions, 3 for each difficulty level from 1 (very easy) to 5 (very hard). Ensure the difficulty field is set correctly. The user's current estimated skill level is ${userSkillLevel} out of 5.`
       : `Number of questions: ${numQuestions}.`;
 
     const prompt = `${contextInfo}
@@ -436,31 +437,56 @@ ALWAYS use LaTeX for ALL mathematical formulas and variables (e.g., use $x$ inst
 
   predictExamReadiness: async (
     progress: UserProgress,
-    syllabus: Module[]
+    syllabus: Module[],
+    userId?: string
   ) => {
+    // 1. Fetch SRS data if available to enhance prediction
+    let srsData: any[] = [];
+    if (userId) {
+      try {
+        const { SRSService } = await import('./srsService');
+        const db = (await import('../firebase')).db;
+        const { collection, getDocs } = await import('firebase/firestore');
+        
+        // We need to fetch all SRS records for the user to get a holistic view
+        // This is a simplified approach; in a real app, you might want a specific BKT service
+        const srsSnap = await getDocs(collection(db, `users/${userId}/spaced_repetition`));
+        srsData = srsSnap.docs.map(d => d.data());
+      } catch (error) {
+        console.error("Failed to fetch SRS data for BKT:", error);
+      }
+    }
+
     const masteryData = Object.entries(progress.mastery).map(([id, score]) => {
       const topic = syllabus.flatMap(m => m.subTopics).find(st => st.id === id);
-      return { title: topic?.title || id, score };
+      const srsRecord = srsData.find(r => r.topicId === id);
+      return { 
+        title: topic?.title || id, 
+        score,
+        srsRepetitions: srsRecord?.repetitions || 0,
+        srsEasiness: srsRecord?.easinessFactor || 2.5
+      };
     });
 
-    const prompt = `As an expert data scientist and educational analyst, predict this student's exam readiness (probability of passing).
+    const prompt = `As an expert data scientist and educational analyst, predict this student's exam readiness (probability of passing) using principles of Bayesian Knowledge Tracing (BKT).
     
     Student Data:
-    - Mastery Levels: ${JSON.stringify(masteryData)}
+    - Mastery Levels & SRS Data: ${JSON.stringify(masteryData)}
     - Streak: ${progress.streak} days
     - Total XP: ${progress.xp}
     - Study Time (seconds per topic): ${JSON.stringify(progress.studyTime)}
     
     Calculate a realistic probability of passing (0-100) based on:
     1. Quiz scores (mastery).
-    2. Study consistency (streak).
-    3. Time spent on difficult topics.
+    2. Spaced Repetition (SRS) data: Higher repetitions and easiness factors strongly indicate long-term retention (true mastery).
+    3. Study consistency (streak).
+    4. Time spent on difficult topics.
     
     CRITICAL: Output ONLY the JSON object. Do not include any other text, markdown formatting, or explanations.
     Return the response as a JSON object:
     {
       "probability": 85,
-      "analysis": "A short, 2-sentence explanation of the prediction.",
+      "analysis": "A short, 2-sentence explanation of the prediction, referencing their retention and mastery.",
       "weakestArea": "The topic they need to focus on most to improve their chances."
     }`;
 

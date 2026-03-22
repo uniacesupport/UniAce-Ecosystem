@@ -114,6 +114,23 @@
         "last_nudge_message": { "type": "string" }
       },
       "required": ["uid", "email", "displayName", "role", "plan_type"]
+    },
+    "SpacedRepetition": {
+      "title": "SpacedRepetition",
+      "description": "Tracks a user's spaced repetition state for a specific topic or lesson",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "topicId": { "type": "string", "description": "The ID of the lesson or concept being reviewed" },
+        "courseId": { "type": "string" },
+        "easinessFactor": { "type": "number", "description": "SM-2 easiness factor, default 2.5" },
+        "interval": { "type": "number", "description": "Current interval in days" },
+        "repetitions": { "type": "number", "description": "Number of successful consecutive repetitions" },
+        "nextReviewDate": { "type": "string", "format": "date-time", "description": "ISO string of when the next review is due" },
+        "lastReviewed": { "type": "string", "format": "date-time" },
+        "topicTitle": { "type": "string", "description": "Title of the topic for display purposes" }
+      },
+      "required": ["userId", "topicId", "courseId", "easinessFactor", "interval", "repetitions", "nextReviewDate", "lastReviewed", "topicTitle"]
     }
   },
   "firestore": {
@@ -140,6 +157,10 @@
     "/users/{userId}": {
       "schema": "User",
       "description": "User profiles and progress data"
+    },
+    "/users/{userId}/spaced_repetition/{topicId}": {
+      "schema": "SpacedRepetition",
+      "description": "User's spaced repetition data for specific topics"
     }
   }
 }

@@ -303,10 +303,22 @@ export default function AdminDashboard() {
     try {
       const courseId = quickCourseCode.replace(/\s+/g, '').toUpperCase();
       const totalModules = courseSkeleton.modules.length;
-      const generatedModules = [];
+      let generatedModules: any[] = [];
+      let startingIndex = 0;
+
+      // Check for existing progress to resume
+      const courseRef = doc(db, 'courses', courseId);
+      const courseDoc = await getDoc(courseRef);
+      
+      if (courseDoc.exists() && courseDoc.data().modules) {
+        generatedModules = courseDoc.data().modules;
+        startingIndex = generatedModules.length;
+        if (startingIndex > 0 && startingIndex < totalModules) {
+          setStatusMessage(`Resuming from Module ${startingIndex + 1}...`);
+        }
+      }
 
       // Save initial course doc
-      const courseRef = doc(db, 'courses', courseId);
       await setDoc(courseRef, {
         id: courseId,
         title: quickCourseName,
@@ -316,49 +328,65 @@ export default function AdminDashboard() {
         createdAt: new Date().toISOString()
       }, { merge: true });
 
-      for (let i = 0; i < totalModules; i++) {
-        // Check for cancellation
+      const CONCURRENCY_LIMIT = 3;
+      for (let i = startingIndex; i < totalModules; i += CONCURRENCY_LIMIT) {
         if (isCancelledRef.current) {
-          setStatusMessage('Generation cancelled by user.');
-          return;
+          throw new Error('Generation cancelled by user.');
         }
 
-        const moduleSkeleton = courseSkeleton.modules[i];
+        const chunk = courseSkeleton.modules.slice(i, i + CONCURRENCY_LIMIT);
+        const chunkEnd = Math.min(i + CONCURRENCY_LIMIT, totalModules);
+        
         const baseProgress = Math.round((i / totalModules) * 90);
         setGenerationProgress(baseProgress);
-        setStatusMessage(`Generating Module ${i + 1}/${totalModules}: ${moduleSkeleton.title}...`);
+        setStatusMessage(`Generating Modules ${i + 1}-${chunkEnd} of ${totalModules} in parallel...`);
 
         try {
-          // Retry logic for individual module
-          let moduleContent = null;
-          let retries = 2;
-          
-          while (retries > 0 && !moduleContent) {
-            try {
-              moduleContent = await generateModuleContent(quickCourseName, moduleSkeleton, aiProvider, (msg) => {
-                setStatusMessage(`Module ${i + 1}/${totalModules}: ${msg}`);
-              });
-            } catch (err) {
-              retries--;
-              if (retries > 0) {
-                setStatusMessage(`Retrying Module ${i + 1}/${totalModules}... (${retries} attempts left)`);
-                await new Promise(resolve => setTimeout(resolve, 2000));
-              } else {
-                throw err;
+          const chunkPromises = chunk.map(async (moduleSkeleton: any, idx: number) => {
+            const moduleIndex = i + idx;
+            let moduleContent = null;
+            let retries = 2;
+            
+            while (retries > 0 && !moduleContent) {
+              try {
+                moduleContent = await generateModuleContent(quickCourseName, moduleSkeleton, aiProvider, (msg) => {
+                  if (idx === 0) {
+                    setStatusMessage(`Modules ${i + 1}-${chunkEnd}/${totalModules}: ${msg}`);
+                  }
+                }, () => isCancelledRef.current);
+              } catch (err) {
+                if (isCancelledRef.current) throw new Error('Generation cancelled by user.');
+                retries--;
+                if (retries > 0) {
+                  if (idx === 0) setStatusMessage(`Retrying Module ${moduleIndex + 1}/${totalModules}... (${retries} attempts left)`);
+                  await new Promise(resolve => setTimeout(resolve, 2000));
+                } else {
+                  throw err;
+                }
               }
             }
-          }
 
-          if (moduleContent) {
-            generatedModules.push(moduleContent);
-            // Save module incremental progress
-            await CourseService.saveGeneratedCourse(courseId, { modules: generatedModules });
+            if (isCancelledRef.current) {
+              throw new Error('Generation cancelled by user.');
+            }
+
+            return { index: moduleIndex, content: moduleContent };
+          });
+
+          const results = await Promise.all(chunkPromises);
+          results.sort((a, b) => a.index - b.index);
+
+          for (const res of results) {
+            if (res.content) {
+              generatedModules.push(res.content);
+            }
           }
+          
+          await CourseService.saveGeneratedCourse(courseId, { modules: generatedModules });
+          
         } catch (moduleError: any) {
-          console.error(`Failed to generate module ${i + 1}:`, moduleError);
-          // We can choose to continue or fail. Let's fail for now to ensure quality, 
-          // but we've saved progress up to here.
-          throw new Error(`Failed at Module ${i + 1} (${moduleSkeleton.title}): ${moduleError.message}`);
+          console.error(`Failed to generate a module in chunk ${i + 1}-${chunkEnd}:`, moduleError);
+          throw new Error(`Failed during Modules ${i + 1}-${chunkEnd}: ${moduleError.message}`);
         }
       }
 

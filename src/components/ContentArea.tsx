@@ -10,7 +10,7 @@ import MiniTeacherModal from './MiniTeacherModal';
 import { AIService } from '../services/ai';
 import { LogService } from '../services/logService';
 import { db } from '../firebase';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { useCourses } from '../context/CourseContext';
 import { useAuth } from '../context/AuthContext';
 import { usePremiumStatus } from '../hooks/usePremiumStatus';
@@ -59,6 +59,8 @@ export default function ContentArea({
   const [isProactiveQuiz, setIsProactiveQuiz] = useState(false);
   const hasCheckedInRef = useRef<Set<string>>(new Set());
   const [lockedFeatureName, setLockedFeatureName] = useState('');
+  const [fetchedContent, setFetchedContent] = useState<string | null>(null);
+  const [isFetchingContent, setIsFetchingContent] = useState(false);
   const { refreshCourses } = useCourses();
   const { user, profile } = useAuth();
   const { isPremium } = usePremiumStatus();
@@ -85,13 +87,53 @@ export default function ContentArea({
   const showQuizRef = useRef(showQuiz);
   useEffect(() => { showQuizRef.current = showQuiz; }, [showQuiz]);
 
+  // Load content dynamically (Lazy Loading)
   useEffect(() => {
-    if (!activeSubTopic.content || isGenerating) return;
+    const loadContent = async () => {
+      if (!courseId || !db) return;
+      
+      // If it already has content (legacy courses), use it
+      if (activeSubTopic.content) {
+        setFetchedContent(activeSubTopic.content);
+        return;
+      }
+
+      setIsFetchingContent(true);
+      try {
+        let lessonDoc = await getDoc(doc(db, `courses/${courseId}/modules/${module.id}/lessons`, activeSubTopic.id));
+        
+        // Fallback for legacy courses where lesson ID was just 'l1' instead of 'm1-l1'
+        if (!lessonDoc.exists() && activeSubTopic.id.includes('-')) {
+          const legacyId = activeSubTopic.id.split('-')[1];
+          if (legacyId) {
+            lessonDoc = await getDoc(doc(db, `courses/${courseId}/modules/${module.id}/lessons`, legacyId));
+          }
+        }
+
+        if (lessonDoc.exists() && lessonDoc.data().content) {
+          setFetchedContent(lessonDoc.data().content);
+        } else {
+          // Trigger generation if not found
+          setFetchedContent(null);
+          handleGenerateLesson();
+        }
+      } catch (error) {
+        console.error("Error fetching lesson content:", error);
+      } finally {
+        setIsFetchingContent(false);
+      }
+    };
+
+    loadContent();
+  }, [activeSubTopic.id, courseId, module.id]);
+
+  useEffect(() => {
+    if (!fetchedContent || isGenerating || isFetchingContent) return;
     if (hasCheckedInRef.current.has(activeSubTopic.id)) return;
 
     // Calculate Dynamic Delay (Smart Timer)
     // Avg reading speed: 200 wpm. We nudge at ~70% of estimated reading time.
-    const wordCount = activeSubTopic.content.split(/\s+/).length;
+    const wordCount = fetchedContent.split(/\s+/).length;
     const estimatedReadingTimeMs = (wordCount / 200) * 60 * 1000;
     const dynamicDelay = Math.max(45000, Math.min(180000, estimatedReadingTimeMs * 0.7));
 
@@ -103,7 +145,7 @@ export default function ContentArea({
     }, dynamicDelay);
 
     return () => clearTimeout(timer);
-  }, [activeSubTopic.id, activeSubTopic.content, isGenerating]);
+  }, [activeSubTopic.id, fetchedContent, isGenerating, isFetchingContent]);
 
   useEffect(() => {
     if (autoStartQuiz) {
@@ -112,12 +154,7 @@ export default function ContentArea({
     // Reset audio when subtopic changes
     setAudioUrl(null);
     setIsSpeaking(false);
-
-    // Infinite Lesson Engine Trigger
-    if (!activeSubTopic.content && !isGenerating) {
-      handleGenerateLesson();
-    }
-  }, [autoStartQuiz, activeSubTopicId, activeSubTopic.content]);
+  }, [autoStartQuiz, activeSubTopicId]);
 
   const handleOpenMiniTeacher = (mode: 'default' | 'simpler' | 'quiz' | 'proactive' = 'default') => {
     setMiniTeacherMode(mode);
@@ -163,6 +200,9 @@ export default function ContentArea({
 
       LogService.log('success', 'ai', `Generated lesson content for ${activeSubTopic.title}`, { courseId, moduleId: module.id, lessonId: activeSubTopic.id });
 
+      // Update local state
+      setFetchedContent(content);
+
       // Update global state to reflect new content
       await refreshCourses();
     } catch (error) {
@@ -182,9 +222,11 @@ export default function ContentArea({
       return;
     }
 
+    if (!fetchedContent) return;
+
     try {
       setIsSpeaking(true);
-      const url = await AIService.generateTTS(activeSubTopic.content);
+      const url = await AIService.generateTTS(fetchedContent);
       if (url) {
         setAudioUrl(url);
         const audio = new Audio(url);
@@ -328,9 +370,16 @@ export default function ContentArea({
                   "The magic of AI is turning blank pages into worlds of knowledge."
                 </div>
               </div>
-            ) : activeSubTopic.content ? (
+            ) : isFetchingContent ? (
+              <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
+                <Loader2 className="animate-spin text-indigo-500" size={48} />
+                <p className="text-zinc-500 dark:text-zinc-400 font-medium animate-pulse">
+                  Loading lesson content...
+                </p>
+              </div>
+            ) : fetchedContent ? (
               <div className="prose prose-zinc dark:prose-invert prose-sm max-w-none">
-                <MarkdownRenderer content={activeSubTopic.content} />
+                <MarkdownRenderer content={fetchedContent} />
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
@@ -348,12 +397,12 @@ export default function ContentArea({
             )}
           </motion.div>
 
-          {!isGenerating && activeSubTopic.content && (
+          {!isGenerating && !isFetchingContent && fetchedContent && (
             <>
               {/* Quick Knowledge Check */}
               <QuickCheck 
                 key={`qc-${activeSubTopic.id}`}
-                subTopic={activeSubTopic} 
+                subTopic={{ ...activeSubTopic, content: fetchedContent }} 
                 onCorrect={() => onQuickCheckComplete?.(activeSubTopic.id)} 
               />
             </>
@@ -399,8 +448,9 @@ export default function ContentArea({
       <AnimatePresence>
         {showQuiz && (
           <QuizGenerator 
+            courseId={courseId || undefined}
             module={module} 
-            subTopic={activeSubTopic}
+            subTopic={{ ...activeSubTopic, content: fetchedContent || '' }}
             isProactive={isProactiveQuiz}
             onClose={handleQuizClose} 
             onComplete={(score) => onQuizComplete(activeSubTopic.id, score)}

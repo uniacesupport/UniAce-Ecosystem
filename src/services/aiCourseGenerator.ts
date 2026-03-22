@@ -359,17 +359,20 @@ export async function generateModuleContent(
   courseName: string,
   moduleSkeleton: any,
   provider: string = 'mistral',
-  onProgress?: (message: string) => void
+  onProgress?: (message: string) => void,
+  checkCancelled?: () => boolean
 ): Promise<any> {
   if (onProgress) onProgress(`Generating Module: ${moduleSkeleton.title}...`);
 
   const lessons = [];
   for (const lessonTitle of moduleSkeleton.lessonTitles) {
+    if (checkCancelled && checkCancelled()) throw new Error('Generation cancelled by user.');
     if (onProgress) onProgress(`Generating Lesson: ${lessonTitle}...`);
     const lesson = await generateLessonContent(courseName, moduleSkeleton.title, lessonTitle, provider);
     lessons.push(lesson);
   }
 
+  if (checkCancelled && checkCancelled()) throw new Error('Generation cancelled by user.');
   if (onProgress) onProgress(`Generating Quiz for: ${moduleSkeleton.title}...`);
   const quiz = await generateModuleQuiz(courseName, moduleSkeleton.title, moduleSkeleton.quizTopics, provider);
 
@@ -400,19 +403,31 @@ export async function generateCourseContent(
   const finalCourse: GeneratedCourse = { modules: [] };
 
   // Step 2: Generate Content for each module
-  for (let i = 0; i < totalModules; i++) {
-    const moduleSkeleton = skeleton.modules[i];
+  const CONCURRENCY_LIMIT = 3;
+  for (let i = 0; i < totalModules; i += CONCURRENCY_LIMIT) {
+    const chunk = skeleton.modules.slice(i, i + CONCURRENCY_LIMIT);
+    const chunkEnd = Math.min(i + CONCURRENCY_LIMIT, totalModules);
+
     if (onProgress) {
       const progress = 10 + Math.round((i / totalModules) * 90);
-      onProgress(progress, `Generating content for Module ${i + 1} of ${totalModules}: ${moduleSkeleton.title}...`);
+      onProgress(progress, `Generating content for Modules ${i + 1}-${chunkEnd} of ${totalModules}...`);
     }
 
     try {
-      const moduleContent = await generateModuleContent(courseName, moduleSkeleton, provider);
-      finalCourse.modules.push(moduleContent);
+      const chunkPromises = chunk.map(async (moduleSkeleton: any, idx: number) => {
+        const moduleContent = await generateModuleContent(courseName, moduleSkeleton, provider, undefined, () => false);
+        return { index: i + idx, content: moduleContent };
+      });
+
+      const results = await Promise.all(chunkPromises);
+      results.sort((a, b) => a.index - b.index);
+
+      for (const res of results) {
+        finalCourse.modules.push(res.content);
+      }
     } catch (error) {
-      console.error(`Failed to generate module ${i + 1}:`, error);
-      throw new Error(`Failed to generate content for Module ${i + 1}. Please try again.`);
+      console.error(`Failed to generate modules ${i + 1}-${chunkEnd}:`, error);
+      throw new Error(`Failed to generate content for Modules ${i + 1}-${chunkEnd}. Please try again.`);
     }
   }
 

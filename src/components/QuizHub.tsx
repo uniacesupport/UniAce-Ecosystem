@@ -6,6 +6,7 @@ import { Module } from '../types';
 import { useAuth } from '../context/AuthContext';
 
 interface QuizHubProps {
+  courseId?: string;
   onQuizComplete: (topicId: string, score: number) => void;
   syllabus: Module[];
 }
@@ -16,7 +17,7 @@ const MODULE_ICONS: Record<string, any> = {
   motion: Activity,
 };
 
-export default function QuizHub({ onQuizComplete, syllabus }: QuizHubProps) {
+export default function QuizHub({ courseId, onQuizComplete, syllabus }: QuizHubProps) {
   const { user } = useAuth();
   const [selectedModule, setSelectedModule] = useState<Module | null>(null);
 
@@ -88,6 +89,7 @@ export default function QuizHub({ onQuizComplete, syllabus }: QuizHubProps) {
 
       {selectedModule && (
         <QuizGenerator 
+          courseId={courseId}
           module={selectedModule} 
           onClose={() => setSelectedModule(null)} 
           onComplete={(score) => onQuizComplete(selectedModule.id, score)}

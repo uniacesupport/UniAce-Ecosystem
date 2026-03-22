@@ -56,7 +56,7 @@ export default function MasteryCenter({ progress, onBack, activeCourseId, syllab
       
       setIsLoadingReadiness(true);
       try {
-        const prediction = await AIService.predictExamReadiness(progress, syllabus);
+        const prediction = await AIService.predictExamReadiness(progress, syllabus, user?.uid);
         setReadiness(prediction);
       } catch (error) {
         console.error('Failed to fetch readiness prediction:', error);

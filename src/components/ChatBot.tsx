@@ -440,19 +440,24 @@ export default function ChatBot({
                   </div>
                 </>
               )}
-              <div className="space-y-2 text-left max-w-md mx-auto">
+              <div className="space-y-3 text-left max-w-md mx-auto w-full">
+                <div className="flex items-center gap-2 mb-4 px-2">
+                  <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                  <span className="text-xs font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wider">Trending in this Course</span>
+                </div>
                 {[
-                  "Explain the latest topic",
-                  "Give me a practice problem",
-                  "Reverse Feynman Protocol",
-                  "Summarize this module"
+                  { icon: "🔥", text: "Explain the core concept of this module simply" },
+                  { icon: "📊", text: "What are the most common exam questions for this?" },
+                  { icon: "🎯", text: "Create a quick practice quiz to test my knowledge" },
+                  { icon: "🧠", text: "Help me memorize the key formulas and definitions" }
                 ].map((item, idx) => (
                   <button 
                     key={idx}
-                    onClick={() => { setInput(item); }}
-                    className="w-full p-4 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-2xl text-left hover:border-emerald-500 dark:hover:border-emerald-500 hover:shadow-md transition-all group flex items-center justify-between"
+                    onClick={() => { setInput(item.text); }}
+                    className="w-full p-4 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-2xl text-left hover:border-emerald-500 dark:hover:border-emerald-500 hover:shadow-md transition-all group flex items-center gap-3"
                   >
-                    <span className="font-medium text-slate-700 dark:text-zinc-300 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">{item}</span>
+                    <span className="text-xl">{item.icon}</span>
+                    <span className="font-medium text-sm text-slate-700 dark:text-zinc-300 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors flex-1">{item.text}</span>
                     <ArrowRight size={16} className="text-slate-300 dark:text-zinc-700 group-hover:text-emerald-500 group-hover:translate-x-1 transition-all" />
                   </button>
                 ))}
@@ -794,18 +799,23 @@ export default function ChatBot({
                         </div>
                       </>
                     )}
-                    <div className="grid grid-cols-1 gap-2 w-full max-w-xs">
+                    <div className="flex flex-col gap-2 w-full max-w-xs text-left">
+                      <div className="flex items-center gap-2 mb-2 px-1">
+                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
+                        <span className="text-[10px] font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wider">Trending Questions</span>
+                      </div>
                       {[
-                        "Explain the latest topic",
-                        "Give me a practice problem",
-                        "Summarize this module"
+                        { icon: "🔥", text: "Explain the core concept simply" },
+                        { icon: "📊", text: "What are the common exam questions?" },
+                        { icon: "🎯", text: "Create a quick practice quiz" }
                       ].map((q, idx) => (
                         <button 
                           key={idx}
-                          onClick={() => { setInput(q); }}
-                          className="text-sm p-4 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-2xl text-slate-700 dark:text-zinc-300 font-bold hover:border-emerald-500 dark:hover:border-emerald-500 hover:text-emerald-600 dark:hover:text-emerald-400 transition-all text-left shadow-sm flex items-center justify-between group"
+                          onClick={() => { setInput(q.text); }}
+                          className="text-sm p-3 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-2xl text-slate-700 dark:text-zinc-300 font-medium hover:border-emerald-500 dark:hover:border-emerald-500 hover:text-emerald-600 dark:hover:text-emerald-400 transition-all text-left shadow-sm flex items-center gap-2 group"
                         >
-                          <span>{q}</span>
+                          <span className="text-base">{q.icon}</span>
+                          <span className="flex-1 text-xs">{q.text}</span>
                           <ArrowRight size={14} className="text-slate-300 dark:text-zinc-700 group-hover:text-emerald-500 group-hover:translate-x-1 transition-all" />
                         </button>
                       ))}

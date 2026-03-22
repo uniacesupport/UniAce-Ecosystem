@@ -203,15 +203,20 @@ const getAndValidateSparks = async (uid: string, email: string | undefined): Pro
       let startDate = userData.subscription_start_date;
       
       const createdAt = new Date(userData.createdAt?.toDate() || userData.created_at || now);
-      const isTrialActive = (now.getTime() - createdAt.getTime()) < (7 * 24 * 60 * 60 * 1000);
+      
+      // System-wide trial start date (March 19, 2026) to ensure all existing users get a trial
+      const TRIAL_SYSTEM_START_DATE = new Date('2026-03-19T00:00:00Z');
+      const trialStartDate = createdAt < TRIAL_SYSTEM_START_DATE ? TRIAL_SYSTEM_START_DATE : createdAt;
+      
+      const isTrialActive = (now.getTime() - trialStartDate.getTime()) < (7 * 24 * 60 * 60 * 1000);
       const dailyLimit = isTrialActive ? 999999 : 10;
 
       // Trial Logic: If trial is active, they are a Scholar
       if (isTrialActive && plan === 'free' && role !== 'admin') {
         plan = 'scholar';
         status = 'active';
-        startDate = createdAt.toISOString();
-        expiry = new Date(createdAt.getTime() + (7 * 24 * 60 * 60 * 1000)).toISOString();
+        startDate = trialStartDate.toISOString();
+        expiry = new Date(trialStartDate.getTime() + (7 * 24 * 60 * 60 * 1000)).toISOString();
       }
 
       // Check subscription expiration

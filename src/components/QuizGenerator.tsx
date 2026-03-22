@@ -4,11 +4,15 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Brain, Loader2, CheckCircle2, XCircle, ArrowRight, RefreshCw, Settings2, Bookmark, Timer, Flag, LayoutGrid, ChevronLeft, ChevronRight, Lock } from 'lucide-react';
 import MarkdownRenderer from './MarkdownRenderer';
 import { AIService } from '../services/ai';
+import { db } from '../firebase';
+import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
 import { usePremiumStatus } from '../hooks/usePremiumStatus';
 import PricingModal from './PricingModal';
+import { SRSService } from '../services/srsService';
 
 interface QuizGeneratorProps {
+  courseId?: string;
   module: Module;
   subTopic?: SubTopic;
   onClose: () => void;
@@ -19,7 +23,7 @@ interface QuizGeneratorProps {
   isProactive?: boolean;
 }
 
-export default function QuizGenerator({ module, subTopic, onClose, onComplete, onNextTopic, isNextTopicLocked, onBookmark, isProactive }: QuizGeneratorProps) {
+export default function QuizGenerator({ courseId, module, subTopic, onClose, onComplete, onNextTopic, isNextTopicLocked, onBookmark, isProactive }: QuizGeneratorProps) {
   const [step, setStep] = useState<'config' | 'loading' | 'quiz' | 'results'>('config');
   const [isClaimingReward, setIsClaimingReward] = useState(false);
   const [rewardMessage, setRewardMessage] = useState<string | null>(null);
@@ -74,13 +78,64 @@ export default function QuizGenerator({ module, subTopic, onClose, onComplete, o
     setStep('loading');
     try {
       const isAdaptive = mode === 'adaptive';
-      const data = await AIService.generateQuiz(module, subTopic, numQuestions, questionType, isAdaptive);
+      
+      // Fetch user skill level for adaptive quizzes
+      let userSkillLevel = 3; // Default to medium
+      if (isAdaptive && user && courseId && subTopic) {
+        try {
+          const srsRecord = await SRSService.getSRSRecord(user.uid, courseId, subTopic.id);
+          if (srsRecord) {
+            // Map repetitions to a skill level (1-5)
+            // 0 reps = level 1, 1-2 reps = level 2, 3-4 reps = level 3, 5-6 reps = level 4, 7+ reps = level 5
+            userSkillLevel = Math.min(5, Math.max(1, Math.floor(srsRecord.repetitions / 2) + 1));
+          }
+        } catch (error) {
+          console.error("Failed to fetch user skill level:", error);
+        }
+      }
+
+      // Lazy Load Content for Quiz Generation if missing
+      let moduleForQuiz = { ...module };
+      let subTopicForQuiz = subTopic ? { ...subTopic } : undefined;
+
+      if (courseId) {
+        if (subTopicForQuiz && !subTopicForQuiz.content) {
+          let lessonDoc = await getDoc(doc(db, `courses/${courseId}/modules/${module.id}/lessons`, subTopicForQuiz.id));
+          
+          if (!lessonDoc.exists() && subTopicForQuiz.id.includes('-')) {
+            const legacyId = subTopicForQuiz.id.split('-')[1];
+            if (legacyId) {
+              lessonDoc = await getDoc(doc(db, `courses/${courseId}/modules/${module.id}/lessons`, legacyId));
+            }
+          }
+
+          if (lessonDoc.exists() && lessonDoc.data().content) {
+            subTopicForQuiz.content = lessonDoc.data().content;
+          }
+        } else if (!subTopicForQuiz) {
+          // Module level quiz - fetch all lessons
+          const lessonsSnap = await getDocs(collection(db, `courses/${courseId}/modules/${module.id}/lessons`));
+          const lessonsContentMap: Record<string, string> = {};
+          lessonsSnap.forEach(doc => {
+            if (doc.data().content) {
+              lessonsContentMap[doc.id] = doc.data().content;
+            }
+          });
+          
+          moduleForQuiz.subTopics = moduleForQuiz.subTopics.map(st => ({
+            ...st,
+            content: st.content || lessonsContentMap[st.id] || ''
+          }));
+        }
+      }
+
+      const data = await AIService.generateQuiz(moduleForQuiz, subTopicForQuiz, numQuestions, questionType, isAdaptive, userSkillLevel);
       
       if (isAdaptive) {
         setAdaptiveQuestions(data);
-        const firstQ = data.find(q => q.difficulty === 3) || data[0];
+        const firstQ = data.find(q => q.difficulty === userSkillLevel) || data[0];
         setQuestions([firstQ]);
-        setCurrentDifficulty(firstQ.difficulty || 3);
+        setCurrentDifficulty(firstQ.difficulty || userSkillLevel);
       } else {
         setQuestions(data);
         if (mode === 'exam') {
@@ -170,6 +225,15 @@ export default function QuizGenerator({ module, subTopic, onClose, onComplete, o
     const percentage = Math.round((score / questions.length) * 100);
     if (onComplete) onComplete(percentage);
     setStep('results');
+
+    // Update Spaced Repetition System
+    if (courseId && subTopic) {
+      try {
+        await SRSService.updateSRS(courseId, subTopic.id, subTopic.title, percentage);
+      } catch (error) {
+        console.error('Failed to update SRS:', error);
+      }
+    }
 
     // Claim reward if proactive and score is decent (e.g., > 60%)
     if (isProactive && subTopic && percentage >= 60) {

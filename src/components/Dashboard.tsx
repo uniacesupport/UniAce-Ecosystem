@@ -13,6 +13,7 @@ import NotificationCenter from './NotificationCenter';
 import { useState, useEffect } from 'react';
 import { AIService } from '../services/ai';
 import { useNotifications } from '../hooks/useNotifications';
+import { SRSService, SRSRecord } from '../services/srsService';
 
 const THEME_COLORS: Record<string, { bg: string, text: string, bgHover: string, bgLight: string, shadow: string, border: string, borderHover: string, textLight: string }> = {
   blue: { bg: 'bg-blue-500', text: 'text-blue-600', bgHover: 'hover:bg-blue-600', bgLight: 'bg-blue-50', shadow: 'shadow-blue-500/20', border: 'border-blue-200', borderHover: 'hover:border-blue-200', textLight: 'text-blue-400' },
@@ -52,6 +53,8 @@ export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSele
   const [dailyMission, setDailyMission] = useState<SmartMission | null>(null);
   const [missionCourseId, setMissionCourseId] = useState<CourseId | null>(null);
   const [isLoadingMission, setIsLoadingMission] = useState(false);
+  const [dueReviews, setDueReviews] = useState<SRSRecord[]>([]);
+  const [isLoadingReviews, setIsLoadingReviews] = useState(false);
 
   useEffect(() => {
     if (isTrialActive && daysRemaining <= 2) {
@@ -61,6 +64,22 @@ export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSele
       }
     }
   }, [isTrialActive, daysRemaining, notifications, sendNotification]);
+
+  useEffect(() => {
+    const fetchReviews = async () => {
+      if (!user) return;
+      setIsLoadingReviews(true);
+      try {
+        const reviews = await SRSService.getDueReviews(user.uid);
+        setDueReviews(reviews);
+      } catch (error) {
+        console.error('Failed to fetch due reviews:', error);
+      } finally {
+        setIsLoadingReviews(false);
+      }
+    };
+    fetchReviews();
+  }, [user]);
 
   const theme = THEME_COLORS[profile?.themeColor || 'emerald'] || THEME_COLORS.emerald;
 
@@ -183,6 +202,55 @@ export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSele
 
         {/* Quick Access Grid */}
         <div className="flex flex-col gap-8">
+          {/* Due Reviews Section */}
+          {dueReviews.length > 0 && (
+            <section className="w-full">
+              <div className="flex items-center gap-3 mb-6">
+                <RefreshCw className="text-emerald-600 dark:text-emerald-400" size={24} />
+                <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Due for Review</h2>
+                <span className="bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 px-3 py-1 rounded-full text-xs font-bold">
+                  {dueReviews.length} Topics
+                </span>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {dueReviews.slice(0, 3).map((review) => (
+                  <motion.div
+                    key={review.topicId}
+                    whileHover={{ y: -2 }}
+                    className="bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-emerald-100 dark:border-emerald-900/30 shadow-sm hover:shadow-md transition-all cursor-pointer group"
+                    onClick={() => {
+                      if (review.courseId !== activeCourseId) {
+                        onCourseSelect(review.courseId as CourseId);
+                      }
+                      setTimeout(() => {
+                        if (onSubTopicSelect) {
+                          onSubTopicSelect(review.topicId);
+                        }
+                      }, 50);
+                    }}
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="bg-emerald-50 dark:bg-emerald-900/20 p-2 rounded-lg text-emerald-600 dark:text-emerald-400">
+                        <Brain size={20} />
+                      </div>
+                      <span className="text-xs font-bold text-slate-400 dark:text-slate-500">
+                        Lvl {review.repetitions}
+                      </span>
+                    </div>
+                    <h3 className="font-bold text-slate-900 dark:text-white mb-1 line-clamp-1">{review.topicTitle}</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
+                      Review to strengthen memory
+                    </p>
+                    <div className="flex items-center text-emerald-600 dark:text-emerald-400 text-sm font-bold group-hover:translate-x-1 transition-transform">
+                      Review Now <ArrowRight size={16} className="ml-1" />
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+            </section>
+          )}
+
           {/* Daily Mission Card (AI Powered) */}
           <section className="w-full">
             <div className="flex items-center gap-3 mb-6">
