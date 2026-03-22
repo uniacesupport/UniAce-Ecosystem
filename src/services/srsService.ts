@@ -92,14 +92,26 @@ export const SRSService = {
   },
 
   /**
+   * Fetches an SRS record for a specific user and topic.
+   */
+  async getSRSRecord(userId: string, courseId: string, topicId: string): Promise<SRSRecord | null> {
+    const srsRef = doc(db, `users/${userId}/spaced_repetition`, topicId);
+    const srsSnap = await getDoc(srsRef);
+    if (srsSnap.exists()) {
+      return srsSnap.data() as SRSRecord;
+    }
+    return null;
+  },
+
+  /**
    * Fetches all topics that are currently due for review.
    */
-  async getDueReviews(): Promise<SRSRecord[]> {
-    const user = auth.currentUser;
-    if (!user) return [];
+  async getDueReviews(userId?: string): Promise<SRSRecord[]> {
+    const uid = userId || auth.currentUser?.uid;
+    if (!uid) return [];
 
     const now = new Date().toISOString();
-    const srsRef = collection(db, `users/${user.uid}/spaced_repetition`);
+    const srsRef = collection(db, `users/${uid}/spaced_repetition`);
     
     // Query for items where nextReviewDate is in the past
     const q = query(srsRef, where("nextReviewDate", "<=", now));

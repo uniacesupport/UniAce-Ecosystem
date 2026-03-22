@@ -131,6 +131,10 @@ export default function QuizGenerator({ courseId, module, subTopic, onClose, onC
 
       const data = await AIService.generateQuiz(moduleForQuiz, subTopicForQuiz, numQuestions, questionType, isAdaptive, userSkillLevel);
       
+      if (!Array.isArray(data) || data.length === 0) {
+        throw new Error("No questions generated. Please try again.");
+      }
+
       if (isAdaptive) {
         setAdaptiveQuestions(data);
         const firstQ = data.find(q => q.difficulty === userSkillLevel) || data[0];

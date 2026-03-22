@@ -479,7 +479,7 @@ export default function ContentArea({
         onClose={() => setIsMiniTeacherOpen(false)}
         onAction={handleMiniTeacherAction}
         module={module}
-        subTopic={activeSubTopic}
+        subTopic={{ ...activeSubTopic, content: fetchedContent || '' }}
         mode={miniTeacherMode}
         progress={progress}
       />

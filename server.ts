@@ -1112,7 +1112,7 @@ app.post('/api/openrouter/generate', verifyAuth, async (req, res) => {
   if (systemConfig.aiKillswitch) {
     return res.status(503).json({ error: 'AI services are currently disabled by administrator.' });
   }
-  const { prompt, systemInstruction, responseFormat, maxTokens } = req.body;
+  const { prompt, systemInstruction, responseFormat, maxTokens, complexity } = req.body;
   
   try {
     const messages = [];
@@ -1138,17 +1138,27 @@ app.post('/api/openrouter/generate', verifyAuth, async (req, res) => {
     const groqBreaker = groqProvider ? new CircuitBreaker(groqProvider) : null;
 
     const providers = [];
-    // For content generation, Mistral is often best, then Gemini
-    if (mistralBreaker) providers.push(mistralBreaker);
-    if (geminiOpenRouterBreaker) providers.push(geminiOpenRouterBreaker);
-    if (groqBreaker) providers.push(groqBreaker);
+    if (complexity === 'quiz') {
+      // Prioritize Groq for quizzes as requested for speed and JSON reliability
+      if (groqBreaker) providers.push(groqBreaker);
+      if (mistralBreaker) providers.push(mistralBreaker);
+      if (geminiOpenRouterBreaker) providers.push(geminiOpenRouterBreaker);
+    } else {
+      // For general content generation, Mistral is often best, then Gemini
+      if (mistralBreaker) providers.push(mistralBreaker);
+      if (geminiOpenRouterBreaker) providers.push(geminiOpenRouterBreaker);
+      if (groqBreaker) providers.push(groqBreaker);
+    }
 
     let aiResponse;
     let lastError;
 
     for (const provider of providers) {
       try {
-        aiResponse = await provider.generate(messages, { complexity: 'high' });
+        aiResponse = await provider.generate(messages, { 
+          complexity: complexity === 'quiz' ? 'high' : 'high', // Use high for quality
+          jsonMode: responseFormat === 'json'
+        });
         if (aiResponse) break;
       } catch (err) {
         lastError = err;

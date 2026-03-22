@@ -9,7 +9,7 @@ const getAuthToken = async () => {
   }
 };
 
-const callAI = async (prompt: any, systemInstruction?: string, responseFormat?: 'json', maxTokens?: number) => {
+const callAI = async (prompt: any, systemInstruction?: string, responseFormat?: 'json', maxTokens?: number, complexity: 'standard' | 'high' | 'quiz' = 'standard') => {
   const token = await getAuthToken();
   const response = await fetch('/api/openrouter/generate', {
     method: 'POST',
@@ -21,7 +21,8 @@ const callAI = async (prompt: any, systemInstruction?: string, responseFormat?: 
       prompt: typeof prompt === 'string' ? prompt : JSON.stringify(prompt),
       systemInstruction,
       responseFormat,
-      maxTokens
+      maxTokens,
+      complexity
     })
   });
   
@@ -34,28 +35,47 @@ const callAI = async (prompt: any, systemInstruction?: string, responseFormat?: 
 };
 
 const extractJSON = (text: string) => {
+  // 1. Remove markdown code blocks if present
   let cleaned = text.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
   
-  // JSON Repair: AI often fails to escape backslashes in LaTeX
-  // This regex finds backslashes that are NOT followed by a valid JSON escape character and escapes them
-  // Valid escapes: \", \\, \/, \b, \f, \n, \r, \t, \uXXXX
-  cleaned = cleaned.replace(/\\(?![\\\/bfnrtu"]|u[0-9a-fA-F]{4})/g, '\\\\');
-
+  // 2. Try parsing directly first
   try {
     return JSON.parse(cleaned);
   } catch (e) {
-    // Fallback: try to find a JSON object or array using regex
+    // 3. If direct parse fails, try to find the JSON structure using regex
     const match = cleaned.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
     if (match) {
+      const potentialJson = match[0];
       try {
-        return JSON.parse(match[0]);
+        return JSON.parse(potentialJson);
       } catch (e2) {
-        console.error("Failed to parse extracted JSON:", match[0]);
-        throw e2;
+        // 4. Last resort: Repair common LaTeX backslash issues in JSON
+        // AI often fails to escape backslashes correctly for JSON strings.
+        // We only want to escape backslashes that are NOT already part of a valid escape sequence.
+        // Valid JSON escapes: \", \\, \/, \b, \f, \n, \r, \t, \uXXXX
+        const repaired = potentialJson.replace(/\\(?![\\\/bfnrtu"]|u[0-9a-fA-F]{4})/g, '\\\\');
+        try {
+          return JSON.parse(repaired);
+        } catch (e3) {
+          console.error("Failed to parse AI JSON response after all attempts.");
+          console.error("Original text:", text);
+          console.error("Extracted segment:", potentialJson);
+          throw new Error("AI returned invalid JSON format.");
+        }
       }
     }
     throw e;
   }
+};
+
+const ensureArray = (data: any, fallback: any[] = []): any[] => {
+  if (Array.isArray(data)) return data;
+  if (data && typeof data === 'object') {
+    // Look for common keys like 'questions', 'quiz', 'data', 'flashcards'
+    const possibleArray = data.questions || data.quiz || data.data || data.flashcards || Object.values(data).find(v => Array.isArray(v));
+    if (Array.isArray(possibleArray)) return possibleArray;
+  }
+  return fallback;
 };
 
 export const AIService = {
@@ -150,7 +170,8 @@ Student Profile:
 `;
     }
 
-    const truncatedContent = subTopic.content.length > 12000 ? subTopic.content.substring(0, 12000) + '...' : subTopic.content;
+    const content = subTopic.content || '';
+    const truncatedContent = content.length > 12000 ? content.substring(0, 12000) + '...' : content;
 
     if (mode === 'proactive') {
       prompt = `
@@ -311,12 +332,13 @@ ALWAYS use LaTeX for ALL mathematical formulas and variables (e.g., use $x$ inst
       }
     ]`;
 
-    const response = await callAI(prompt, undefined, 'json', 2500);
+    const response = await callAI(prompt, undefined, 'json', 2500, 'quiz');
     try {
-      return extractJSON(response.text || "[]");
+      const data = extractJSON(response.text || "[]");
+      return ensureArray(data);
     } catch (e) {
-      console.error("Failed to parse AI JSON response:", response.text);
-      throw new Error("AI returned invalid JSON format.");
+      console.error("Quiz generation error:", e);
+      throw e;
     }
   },
 
@@ -341,12 +363,12 @@ ALWAYS use LaTeX for ALL mathematical formulas and variables (e.g., use $x$ inst
       "hint": "string"
     }`;
 
-    const response = await callAI(prompt, undefined, 'json', 1000);
+    const response = await callAI(prompt, undefined, 'json', 1000, 'quiz');
     try {
       return extractJSON(response.text || "{}");
     } catch (e) {
-      console.error("Failed to parse AI JSON response:", response.text);
-      throw new Error("AI returned invalid JSON format.");
+      console.error("Quick check generation error:", e);
+      throw e;
     }
   },
 
@@ -383,12 +405,13 @@ ALWAYS use LaTeX for ALL mathematical formulas and variables (e.g., use $x$ inst
       "subTopicId": "${subTopic ? subTopic.id : ''}"
     }`;
 
-    const response = await callAI(prompt, undefined, 'json', 2000);
+    const response = await callAI(prompt, undefined, 'json', 2000, 'quiz');
     try {
-      return extractJSON(response.text || "[]");
+      const data = extractJSON(response.text || "[]");
+      return ensureArray(data);
     } catch (e) {
-      console.error("Failed to parse AI JSON response:", response.text);
-      throw new Error("AI returned invalid JSON format.");
+      console.error("Flashcard generation error:", e);
+      throw e;
     }
   },
 
@@ -426,12 +449,12 @@ ALWAYS use LaTeX for ALL mathematical formulas and variables (e.g., use $x$ inst
       "type": "review" | "new" | "mastery"
     }`;
 
-    const response = await callAI(prompt, undefined, 'json');
+    const response = await callAI(prompt, undefined, 'json', undefined, 'quiz');
     try {
       return extractJSON(response.text || "null");
     } catch (e) {
-      console.error("Failed to parse AI JSON response:", response.text);
-      throw new Error("AI returned invalid JSON format.");
+      console.error("Smart recommendation error:", e);
+      throw e;
     }
   },
 
@@ -490,12 +513,12 @@ ALWAYS use LaTeX for ALL mathematical formulas and variables (e.g., use $x$ inst
       "weakestArea": "The topic they need to focus on most to improve their chances."
     }`;
 
-    const response = await callAI(prompt, undefined, 'json');
+    const response = await callAI(prompt, undefined, 'json', undefined, 'quiz');
     try {
       return extractJSON(response.text || "null");
     } catch (e) {
-      console.error("Failed to parse AI JSON response:", response.text);
-      throw new Error("AI returned invalid JSON format.");
+      console.error("Exam readiness prediction error:", e);
+      throw e;
     }
   },
 
@@ -573,12 +596,12 @@ ALWAYS use LaTeX for ALL mathematical formulas and variables (e.g., use $x$ inst
       "tips": ["Tip 1", "Tip 2"]
     }`;
 
-    const response = await callAI(prompt, undefined, 'json');
+    const response = await callAI(prompt, undefined, 'json', undefined, 'quiz');
     try {
       return extractJSON(response.text || "null");
     } catch (e) {
-      console.error("Failed to parse AI JSON response:", response.text);
-      throw new Error("AI returned invalid JSON format.");
+      console.error("Study plan generation error:", e);
+      throw e;
     }
   },
 
