@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { UserProgress, Achievement, Bookmark, CourseId, AIPersonality } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../firebase';
-import { doc, setDoc, onSnapshot, getDoc, updateDoc, arrayUnion } from 'firebase/firestore';
+import { doc, setDoc, onSnapshot, getDoc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { GamificationService, BADGES } from '../services/gamification';
 
 const INITIAL_ACHIEVEMENTS: Achievement[] = BADGES.map(b => ({
@@ -94,10 +94,7 @@ export function useUserProgress() {
       }
     });
 
-    // Merge bookmarks by ID
-    const bookmarkMap = new Map<string, any>();
-    [...(local.bookmarks || []), ...(server.bookmarks || [])].forEach(b => bookmarkMap.set(b.id, b));
-    const mergedBookmarks = Array.from(bookmarkMap.values());
+    const mergedBookmarks = server.bookmarks || local.bookmarks || [];
 
     // Merge achievements
     const achievementMap = new Map<string, Achievement>();
@@ -109,10 +106,7 @@ export function useUserProgress() {
     });
     const mergedAchievements = Array.from(achievementMap.values());
 
-    // Merge assignments by ID
-    const assignmentMap = new Map<string, any>();
-    [...(local.assignments || []), ...(server.assignments || [])].forEach(a => assignmentMap.set(a.id, a));
-    const mergedAssignments = Array.from(assignmentMap.values());
+    const mergedAssignments = server.assignments || local.assignments || [];
 
     return {
       xp: Math.max(local.xp, server.xp),
@@ -126,7 +120,7 @@ export function useUserProgress() {
       studyTime: mergedStudyTime,
       topicLastStudied: mergedTopicLastStudied,
       bookmarks: mergedBookmarks,
-      enrolledCourses: Array.from(new Set([...(local.enrolledCourses || []), ...(server.enrolledCourses || [])])),
+      enrolledCourses: server.enrolledCourses || local.enrolledCourses || [],
       assignments: mergedAssignments,
     };
   }, []);
@@ -140,15 +134,16 @@ export function useUserProgress() {
     const unsubscribe = onSnapshot(userDocRef, (docSnap) => {
       if (docSnap.exists()) {
         const serverData = docSnap.data() as UserProgress;
-        const mergedData = mergeProgress(progress, {
-          ...INITIAL_PROGRESS,
-          ...serverData,
-          topicLastStudied: serverData.topicLastStudied || {},
-          bookmarks: serverData.bookmarks || []
-        });
-
-        // Only update if data is different to avoid loops/re-renders
+        
         setProgress(prev => {
+          const mergedData = mergeProgress(prev, {
+            ...INITIAL_PROGRESS,
+            ...serverData,
+            topicLastStudied: serverData.topicLastStudied || {},
+            bookmarks: serverData.bookmarks || []
+          });
+
+          // Only update if data is actually different to avoid unnecessary re-renders
           if (JSON.stringify(prev) !== JSON.stringify(mergedData)) {
             return mergedData;
           }
@@ -372,6 +367,33 @@ export function useUserProgress() {
     }
   };
 
+  const unenrollCourse = async (courseId: CourseId) => {
+    setProgress(prev => {
+      if (!prev.enrolledCourses?.includes(courseId)) return prev;
+      
+      // Log unenrollment
+      import('../services/logService').then(({ LogService }) => {
+        LogService.log('info', 'user', `Unenrolled from course: ${courseId}`);
+      });
+
+      return {
+        ...prev,
+        enrolledCourses: prev.enrolledCourses.filter(id => id !== courseId)
+      };
+    });
+
+    if (user && isOnline) {
+      try {
+        const userDocRef = doc(db, 'users', user.uid);
+        await updateDoc(userDocRef, {
+          enrolledCourses: arrayRemove(courseId)
+        });
+      } catch (error: any) {
+        console.error("Error updating enrolled courses:", error);
+      }
+    }
+  };
+
   const updateSRSData = (cardId: string, data: any) => {
     setProgress(prev => ({
       ...prev,
@@ -389,5 +411,5 @@ export function useUserProgress() {
     }));
   };
 
-  return { progress, addXp, updateMastery, recordStudyTime, unlockAchievement, markTopicAsStudied, addBookmark, removeBookmark, enrollCourse, updateSRSData, updateAIPersonality, isOnline };
+  return { progress, addXp, updateMastery, recordStudyTime, unlockAchievement, markTopicAsStudied, addBookmark, removeBookmark, enrollCourse, unenrollCourse, updateSRSData, updateAIPersonality, isOnline };
 }

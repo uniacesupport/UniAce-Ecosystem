@@ -32,6 +32,28 @@ export const LogService = {
 
       await addDoc(collection(db, 'system_logs'), logEntry);
     } catch (error) {
+      if (error instanceof Error && error.message.includes('insufficient permissions')) {
+        const errInfo = {
+          error: error.message,
+          operationType: 'create',
+          path: 'system_logs',
+          authInfo: {
+            userId: auth.currentUser?.uid,
+            email: auth.currentUser?.email,
+            emailVerified: auth.currentUser?.emailVerified,
+            isAnonymous: auth.currentUser?.isAnonymous,
+            tenantId: auth.currentUser?.tenantId,
+            providerInfo: auth.currentUser?.providerData.map(provider => ({
+              providerId: provider.providerId,
+              displayName: provider.displayName,
+              email: provider.email,
+              photoUrl: provider.photoURL
+            })) || []
+          }
+        };
+        console.error('Firestore Error: ', JSON.stringify(errInfo));
+        throw new Error(JSON.stringify(errInfo));
+      }
       console.error('Failed to write system log:', error);
     }
   },

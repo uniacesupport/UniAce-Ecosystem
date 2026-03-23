@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Book, Layers, Activity, ArrowRight, GraduationCap, ArrowLeft, Wand2, Lock } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Module, CourseId } from '../types';
@@ -14,6 +15,7 @@ interface CourseSyllabusProps {
   objectives?: string[];
   isEnrolled: boolean;
   onEnroll: () => void;
+  onUnenroll?: () => void;
   onRegenerate?: () => void;
   regenerationProgress?: number;
   regenerationStatus?: string;
@@ -34,6 +36,7 @@ export default function CourseSyllabus({
   objectives = [], 
   isEnrolled, 
   onEnroll, 
+  onUnenroll,
   onRegenerate,
   regenerationProgress = 0,
   regenerationStatus = ''
@@ -42,6 +45,7 @@ export default function CourseSyllabus({
   const { isPremium } = usePremiumStatus();
   const isAdmin = profile?.role === 'admin' || user?.email === 'olalekan4565@gmail.com' || user?.email === 'uniace.support@gmail.com';
   const isLocked = !isPremium && !isAdmin;
+  const [showUnenrollConfirm, setShowUnenrollConfirm] = useState(false);
 
   return (
     <div className="flex-1 overflow-y-auto bg-slate-50 dark:bg-zinc-950 p-4 sm:p-6 lg:p-12 pb-24 lg:pb-12 transition-colors">
@@ -105,10 +109,18 @@ export default function CourseSyllabus({
             
             <div className="shrink-0">
               {isEnrolled ? (
-                <div className="inline-flex items-center gap-2 px-6 py-3 rounded-2xl bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 font-bold border border-emerald-200 dark:border-emerald-800">
-                  <Activity size={20} />
-                  <span>Enrolled</span>
-                </div>
+                <button
+                  onClick={() => {
+                    if (onUnenroll) {
+                      setShowUnenrollConfirm(true);
+                    }
+                  }}
+                  className="inline-flex items-center gap-2 px-6 py-3 rounded-2xl bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-900/30 dark:hover:text-red-400 font-bold border border-emerald-200 dark:border-emerald-800 hover:border-red-200 dark:hover:border-red-800 transition-colors group"
+                >
+                  <Activity size={20} className="group-hover:hidden" />
+                  <span className="group-hover:hidden">Enrolled</span>
+                  <span className="hidden group-hover:inline">Unenroll</span>
+                </button>
               ) : (
                 <button
                   onClick={onEnroll}
@@ -201,6 +213,39 @@ export default function CourseSyllabus({
           </div>
         </section>
       </div>
+
+      {/* Unenroll Confirmation Modal */}
+      {showUnenrollConfirm && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white dark:bg-zinc-900 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl border border-slate-200 dark:border-zinc-800"
+          >
+            <h3 className="text-2xl font-bold text-slate-900 dark:text-white mb-4">Unenroll Course?</h3>
+            <p className="text-slate-600 dark:text-zinc-400 mb-8">
+              Are you sure you want to unenroll from this course? Your progress will be saved, but the course will be removed from your dashboard.
+            </p>
+            <div className="flex gap-4 justify-end">
+              <button
+                onClick={() => setShowUnenrollConfirm(false)}
+                className="px-6 py-3 rounded-xl font-bold text-slate-600 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setShowUnenrollConfirm(false);
+                  if (onUnenroll) onUnenroll();
+                }}
+                className="px-6 py-3 rounded-xl font-bold bg-red-500 hover:bg-red-600 text-white transition-colors shadow-lg shadow-red-500/30"
+              >
+                Unenroll
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 }

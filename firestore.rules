@@ -22,7 +22,8 @@ service cloud.firestore {
     }
     
     function isEditor() {
-      return isAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'editor'];
+      let isRoleEditor = isAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'editor'];
+      return isAdmin() || isRoleEditor;
     }
 
     function hasRequiredFields(fields) {
@@ -196,6 +197,11 @@ service cloud.firestore {
       }
     }
 
+    match /archived_courses/{courseId} {
+      allow read: if isEditor();
+      allow write: if isEditor();
+    }
+
     match /analytics/{docId} {
       allow read, write: if isAdmin();
     }
@@ -206,9 +212,14 @@ service cloud.firestore {
 
     match /system_logs/{logId} {
       allow read: if isAdmin();
-      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid &&
+      allow create: if isAuthenticated() && 
+                    (request.resource.data.userId == request.auth.uid || isAdmin()) &&
                     (!('message' in request.resource.data) || (request.resource.data.message is string && request.resource.data.message.size() < 5000)) &&
-                    (!('details' in request.resource.data) || (request.resource.data.details is string && request.resource.data.details.size() < 10000) || request.resource.data.details is map);
+                    (!('details' in request.resource.data) || 
+                      request.resource.data.details == null || 
+                      (request.resource.data.details is string && request.resource.data.details.size() < 10000) || 
+                      request.resource.data.details is map
+                    );
       allow update, delete: if false;
     }
 

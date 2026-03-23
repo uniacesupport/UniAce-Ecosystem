@@ -19,6 +19,32 @@ import { LogService, SystemLog } from '../services/logService';
 
 export default function AdminDashboard() {
   const { courses, refreshCourses } = useCourses();
+  const [archivedCourses, setArchivedCourses] = useState<Record<string, Course>>({});
+  const [showArchived, setShowArchived] = useState(false);
+  const [isLoadingArchived, setIsLoadingArchived] = useState(false);
+
+  const fetchArchivedCourses = async () => {
+    if (!db) return;
+    setIsLoadingArchived(true);
+    try {
+      const querySnapshot = await getDocs(collection(db, 'archived_courses'));
+      const archived: Record<string, Course> = {};
+      querySnapshot.forEach((doc) => {
+        archived[doc.id] = doc.data() as Course;
+      });
+      setArchivedCourses(archived);
+    } catch (error) {
+      console.error("Error fetching archived courses:", error);
+    } finally {
+      setIsLoadingArchived(false);
+    }
+  };
+
+  useEffect(() => {
+    if (showArchived) {
+      fetchArchivedCourses();
+    }
+  }, [showArchived]);
   const { user } = useAuth();
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -737,25 +763,78 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleRestoreCourse = async (courseId: string) => {
+    try {
+      if (!db) throw new Error("Firestore not initialized");
+      const courseToRestore = archivedCourses[courseId];
+      if (!courseToRestore) return;
+
+      // Write back to courses
+      await setDoc(doc(db, 'courses', courseId), courseToRestore);
+      
+      // Remove from archived_courses
+      await deleteDoc(doc(db, 'archived_courses', courseId));
+      
+      await refreshCourses();
+      await fetchArchivedCourses();
+      showToast(`Course ${courseId} restored successfully.`, "success");
+    } catch (error) {
+      console.error("Error restoring course:", error);
+      showToast("Failed to restore course.", "error");
+    }
+  };
+
   const handleDeleteCourse = async (courseId: string) => {
     setConfirmModal({
-      title: "Delete Course",
-      message: `Are you sure you want to delete course ${courseId}? This action cannot be undone.`,
+      title: "Archive Course",
+      message: `Are you sure you want to archive course ${courseId}? It will be moved to the Archived Courses tab and can be restored later.`,
       onConfirm: async () => {
         try {
           if (!db) throw new Error("Firestore not initialized");
-          // Use a soft delete (deleted: true) to handle default courses correctly
+          const courseToArchive = courses[courseId];
+          if (courseToArchive) {
+            await setDoc(doc(db, 'archived_courses', courseId), courseToArchive);
+          }
+          
+          // Overwrite the course document with a tiny tombstone to prevent data leakage
           await setDoc(doc(db, 'courses', courseId), { 
             id: courseId,
             deleted: true,
             deletedAt: new Date().toISOString()
-          }, { merge: true });
+          });
           
           await refreshCourses();
-          showToast(`Course ${courseId} deleted successfully.`, "success");
+          showToast(`Course ${courseId} archived successfully.`, "success");
         } catch (error) {
-          console.error("Error deleting course:", error);
-          showToast("Failed to delete course.", "error");
+          console.error("Error archiving course:", error);
+          showToast("Failed to archive course.", "error");
+        }
+        setConfirmModal(null);
+      }
+    });
+  };
+
+  const handlePermanentDeleteCourse = async (courseId: string) => {
+    setConfirmModal({
+      title: "Permanent Delete",
+      message: `Are you sure you want to permanently delete course ${courseId}? This action CANNOT be undone.`,
+      onConfirm: async () => {
+        try {
+          if (!db) throw new Error("Firestore not initialized");
+          
+          // Delete from archived_courses
+          await deleteDoc(doc(db, 'archived_courses', courseId));
+          
+          // Delete the tombstone from courses
+          // Note: This does not delete subcollections (modules, lessons, etc.).
+          // In a production environment, a Cloud Function should be triggered to recursively delete subcollections.
+          await deleteDoc(doc(db, 'courses', courseId));
+          
+          await fetchArchivedCourses();
+          showToast(`Course ${courseId} permanently deleted.`, "success");
+        } catch (error) {
+          console.error("Error permanently deleting course:", error);
+          showToast("Failed to permanently delete course.", "error");
         }
         setConfirmModal(null);
       }
@@ -1814,10 +1893,13 @@ export default function AdminDashboard() {
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
               <BookOpen className="text-emerald-500" size={24} />
-              Active Courses
+              {showArchived ? 'Archived Courses' : 'Active Courses'}
             </h2>
-            <button className="text-sm font-bold text-emerald-600 dark:text-emerald-400 hover:underline">
-              View All
+            <button 
+              onClick={() => setShowArchived(!showArchived)}
+              className="text-sm font-bold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1"
+            >
+              {showArchived ? 'View Active' : 'View Archived'}
             </button>
           </div>
 
@@ -1829,45 +1911,71 @@ export default function AdminDashboard() {
             />
           )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {Object.values(courses).map((course) => (
-              <div key={course.id} className="p-4 rounded-2xl border border-slate-200 dark:border-slate-700 hover:border-emerald-500 dark:hover:border-emerald-500 transition-colors flex items-start justify-between group">
-                <div>
-                  <h3 className="font-bold text-slate-900 dark:text-white">{course.title}</h3>
-                  <p className="text-sm text-slate-500 mt-1 line-clamp-1">{course.description}</p>
-                  <div className="flex items-center gap-3 mt-3">
-                    <span className="text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-2 py-1 rounded-md">
-                      {course.syllabus?.length || 0} Modules
-                    </span>
-                    <span className="text-xs font-medium bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-2 py-1 rounded-md">
-                      Published
-                    </span>
+            {isLoadingArchived && showArchived ? (
+              <div className="col-span-2 text-center py-8 text-slate-500">Loading archived courses...</div>
+            ) : (
+              (showArchived ? Object.values(archivedCourses) : Object.values(courses)).map((course) => (
+                <div key={course.id} className="p-4 rounded-2xl border border-slate-200 dark:border-slate-700 hover:border-emerald-500 dark:hover:border-emerald-500 transition-colors flex items-start justify-between group">
+                  <div>
+                    <h3 className="font-bold text-slate-900 dark:text-white">{course.title}</h3>
+                    <p className="text-sm text-slate-500 mt-1 line-clamp-1">{course.description}</p>
+                    <div className="flex items-center gap-3 mt-3">
+                      <span className="text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-2 py-1 rounded-md">
+                        {course.syllabus?.length || 0} Modules
+                      </span>
+                      <span className={`text-xs font-medium px-2 py-1 rounded-md ${showArchived ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400' : 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'}`}>
+                        {showArchived ? 'Archived' : 'Published'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {!showArchived && (
+                      <>
+                        <button 
+                          onClick={() => handleSyncWithConstants(course.id)}
+                          className="p-2 text-slate-400 hover:text-indigo-500"
+                          title="Sync with Constants (Force 10 Modules)"
+                        >
+                          <Activity size={18} />
+                        </button>
+                        <button 
+                          onClick={() => handleEditCourse(course)}
+                          className="p-2 text-slate-400 hover:text-emerald-500"
+                          title="Edit Course"
+                        >
+                          <Edit2 size={18} />
+                        </button>
+                        <button 
+                          onClick={() => handleDeleteCourse(course.id)}
+                          className="p-2 text-slate-400 hover:text-red-500"
+                          title="Archive Course"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </>
+                    )}
+                    {showArchived && (
+                      <>
+                        <button 
+                          onClick={() => handleRestoreCourse(course.id)}
+                          className="p-2 text-slate-400 hover:text-emerald-500"
+                          title="Restore Course"
+                        >
+                          <RefreshCw size={18} />
+                        </button>
+                        <button 
+                          onClick={() => handlePermanentDeleteCourse(course.id)}
+                          className="p-2 text-slate-400 hover:text-red-500"
+                          title="Permanently Delete Course"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
-                <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button 
-                    onClick={() => handleSyncWithConstants(course.id)}
-                    className="p-2 text-slate-400 hover:text-indigo-500"
-                    title="Sync with Constants (Force 10 Modules)"
-                  >
-                    <Activity size={18} />
-                  </button>
-                  <button 
-                    onClick={() => handleEditCourse(course)}
-                    className="p-2 text-slate-400 hover:text-emerald-500"
-                    title="Edit Course"
-                  >
-                    <Edit2 size={18} />
-                  </button>
-                  <button 
-                    onClick={() => handleDeleteCourse(course.id)}
-                    className="p-2 text-slate-400 hover:text-red-500"
-                    title="Delete Course"
-                  >
-                    <Trash2 size={18} />
-                  </button>
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
       </div>

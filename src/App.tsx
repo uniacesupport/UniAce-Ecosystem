@@ -39,7 +39,7 @@ export default function App() {
   console.log('App.tsx: Rendering...');
   const { isConfigured, user, profile, loading, signInWithGoogle } = useAuth();
   const { courses, refreshCourses } = useCourses();
-  const { progress, addXp, updateMastery, recordStudyTime, addBookmark, removeBookmark, enrollCourse, updateAIPersonality, isOnline } = useUserProgress();
+  const { progress, addXp, updateMastery, recordStudyTime, addBookmark, removeBookmark, enrollCourse, unenrollCourse, updateAIPersonality, isOnline } = useUserProgress();
   const [activeCourseId, setActiveCourseId] = useState<CourseId | null>(null);
   const [activeView, setActiveView] = useState<View>('hub');
   const [activeSubject, setActiveSubject] = useState<Subject>('Mathematics');
@@ -253,6 +253,13 @@ export default function App() {
             onEnroll={() => {
               if (activeCourseId && activeCourse) {
                 enrollCourse(activeCourseId, activeCourse.title, activeCourse.description);
+              }
+            }}
+            onUnenroll={() => {
+              if (activeCourseId) {
+                unenrollCourse(activeCourseId);
+                setActiveCourseId(null);
+                setActiveView('hub');
               }
             }}
             onRegenerate={async () => {
