@@ -72,8 +72,12 @@ const ensureArray = (data: any, fallback: any[] = []): any[] => {
   if (Array.isArray(data)) return data;
   if (data && typeof data === 'object') {
     // Look for common keys like 'questions', 'quiz', 'data', 'flashcards'
-    const possibleArray = data.questions || data.quiz || data.data || data.flashcards || Object.values(data).find(v => Array.isArray(v));
+    const possibleArray = data.questions || data.quiz || data.data || data.flashcards;
     if (Array.isArray(possibleArray)) return possibleArray;
+    
+    // Try to find any property that is an array
+    const firstArray = Object.values(data).find(v => Array.isArray(v));
+    if (Array.isArray(firstArray)) return firstArray;
   }
   return fallback;
 };

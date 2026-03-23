@@ -92,6 +92,7 @@ export default function AdminDashboard() {
   const [extractedCourse, setExtractedCourse] = useState<Course | null>(null);
   const [rawJsonText, setRawJsonText] = useState('');
   const [isReviewing, setIsReviewing] = useState(false);
+  const [overrideCourseId, setOverrideCourseId] = useState<string>('');
   const [isGeneratingQuick, setIsGeneratingQuick] = useState(false);
   const [isGeneratingSkeleton, setIsGeneratingSkeleton] = useState(false);
   const isCancelledRef = useRef(false);
@@ -743,7 +744,13 @@ export default function AdminDashboard() {
       onConfirm: async () => {
         try {
           if (!db) throw new Error("Firestore not initialized");
-          await deleteDoc(doc(db, 'courses', courseId));
+          // Use a soft delete (deleted: true) to handle default courses correctly
+          await setDoc(doc(db, 'courses', courseId), { 
+            id: courseId,
+            deleted: true,
+            deletedAt: new Date().toISOString()
+          }, { merge: true });
+          
           await refreshCourses();
           showToast(`Course ${courseId} deleted successfully.`, "success");
         } catch (error) {
@@ -1727,6 +1734,39 @@ export default function AdminDashboard() {
               </h3>
               
               <div className="bg-slate-50 dark:bg-slate-900 rounded-xl p-6 border border-slate-200 dark:border-slate-700 mb-6">
+                <div className="mb-6">
+                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">
+                    Override Existing Course? (Optional)
+                  </label>
+                  <select 
+                    value={overrideCourseId}
+                    onChange={(e) => {
+                      const newId = e.target.value;
+                      setOverrideCourseId(newId);
+                      if (newId) {
+                        try {
+                          const updated = JSON.parse(rawJsonText);
+                          updated.id = newId;
+                          const newJson = JSON.stringify(updated, null, 2);
+                          setRawJsonText(newJson);
+                          setExtractedCourse(updated);
+                        } catch (err) {
+                          console.error("Failed to update ID in JSON:", err);
+                        }
+                      }
+                    }}
+                    className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="">-- Create New Course --</option>
+                    {Object.values(courses).map(c => (
+                      <option key={c.id} value={c.id}>{c.id}: {c.title}</option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-slate-500 mt-2">
+                    Selecting an existing course will set its ID in the JSON below, overwriting it when you publish.
+                  </p>
+                </div>
+
                 <p className="text-sm text-slate-500 mb-4">
                   You can manually edit the JSON below to fix typos or replace image placeholders with real image URLs before publishing.
                 </p>

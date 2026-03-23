@@ -604,13 +604,38 @@ app.get('/api/chat/nudge', verifyAuth, async (req, res) => {
     Do NOT be overly verbose. Use emojis.`;
     
     const geminiOpenRouterProvider = process.env.OPENROUTER_API_KEY ? new GeminiOpenRouterProvider(process.env.OPENROUTER_API_KEY) : null;
-    if (!geminiOpenRouterProvider) {
-      throw new Error('OpenRouter API Key missing for Gemini nudge');
+    const mistralProvider = process.env.MISTRAL_API_KEY ? new MistralProvider(process.env.MISTRAL_API_KEY) : null;
+    const groqProvider = process.env.GROQ_API_KEY ? new GroqProvider(process.env.GROQ_API_KEY) : null;
+    
+    const providers = [
+      mistralProvider ? new CircuitBreaker(mistralProvider) : null,
+      groqProvider ? new CircuitBreaker(groqProvider) : null,
+      geminiOpenRouterProvider ? new CircuitBreaker(geminiOpenRouterProvider) : null
+    ].filter(Boolean) as CircuitBreaker[];
+
+    if (providers.length === 0) {
+      throw new Error('No AI providers configured for nudge');
     }
 
-    const response = await geminiOpenRouterProvider.generate([{ role: 'user', content: prompt }], { complexity: 'standard' });
+    let message = "Hello! I'm UniAce AI. Ready to study?";
+    let lastError;
+
+    for (const provider of providers) {
+      try {
+        const response = await provider.generate([{ role: 'user', content: prompt }], { complexity: 'standard' });
+        if (response.text) {
+          message = response.text;
+          break;
+        }
+      } catch (err) {
+        lastError = err;
+        console.warn(`Nudge generation failed with provider, trying next...`, err);
+      }
+    }
     
-    const message = response.text || "Hello! I'm UniAce AI. Ready to study?";
+    if (message === "Hello! I'm UniAce AI. Ready to study?" && lastError) {
+      console.error("All providers failed for nudge generation:", lastError);
+    }
     
     await userRef.update({
       last_nudge_date: todayStr,

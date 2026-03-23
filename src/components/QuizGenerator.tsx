@@ -131,17 +131,19 @@ export default function QuizGenerator({ courseId, module, subTopic, onClose, onC
 
       const data = await AIService.generateQuiz(moduleForQuiz, subTopicForQuiz, numQuestions, questionType, isAdaptive, userSkillLevel);
       
-      if (!Array.isArray(data) || data.length === 0) {
+      const quizArray = Array.isArray(data) ? data : (data && typeof data === 'object' ? Object.values(data).find(v => Array.isArray(v)) : []) as any[];
+      
+      if (!Array.isArray(quizArray) || quizArray.length === 0) {
         throw new Error("No questions generated. Please try again.");
       }
 
       if (isAdaptive) {
-        setAdaptiveQuestions(data);
-        const firstQ = data.find(q => q.difficulty === userSkillLevel) || data[0];
+        setAdaptiveQuestions(quizArray);
+        const firstQ = quizArray.find((q: any) => q.difficulty === userSkillLevel) || quizArray[0];
         setQuestions([firstQ]);
         setCurrentDifficulty(firstQ.difficulty || userSkillLevel);
       } else {
-        setQuestions(data);
+        setQuestions(quizArray);
         if (mode === 'exam') {
           setTimeLeft(numQuestions * 90); // 1.5 minutes per question
         }

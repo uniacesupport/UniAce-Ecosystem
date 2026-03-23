@@ -27,9 +27,13 @@ export function CourseProvider({ children }: { children: React.ReactNode }) {
       if (!querySnapshot.empty) {
         const firestoreCourses: Record<string, Course> = { ...DEFAULT_COURSES };
         querySnapshot.forEach((doc: any) => {
-          const data = doc.data() as Course;
+          const data = doc.data() as Course & { deleted?: boolean };
           if (data.id) {
-            firestoreCourses[data.id] = data;
+            if (data.deleted) {
+              delete firestoreCourses[data.id];
+            } else {
+              firestoreCourses[data.id] = data;
+            }
           }
         });
         setCourses(firestoreCourses);
@@ -60,9 +64,13 @@ export function CourseProvider({ children }: { children: React.ReactNode }) {
         } else {
           const firestoreCourses: Record<string, Course> = { ...DEFAULT_COURSES };
           querySnapshot.forEach((doc: any) => {
-            const data = doc.data() as Course;
+            const data = doc.data() as Course & { deleted?: boolean };
             if (data.id) {
-              firestoreCourses[data.id] = data;
+              if (data.deleted) {
+                delete firestoreCourses[data.id];
+              } else {
+                firestoreCourses[data.id] = data;
+              }
             }
           });
           setCourses(firestoreCourses);
