@@ -57,14 +57,18 @@ const allowedOrigins = [
   process.env.SHARED_APP_URL,
   'http://localhost:3000',
   'http://localhost:5173',
-  'https://uniace-ecosystem.onrender.com'
-].filter(Boolean) as string[];
+  'https://uniace-ecosystem.onrender.com',
+  'https://uniace-ecosystem.onrender.com/'
+].filter(Boolean).map(url => url?.replace(/\/$/, '')) as string[];
 
 app.use(cors({
   origin: function (origin, callback) {
     // allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) === -1) {
+    
+    const normalizedOrigin = origin.replace(/\/$/, '');
+    if (allowedOrigins.indexOf(normalizedOrigin) === -1) {
+      console.warn(`CORS REJECTED: Origin "${origin}" not in allowed list:`, allowedOrigins);
       var msg = 'The CORS policy for this site does not allow access from the specified Origin.';
       return callback(new Error(msg), false);
     }
@@ -1193,6 +1197,23 @@ app.get('/api/admin/config', verifyAuth, async (req, res) => {
   res.json(systemConfig);
 });
 
+// Debug Email Configuration
+app.get('/api/admin/debug-email', verifyAuth, async (req, res) => {
+  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
+  
+  const status = await MailService.verifyConnection();
+  res.json({
+    config: {
+      host: !!process.env.SMTP_HOST,
+      port: process.env.SMTP_PORT,
+      user: !!process.env.SMTP_USER,
+      fromEmail: !!process.env.SMTP_FROM_EMAIL,
+      hasPass: !!process.env.SMTP_PASS
+    },
+    connection: status
+  });
+});
+
 // Update System Config
 app.post('/api/admin/config', verifyAuth, async (req, res) => {
   const uid = (req as any).user.uid;
@@ -1646,6 +1667,9 @@ app.post('/api/admin/ingest', verifyAuth, async (req, res) => {
         embedding: admin.firestore.VectorValue.fromArray(vector),
         createdAt: admin.firestore.FieldValue.serverTimestamp()
       });
+      
+      // Throttling to avoid Gemini API rate limits (100 RPM)
+      await new Promise(resolve => setTimeout(resolve, 700));
     }
 
     await batch.commit();

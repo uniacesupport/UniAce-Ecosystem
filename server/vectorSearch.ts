@@ -40,9 +40,12 @@ export async function initializeVectorStore(pastPapers: PastPaper[], courses: Re
       allQuestions.push(...paper.questions);
     });
 
+    const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
     for (const question of allQuestions) {
       const content = `Question: ${question.question} Explanation: ${question.explanation}`;
       await addIndexItem(content, `Past Paper Question`, 'question');
+      await sleep(700); // 700ms delay = ~85 requests per minute (under 100/min limit)
     }
 
     // 2. Index Course Syllabus
@@ -52,6 +55,7 @@ export async function initializeVectorStore(pastPapers: PastPaper[], courses: Re
         for (const subTopic of module.subTopics) {
           const content = `Course: ${course.title} Topic: ${module.title} Subtopic: ${subTopic.title} Content: ${subTopic.content}`;
           await addIndexItem(content, `${course.title} - ${subTopic.title}`, 'syllabus');
+          await sleep(700);
         }
       }
 
@@ -59,6 +63,7 @@ export async function initializeVectorStore(pastPapers: PastPaper[], courses: Re
       for (const formula of course.formulas) {
         const content = `Course: ${course.title} Formula: ${formula.title} LaTeX: ${formula.latex} Description: ${formula.description}`;
         await addIndexItem(content, `${course.title} - Formula: ${formula.title}`, 'formula');
+        await sleep(700);
       }
     }
 
@@ -84,6 +89,8 @@ async function addIndexItem(content: string, source: string, type: 'question' | 
         embedding: result.embeddings[0].values as number[],
       });
     }
+
+    console.log(`Vector Store Initialized with ${vectorStore.length} items.`);
   } catch (error) {
     console.error(`Error generating embedding for ${source}:`, error);
   }

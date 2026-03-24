@@ -46,6 +46,24 @@ export class MailService {
   }
 
   /**
+   * Verifies the SMTP connection.
+   */
+  static async verifyConnection() {
+    const transporter = this.getTransporter();
+    if (!transporter) {
+      return { success: false, error: 'Email service not configured. Please set SMTP environment variables.' };
+    }
+
+    try {
+      await transporter.verify();
+      return { success: true };
+    } catch (error: any) {
+      console.error('SMTP Connection Verification Failed:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
    * Sends a generic email.
    */
   static async sendEmail(to: string, subject: string, html: string, fromName: string = 'UniAce Team') {
