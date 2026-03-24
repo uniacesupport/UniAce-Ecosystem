@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { jsonrepair } from 'jsonrepair';
 
 export const useWebSocketChat = () => {
   const { user } = useAuth();
@@ -71,7 +72,14 @@ export const useWebSocketChat = () => {
 
     const handleMessage = (event: MessageEvent) => {
       try {
-        const response = JSON.parse(event.data);
+        let response;
+        try {
+          response = JSON.parse(event.data);
+        } catch (parseError) {
+          // Attempt repair if standard parse fails
+          const repaired = jsonrepair(event.data);
+          response = JSON.parse(repaired);
+        }
         
         if (response.type === 'chunk') {
           onChunk(response.text);

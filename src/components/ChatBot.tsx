@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { Send, User, Bot, X, MessageSquare, Mic, MicOff, Image as ImageIcon, Volume2, VolumeX, Maximize2, Minimize2, Copy, Check, Zap, Lightbulb, Sparkles, Settings, ArrowRight } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { ChatMessage, CourseId, UserProgress, AIPersonality } from "../types";
+import { jsonrepair } from 'jsonrepair';
 import MarkdownRenderer from './MarkdownRenderer';
 import { AIService } from "../services/ai";
 import { useAuth } from "../context/AuthContext";
@@ -225,6 +226,13 @@ export default function ChatBot({
     setMessages((prev) => [...prev, userMsg]);
     
     setInput("");
+    
+    // Reset textarea heights
+    const textareas = document.querySelectorAll('textarea');
+    textareas.forEach(ta => {
+      ta.style.height = 'auto';
+    });
+
     localStorage.removeItem('chat_input_backup');
     setSelectedImage(null);
     setIsLoading(true);
@@ -244,11 +252,17 @@ export default function ChatBot({
 
       sendWsMessage({
         message: userMsg.text,
+        image: userMsg.image,
         history: messages.map(m => ({
           role: m.role,
           parts: [{ text: m.text }]
         })),
-        context: `Course: ${activeCourseId}, Module: ${activeModule}, Topic: ${activeSubTopic}. Content: ${subTopicContent}`,
+        context: [
+          activeCourseId && `Course: ${activeCourseId}`,
+          activeModule && `Module: ${activeModule}`,
+          activeSubTopic && `Topic: ${activeSubTopic}`,
+          subTopicContent && `Content: ${subTopicContent}`
+        ].filter(Boolean).join(', ') || 'General Chat',
         complexity: isProMode ? 'high' : 'standard',
         isHintRequest,
         masteryLevel,
@@ -296,11 +310,17 @@ export default function ChatBot({
         },
         body: JSON.stringify({
           message: userMsg.text,
+          image: userMsg.image,
           history: messages.map(m => ({
             role: m.role,
             parts: [{ text: m.text }]
           })),
-          context: `Course: ${activeCourseId}, Module: ${activeModule}, Topic: ${activeSubTopic}. Content: ${subTopicContent}`,
+          context: [
+            activeCourseId && `Course: ${activeCourseId}`,
+            activeModule && `Module: ${activeModule}`,
+            activeSubTopic && `Topic: ${activeSubTopic}`,
+            subTopicContent && `Content: ${subTopicContent}`
+          ].filter(Boolean).join(', ') || 'General Chat',
           complexity: isProMode ? 'high' : 'standard',
           isHintRequest,
           masteryLevel,
@@ -313,7 +333,12 @@ export default function ChatBot({
       const responseText = await response.text();
       let data;
       try {
-        data = JSON.parse(responseText);
+        try {
+          data = JSON.parse(responseText);
+        } catch (parseError) {
+          const repaired = jsonrepair(responseText);
+          data = JSON.parse(repaired);
+        }
       } catch (e) {
         console.error('Failed to parse response JSON:', responseText);
         throw new Error(`Server returned an invalid response (Status ${response.status}). This usually happens if the server is restarting or misconfigured.`);
@@ -610,18 +635,29 @@ export default function ChatBot({
             
             <div className="flex items-center gap-3">
               <div className="relative flex-1">
-                <input
-                  type="text"
+                <textarea
                   value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleSend()}
+                  onChange={(e) => {
+                    setInput(e.target.value);
+                    e.target.style.height = 'auto';
+                    e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
+                  }}
+                  onKeyDown={(e) => {
+                    const isMobile = window.innerWidth < 768 || /Mobi|Android/i.test(navigator.userAgent);
+                    if (e.key === "Enter" && !e.shiftKey && !isMobile) {
+                      e.preventDefault();
+                      handleSend();
+                    }
+                  }}
                   placeholder={isRecording ? "Listening..." : "Ask anything..."}
-                  className={`w-full pl-5 pr-12 py-3.5 bg-slate-100 dark:bg-zinc-900 border-none rounded-2xl text-sm dark:text-white focus:ring-2 focus:ring-slate-900 dark:focus:ring-emerald-500 transition-all ${isRecording ? 'animate-pulse ring-2 ring-emerald-500' : ''}`}
+                  rows={1}
+                  className={`w-full pl-5 pr-12 py-3.5 bg-slate-100 dark:bg-zinc-900 border-none rounded-2xl text-sm dark:text-white focus:ring-2 focus:ring-slate-900 dark:focus:ring-emerald-500 transition-all resize-none overflow-y-auto ${isRecording ? 'animate-pulse ring-2 ring-emerald-500' : ''}`}
+                  style={{ minHeight: '48px', maxHeight: '120px' }}
                 />
                 <button 
                   onClick={() => handleSend()}
                   disabled={isLoading || (!input.trim() && !selectedImage)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-slate-900 dark:bg-emerald-600 text-white rounded-xl hover:bg-emerald-500 disabled:opacity-50 transition-all"
+                  className="absolute right-2 bottom-2 p-2 bg-slate-900 dark:bg-emerald-600 text-white rounded-xl hover:bg-emerald-500 disabled:opacity-50 transition-all"
                 >
                   <Send size={18} />
                 </button>
@@ -933,18 +969,29 @@ export default function ChatBot({
 
                 <div className="flex items-center gap-3">
                   <div className="relative flex-1">
-                    <input
-                      type="text"
+                    <textarea
                       value={input}
-                      onChange={(e) => setInput(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && handleSend()}
+                      onChange={(e) => {
+                        setInput(e.target.value);
+                        e.target.style.height = 'auto';
+                        e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
+                      }}
+                      onKeyDown={(e) => {
+                        const isMobile = window.innerWidth < 768 || /Mobi|Android/i.test(navigator.userAgent);
+                        if (e.key === "Enter" && !e.shiftKey && !isMobile) {
+                          e.preventDefault();
+                          handleSend();
+                        }
+                      }}
                       placeholder={isRecording ? "Listening..." : "Ask anything..."}
-                      className={`w-full pl-6 pr-14 py-4 bg-slate-100 dark:bg-zinc-900 border-none rounded-2xl text-sm dark:text-white focus:ring-2 focus:ring-slate-900 dark:focus:ring-emerald-500 transition-all ${isRecording ? 'animate-pulse ring-2 ring-emerald-500' : ''}`}
+                      rows={1}
+                      className={`w-full pl-6 pr-14 py-4 bg-slate-100 dark:bg-zinc-900 border-none rounded-2xl text-sm dark:text-white focus:ring-2 focus:ring-slate-900 dark:focus:ring-emerald-500 transition-all resize-none overflow-y-auto ${isRecording ? 'animate-pulse ring-2 ring-emerald-500' : ''}`}
+                      style={{ minHeight: '56px', maxHeight: '120px' }}
                     />
                     <button 
                       onClick={() => handleSend()}
                       disabled={isLoading || (!input.trim() && !selectedImage)}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 p-2.5 bg-slate-900 dark:bg-emerald-600 text-white rounded-xl hover:bg-emerald-500 disabled:opacity-50 transition-all shadow-md active:scale-95"
+                      className="absolute right-2 bottom-2 p-2.5 bg-slate-900 dark:bg-emerald-600 text-white rounded-xl hover:bg-emerald-500 disabled:opacity-50 transition-all shadow-md active:scale-95"
                     >
                       <Send size={20} />
                     </button>

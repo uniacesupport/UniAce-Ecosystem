@@ -1,4 +1,5 @@
 export interface GeneratedCourse {
+  description?: string;
   modules: {
     title: string;
     lessons: {
@@ -176,15 +177,17 @@ export async function generateCourseSkeleton(
     ${existingModuleTitles.length > 0 ? `Current Existing Modules: ${existingModuleTitles.join(', ')}` : ''}
     
     The output must be a detailed JSON object containing:
-    1. An appropriate number of modules (typically 6-12) based on the course complexity and the provided outline. Ensure the curriculum is comprehensive and logically structured.
-    2. Each module should have 4 to 6 lesson titles (no content yet, just titles).
-    3. Each module should have a list of topics that will be covered in the quiz.
+    1. A "description" field which is a concise summary of the course content (1-2 sentences).
+    2. An appropriate number of modules (typically 6-12) based on the course complexity and the provided outline. Ensure the curriculum is comprehensive and logically structured.
+    3. Each module should have 4 to 6 lesson titles (no content yet, just titles).
+    4. Each module should have a list of topics that will be covered in the quiz.
     
     CRITICAL: You must return ONLY valid JSON.
     CRITICAL: Do NOT use LaTeX or special characters (like backslashes) in titles or topics. Use plain text only.
     CRITICAL: All backslashes in your JSON output must be escaped. For example, use '\\\\' instead of '\\'. Ensure all newlines within string values are represented as '\\n'.
     CRITICAL: If existing modules are provided, do NOT repeat their titles. Focus on expanding the curriculum.
     {
+      "description": "A concise summary of the course...",
       "modules": [
         {
           "title": "Module Title",
@@ -400,7 +403,10 @@ export async function generateCourseContent(
   }
 
   const totalModules = skeleton.modules.length;
-  const finalCourse: GeneratedCourse = { modules: [] };
+  const finalCourse: GeneratedCourse = { 
+    description: skeleton.description,
+    modules: [] 
+  };
 
   // Step 2: Generate Content for each module
   const CONCURRENCY_LIMIT = 3;

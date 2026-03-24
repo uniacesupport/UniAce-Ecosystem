@@ -17,6 +17,8 @@ import { CourseService } from '../services/courseService';
 import { Course, UserProgress, Subject, CourseId } from '../types';
 import { LogService, SystemLog } from '../services/logService';
 
+import { jsonrepair } from 'jsonrepair';
+
 export default function AdminDashboard() {
   const { courses, refreshCourses } = useCourses();
   const [archivedCourses, setArchivedCourses] = useState<Record<string, Course>>({});
@@ -124,7 +126,7 @@ export default function AdminDashboard() {
   const isCancelledRef = useRef(false);
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [generationStep, setGenerationStep] = useState<'input' | 'skeleton' | 'generating' | 'error'>('input');
-  const [courseSkeleton, setCourseSkeleton] = useState<{ modules: any[] } | null>(null);
+  const [courseSkeleton, setCourseSkeleton] = useState<{ description?: string, modules: any[] } | null>(null);
   const [quickCourseName, setQuickCourseName] = useState('');
   const [quickCourseCode, setQuickCourseCode] = useState('');
   const [quickSubject, setQuickSubject] = useState<Subject>('Mathematics');
@@ -349,7 +351,7 @@ export default function AdminDashboard() {
       await setDoc(courseRef, {
         id: courseId,
         title: quickCourseName,
-        description: `A comprehensive course on ${quickCourseName}.`,
+        description: courseSkeleton.description || `A comprehensive course on ${quickCourseName}.`,
         subject: quickSubject,
         isAIGenerated: true,
         createdAt: new Date().toISOString()
@@ -432,6 +434,8 @@ export default function AdminDashboard() {
 
       await ingestCourseToKB({
         id: courseId,
+        title: quickCourseName,
+        description: courseSkeleton.description || `A comprehensive course on ${quickCourseName}.`,
         syllabus: syllabus
       } as any);
 
@@ -984,11 +988,16 @@ export default function AdminDashboard() {
       const responseText = response.text;
       if (!responseText) throw new Error("No response from AI");
       // Clean up the response if it contains markdown code blocks
-      const cleanJson = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+      const cleanJson = responseText.replace(/```(?:json)?\s*([\s\S]*?)\s*```/g, '$1').trim();
       
       let courseData: Course;
       try {
-        courseData = JSON.parse(cleanJson);
+        try {
+          courseData = JSON.parse(cleanJson);
+        } catch (parseError) {
+          const repaired = jsonrepair(cleanJson);
+          courseData = JSON.parse(repaired);
+        }
       } catch (e) {
         console.error("JSON Parse Error:", e);
         console.log("Raw Response:", responseText);

@@ -1,5 +1,7 @@
 import { Module, SubTopic, QuizQuestion, QuestionType, ChatMessage, CourseId, UserProgress, Flashcard, AIPersonality, TimetableEntry, ExamDate } from '../types';
 
+import { jsonrepair } from 'jsonrepair';
+
 const getAuthToken = async () => {
   try {
     const { auth } = await import('../firebase');
@@ -35,8 +37,10 @@ const callAI = async (prompt: any, systemInstruction?: string, responseFormat?: 
 };
 
 const extractJSON = (text: string) => {
+  if (!text) return {};
+  
   // 1. Remove markdown code blocks if present
-  let cleaned = text.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+  let cleaned = text.replace(/```(?:json)?\s*([\s\S]*?)\s*```/g, '$1').trim();
   
   // 2. Try parsing directly first
   try {
@@ -49,18 +53,23 @@ const extractJSON = (text: string) => {
       try {
         return JSON.parse(potentialJson);
       } catch (e2) {
-        // 4. Last resort: Repair common LaTeX backslash issues in JSON
-        // AI often fails to escape backslashes correctly for JSON strings.
-        // We only want to escape backslashes that are NOT already part of a valid escape sequence.
-        // Valid JSON escapes: \", \\, \/, \b, \f, \n, \r, \t, \uXXXX
-        const repaired = potentialJson.replace(/\\(?![\\\/bfnrtu"]|u[0-9a-fA-F]{4})/g, '\\\\');
+        // 4. Try jsonrepair
         try {
+          const repaired = jsonrepair(potentialJson);
           return JSON.parse(repaired);
         } catch (e3) {
-          console.error("Failed to parse AI JSON response after all attempts.");
-          console.error("Original text:", text);
-          console.error("Extracted segment:", potentialJson);
-          throw new Error("AI returned invalid JSON format.");
+          // 5. Last resort: Repair common LaTeX backslash issues in JSON
+          // AI often fails to escape backslashes correctly for JSON strings.
+          const backslashRepaired = potentialJson.replace(/\\(?![\\\/bfnrtu"]|u[0-9a-fA-F]{4})/g, '\\\\');
+          try {
+            const finalRepair = jsonrepair(backslashRepaired);
+            return JSON.parse(finalRepair);
+          } catch (e4) {
+            console.error("Failed to parse AI JSON response after all attempts.");
+            console.error("Original text:", text);
+            console.error("Extracted segment:", potentialJson);
+            throw new Error("AI returned invalid JSON format.");
+          }
         }
       }
     }
