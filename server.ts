@@ -1193,21 +1193,35 @@ let systemConfig = {
 
 // Get System Config
 app.get('/api/admin/config', verifyAuth, async (req, res) => {
-  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
+  const user = (req as any).user;
+  const userDoc = await getAdminApp().firestore().collection('users').doc(user.uid).get();
+  const userData = userDoc.data();
+  const isAdmin = userData?.role === 'admin' || 
+                  user.email === 'uniace.support@gmail.com' || 
+                  user.email === 'olalekan4565@gmail.com';
+  
+  if (!isAdmin) return res.status(403).json({ error: 'Forbidden' });
   res.json(systemConfig);
 });
 
 // Debug Email Configuration
 app.get('/api/admin/debug-email', verifyAuth, async (req, res) => {
-  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
+  const user = (req as any).user;
+  const userDoc = await getAdminApp().firestore().collection('users').doc(user.uid).get();
+  const userData = userDoc.data();
+  const isAdmin = userData?.role === 'admin' || 
+                  user.email === 'uniace.support@gmail.com' || 
+                  user.email === 'olalekan4565@gmail.com';
+  
+  if (!isAdmin) return res.status(403).json({ error: 'Forbidden' });
   
   const status = await MailService.verifyConnection();
   res.json({
     config: {
-      host: !!process.env.SMTP_HOST,
-      port: process.env.SMTP_PORT,
-      user: !!process.env.SMTP_USER,
-      fromEmail: !!process.env.SMTP_FROM_EMAIL,
+      host: process.env.SMTP_HOST || 'Not Configured',
+      port: process.env.SMTP_PORT || 'Not Configured',
+      user: process.env.SMTP_USER || 'Not Configured',
+      from: process.env.SMTP_FROM_EMAIL || 'Not Configured',
       hasPass: !!process.env.SMTP_PASS
     },
     connection: status

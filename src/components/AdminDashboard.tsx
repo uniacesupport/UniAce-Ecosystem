@@ -750,6 +750,35 @@ export default function AdminDashboard() {
     await fetchKbStats();
   };
 
+  const [emailDebugInfo, setEmailDebugInfo] = useState<any>(null);
+  const [isDebuggingEmail, setIsDebuggingEmail] = useState(false);
+
+  const handleDebugEmail = async () => {
+    setIsDebuggingEmail(true);
+    try {
+      const idToken = await auth.currentUser?.getIdToken();
+      const res = await fetch('/api/admin/debug-email', {
+        headers: { 'Authorization': `Bearer ${idToken}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setEmailDebugInfo(data);
+        if (data.connection.success) {
+          showToast("SMTP Connection Successful!", "success");
+        } else {
+          showToast("SMTP Connection Failed", "error");
+        }
+      } else {
+        showToast("Failed to fetch email debug info", "error");
+      }
+    } catch (error) {
+      console.error("Error debugging email:", error);
+      showToast("Error debugging email", "error");
+    } finally {
+      setIsDebuggingEmail(false);
+    }
+  };
+
   const fetchUsers = async () => {
     if (!db) return;
     setIsLoadingUsers(true);
@@ -2632,6 +2661,73 @@ export default function AdminDashboard() {
                   </button>
                 </div>
               </div>
+            </div>
+
+            <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <Shield className="text-indigo-500" size={24} />
+                  Email System Diagnostics
+                </h3>
+                <button 
+                  onClick={handleDebugEmail}
+                  disabled={isDebuggingEmail}
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-500/30 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2"
+                >
+                  {isDebuggingEmail ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+                  Run Connection Test
+                </button>
+              </div>
+              
+              <p className="text-sm text-slate-500 mb-6">
+                Test the SMTP connection and verify if all required environment variables are correctly configured.
+              </p>
+
+              {emailDebugInfo && (
+                <div className="space-y-6">
+                  <div className={`p-4 rounded-2xl flex items-start gap-4 ${emailDebugInfo.connection.success ? 'bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800' : 'bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800'}`}>
+                    <div className={`p-2 rounded-xl ${emailDebugInfo.connection.success ? 'bg-emerald-100 dark:bg-emerald-800 text-emerald-600 dark:text-emerald-400' : 'bg-rose-100 dark:bg-rose-800 text-rose-600 dark:text-rose-400'}`}>
+                      {emailDebugInfo.connection.success ? <CheckCircle size={20} /> : <AlertCircle size={20} />}
+                    </div>
+                    <div>
+                      <h4 className={`font-bold ${emailDebugInfo.connection.success ? 'text-emerald-900 dark:text-emerald-100' : 'text-rose-900 dark:text-rose-100'}`}>
+                        {emailDebugInfo.connection.success ? 'SMTP Connection Verified' : 'SMTP Connection Failed'}
+                      </h4>
+                      <p className={`text-sm mt-1 ${emailDebugInfo.connection.success ? 'text-emerald-700 dark:text-emerald-300' : 'text-rose-700 dark:text-rose-300'}`}>
+                        {emailDebugInfo.connection.message}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {[
+                      { label: 'SMTP Host', value: emailDebugInfo.config.host, present: !!emailDebugInfo.config.host },
+                      { label: 'SMTP User', value: emailDebugInfo.config.user, present: !!emailDebugInfo.config.user },
+                      { label: 'SMTP Pass', value: emailDebugInfo.config.hasPass ? '********' : 'Missing', present: emailDebugInfo.config.hasPass },
+                      { label: 'From Email', value: emailDebugInfo.config.from, present: !!emailDebugInfo.config.from },
+                    ].map((item, idx) => (
+                      <div key={idx} className="bg-slate-50 dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">{item.label}</p>
+                        <p className={`text-sm font-mono truncate ${item.present ? 'text-slate-900 dark:text-white' : 'text-rose-500 font-bold'}`}>
+                          {item.value || 'Not Configured'}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+
+                  {!emailDebugInfo.connection.success && emailDebugInfo.connection.message.includes('535') && (
+                    <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 p-4 rounded-2xl">
+                      <div className="flex items-center gap-2 text-amber-800 dark:text-amber-200 font-bold mb-2">
+                        <AlertCircle size={18} />
+                        Authentication Tip
+                      </div>
+                      <p className="text-sm text-amber-700 dark:text-amber-300">
+                        Error 535 usually means incorrect credentials. If you are using Gmail, make sure you are using a <strong>16-character App Password</strong>, not your regular account password.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700">
