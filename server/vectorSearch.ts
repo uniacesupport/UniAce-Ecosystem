@@ -90,7 +90,7 @@ async function addIndexItem(content: string, source: string, type: 'question' | 
       });
     }
 
-    console.log(`Vector Store Initialized with ${vectorStore.length} items.`);
+    console.log(`Vector Store Initialized with ${indexedItems.length} items.`);
   } catch (error) {
     console.error(`Error generating embedding for ${source}:`, error);
   }
