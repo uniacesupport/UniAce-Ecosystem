@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { UserProgress, Achievement, Bookmark, CourseId, AIPersonality } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../firebase';
-import { doc, setDoc, onSnapshot, getDoc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { doc, setDoc, onSnapshot, getDoc, updateDoc, arrayUnion, arrayRemove, increment } from 'firebase/firestore';
 import { GamificationService, BADGES } from '../services/gamification';
 
 const INITIAL_ACHIEVEMENTS: Achievement[] = BADGES.map(b => ({
@@ -206,6 +206,40 @@ export function useUserProgress() {
     }
   }, [user, isOnline]);
 
+  const processNewBadges = (prevAchievements: Achievement[], newBadges: Achievement[]) => {
+    let updatedAchievements = [...prevAchievements];
+    let totalSparksReward = 0;
+    
+    if (newBadges.length > 0) {
+      newBadges.forEach(newBadge => {
+        const index = updatedAchievements.findIndex(a => a.id === newBadge.id);
+        if (index !== -1) {
+          updatedAchievements[index] = newBadge;
+        } else {
+          updatedAchievements.push(newBadge);
+          // Award sparks for new badges (e.g., 50 sparks per badge)
+          totalSparksReward += 50; 
+        }
+      });
+
+      // Update AI Sparks in Firestore
+      if (totalSparksReward > 0 && user && isOnline) {
+        try {
+          const userDocRef = doc(db, 'users', user.uid);
+          updateDoc(userDocRef, {
+            ai_sparks: increment(totalSparksReward)
+          });
+          import('../services/logService').then(({ LogService }) => {
+            LogService.log('success', 'user', `Awarded ${totalSparksReward} AI Sparks for unlocking badges!`);
+          });
+        } catch (err) {
+          console.error("Error awarding sparks:", err);
+        }
+      }
+    }
+    return updatedAchievements;
+  };
+
   const addXp = (amount: number) => {
     setProgress(prev => {
       const newXp = prev.xp + amount;
@@ -215,23 +249,57 @@ export function useUserProgress() {
       const tempProgress = { ...prev, xp: newXp, level: newLevel };
       const newBadges = GamificationService.checkNewBadges(tempProgress);
       
-      let updatedAchievements = [...prev.achievements];
-      if (newBadges.length > 0) {
-        newBadges.forEach(newBadge => {
-          const index = updatedAchievements.findIndex(a => a.id === newBadge.id);
-          if (index !== -1) {
-            updatedAchievements[index] = newBadge;
-          } else {
-            updatedAchievements.push(newBadge);
-          }
-        });
-      }
+      const updatedAchievements = processNewBadges(prev.achievements, newBadges);
 
       const finalProgress = { ...prev, xp: newXp, level: newLevel, achievements: updatedAchievements };
       // If level up, save immediately
       if (newLevel > prev.level) {
         saveImmediately(finalProgress);
       }
+      return finalProgress;
+    });
+  };
+
+  const checkAndUpdateStreak = () => {
+    setProgress(prev => {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      let newStreak = prev.streak;
+      let newLastStudyDate = prev.lastStudyDate;
+
+      if (prev.lastStudyDate) {
+        const lastStudy = new Date(prev.lastStudyDate);
+        lastStudy.setHours(0, 0, 0, 0);
+        
+        const diffTime = Math.abs(today.getTime() - lastStudy.getTime());
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+
+        if (diffDays === 1) {
+          // Studied yesterday, increment streak
+          newStreak += 1;
+          newLastStudyDate = new Date().toISOString();
+        } else if (diffDays > 1) {
+          // Missed a day, reset streak
+          newStreak = 1;
+          newLastStudyDate = new Date().toISOString();
+        } else {
+          // Already studied today, do nothing
+          return prev;
+        }
+      } else {
+        // First time studying
+        newStreak = 1;
+        newLastStudyDate = new Date().toISOString();
+      }
+
+      const tempProgress = { ...prev, streak: newStreak, lastStudyDate: newLastStudyDate };
+      const newBadges = GamificationService.checkNewBadges(tempProgress);
+      
+      const updatedAchievements = processNewBadges(prev.achievements, newBadges);
+
+      const finalProgress = { ...tempProgress, achievements: updatedAchievements };
+      saveImmediately(finalProgress);
       return finalProgress;
     });
   };
@@ -257,18 +325,7 @@ export function useUserProgress() {
 
       // Check for achievements
       const newBadges = GamificationService.checkNewBadges(tempProgress);
-      let updatedAchievements = [...prev.achievements];
-      
-      if (newBadges.length > 0) {
-        newBadges.forEach(newBadge => {
-          const index = updatedAchievements.findIndex(a => a.id === newBadge.id);
-          if (index !== -1) {
-            updatedAchievements[index] = newBadge;
-          } else {
-            updatedAchievements.push(newBadge);
-          }
-        });
-      }
+      const updatedAchievements = processNewBadges(prev.achievements, newBadges);
 
       const finalProgress = { 
         ...tempProgress,
@@ -279,7 +336,6 @@ export function useUserProgress() {
       if (score - currentMastery > 10 || score === 100) {
         saveImmediately(finalProgress);
       }
-
       return finalProgress;
     });
   };
@@ -289,6 +345,8 @@ export function useUserProgress() {
       ...prev,
       studyTime: { ...prev.studyTime, [topicId]: (prev.studyTime[topicId] || 0) + seconds }
     }));
+    // Check streak when studying
+    checkAndUpdateStreak();
   };
 
   const unlockAchievement = (id: string) => {
@@ -411,5 +469,5 @@ export function useUserProgress() {
     }));
   };
 
-  return { progress, addXp, updateMastery, recordStudyTime, unlockAchievement, markTopicAsStudied, addBookmark, removeBookmark, enrollCourse, unenrollCourse, updateSRSData, updateAIPersonality, isOnline };
+  return { progress, addXp, updateMastery, recordStudyTime, unlockAchievement, markTopicAsStudied, addBookmark, removeBookmark, enrollCourse, unenrollCourse, updateSRSData, updateAIPersonality, isOnline, checkAndUpdateStreak };
 }

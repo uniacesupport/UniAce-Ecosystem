@@ -1,12 +1,14 @@
 import { FileText, Search, Download, ExternalLink, GraduationCap, ArrowLeft, Brain, Clock, CheckCircle2, XCircle, Lightbulb, RotateCcw, Trophy, ArrowRight, Lock } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { useState } from 'react';
-import { pastPapers, PastPaper } from '../data/pastQuestionsData';
+import { useState, useEffect } from 'react';
+import { pastPapers as hardcodedPapers, PastPaper } from '../data/pastQuestionsData';
 import { CourseId } from '../types';
 import MarkdownRenderer from './MarkdownRenderer';
 import { useAuth } from '../context/AuthContext';
 import { usePremiumStatus } from '../hooks/usePremiumStatus';
 import PricingModal from './PricingModal';
+import { db } from '../firebase';
+import { collection, getDocs } from 'firebase/firestore';
 
 interface PastQuestionsProps {
   activeCourseId: CourseId | null;
@@ -26,8 +28,28 @@ export default function PastQuestions({ activeCourseId }: PastQuestionsProps) {
   const [showResults, setShowResults] = useState(false);
   const [isStarted, setIsStarted] = useState(false);
   const [showPricingModal, setShowPricingModal] = useState(false);
+  const [allPapers, setAllPapers] = useState<PastPaper[]>(hardcodedPapers);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const filteredPapers = pastPapers.filter(paper => {
+  useEffect(() => {
+    const fetchPapers = async () => {
+      try {
+        const querySnapshot = await getDocs(collection(db, 'past_papers'));
+        const dbPapers: PastPaper[] = [];
+        querySnapshot.forEach((doc) => {
+          dbPapers.push({ id: doc.id, ...doc.data() } as PastPaper);
+        });
+        setAllPapers([...hardcodedPapers, ...dbPapers]);
+      } catch (error) {
+        console.error("Error fetching past papers:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchPapers();
+  }, []);
+
+  const filteredPapers = allPapers.filter(paper => {
     const matchesCourse = activeCourseId ? paper.courseCode.replace(' ', '') === activeCourseId : true;
     const matchesSearch = paper.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       paper.year.includes(searchQuery) ||

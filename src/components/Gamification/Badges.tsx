@@ -1,6 +1,6 @@
 import { motion } from 'motion/react';
 import { Achievement } from '../../types';
-import { Award, Flame, Zap, Footprints, Brain, Lock, CheckCircle2 } from 'lucide-react';
+import { Award, Flame, Zap, Footprints, Brain, Lock, CheckCircle2, Calendar, Crown } from 'lucide-react';
 
 interface BadgesProps {
   achievements: Achievement[];
@@ -12,6 +12,8 @@ const BADGE_ICONS: Record<string, any> = {
   'Zap': Zap,
   'Award': Award,
   'Brain': Brain,
+  'Calendar': Calendar,
+  'Crown': Crown,
 };
 
 export default function Badges({ achievements }: BadgesProps) {

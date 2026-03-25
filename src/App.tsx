@@ -39,12 +39,18 @@ export default function App() {
   console.log('App.tsx: Rendering...');
   const { isConfigured, user, profile, loading, signInWithGoogle } = useAuth();
   const { courses, refreshCourses } = useCourses();
-  const { progress, addXp, updateMastery, recordStudyTime, addBookmark, removeBookmark, enrollCourse, unenrollCourse, updateAIPersonality, isOnline } = useUserProgress();
+  const { progress, addXp, updateMastery, recordStudyTime, addBookmark, removeBookmark, enrollCourse, unenrollCourse, updateAIPersonality, isOnline, checkAndUpdateStreak } = useUserProgress();
   const [activeCourseId, setActiveCourseId] = useState<CourseId | null>(null);
   const [activeView, setActiveView] = useState<View>('hub');
   const [activeSubject, setActiveSubject] = useState<Subject>('Mathematics');
   
   const activeCourse = activeCourseId ? courses[activeCourseId] : null;
+
+  useEffect(() => {
+    if (user) {
+      checkAndUpdateStreak();
+    }
+  }, [user]);
   const syllabus = activeCourse?.syllabus || [];
 
   const [activeModuleId, setActiveModuleId] = useState('');

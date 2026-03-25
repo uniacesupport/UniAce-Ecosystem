@@ -41,6 +41,22 @@ export const BADGES = [
     xpReward: 300,
   },
   {
+    id: 'streak_14',
+    title: 'Habit Builder',
+    description: 'Maintain a 14-day streak.',
+    icon: 'Calendar',
+    condition: (progress: UserProgress) => progress.streak >= 14,
+    xpReward: 500,
+  },
+  {
+    id: 'streak_30',
+    title: 'Scholar of the Month',
+    description: 'Maintain a 30-day streak.',
+    icon: 'Crown',
+    condition: (progress: UserProgress) => progress.streak >= 30,
+    xpReward: 1000,
+  },
+  {
     id: 'master_1',
     title: 'Topic Master',
     description: 'Achieve 100% mastery in one topic.',

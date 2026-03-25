@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Trophy, Medal, Crown, User, Zap, Star, ArrowUp, ArrowDown, Minus } from 'lucide-react';
+import { Trophy, Medal, Crown, User, Zap, Star, ArrowUp, ArrowDown, Minus, Flame } from 'lucide-react';
 import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 
@@ -10,6 +10,7 @@ interface LeaderboardEntry {
   photoURL: string;
   xp: number;
   level: number;
+  streak: number;
   rank?: number;
 }
 
@@ -32,6 +33,7 @@ export default function Leaderboard() {
           photoURL: doc.data().photoURL || '',
           xp: doc.data().xp || 0,
           level: doc.data().level || 1,
+          streak: doc.data().streak || 0,
           rank: index + 1
         }));
         setLeaders(data);
@@ -110,6 +112,15 @@ export default function Leaderboard() {
                     <div className="flex items-center gap-2">
                        <Zap size={10} className="text-amber-500" fill="currentColor" />
                        <span className="text-[10px] font-bold text-zinc-500 uppercase">{leader.xp.toLocaleString()} XP</span>
+                       {leader.streak > 0 && (
+                         <>
+                           <span className="text-zinc-300 dark:text-zinc-700">•</span>
+                           <span className="text-[10px] font-bold text-orange-500 uppercase flex items-center gap-0.5">
+                             <Flame size={10} />
+                             {leader.streak} Day Streak
+                           </span>
+                         </>
+                       )}
                     </div>
                   </div>
                 </div>

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, FileText, Plus, CheckCircle, Loader2, BookOpen, AlertCircle, Settings, Trash2, Users, Activity, Database, Search, Zap, Trophy, Star, Bot, Shield, BarChart3, Globe, Edit2, RefreshCw, Clock } from 'lucide-react';
+import { Upload, FileText, Plus, CheckCircle, Loader2, BookOpen, AlertCircle, Settings, Trash2, Users, Activity, Database, Search, Zap, Trophy, Star, Bot, Shield, BarChart3, Globe, Edit2, RefreshCw, Clock, FileQuestion, MessageSquare } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   LineChart, Line, AreaChart, Area, PieChart, Pie, Cell
@@ -10,6 +10,7 @@ import { db, storage, auth } from '../firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { doc, setDoc, getDoc, collection, getDocs, deleteDoc, query, where, limit, writeBatch, serverTimestamp, orderBy } from 'firebase/firestore';
 import AdminSeeder from './AdminSeeder';
+import AdminQuestionBank from './AdminQuestionBank';
 import CourseEditModal from './CourseEditModal';
 import { AIService } from '../services/ai';
 import { generateCourseContent, generateCourseSkeleton, generateModuleContent } from '../services/aiCourseGenerator';
@@ -77,6 +78,8 @@ export default function AdminDashboard() {
   const [confirmModal, setConfirmModal] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
   const [struggleAnalytics, setStruggleAnalytics] = useState<any[]>([]);
   const [isLoadingAnalytics, setIsLoadingAnalytics] = useState(false);
+  const [chatAnalytics, setChatAnalytics] = useState<{topTopics: any[], recentQueries: any[]}>({ topTopics: [], recentQueries: [] });
+  const [isLoadingChatAnalytics, setIsLoadingChatAnalytics] = useState(false);
 
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
     setToast({ message, type });
@@ -148,6 +151,7 @@ export default function AdminDashboard() {
     fetchSystemStats();
     checkAIStatus();
     fetchStruggleAnalytics();
+    fetchChatAnalytics();
     fetchSystemConfig();
     fetchRoutingConfig();
     fetchLogs();
@@ -162,6 +166,18 @@ export default function AdminDashboard() {
       console.error("Error fetching logs:", error);
     } finally {
       setIsLoadingLogs(false);
+    }
+  };
+
+  const fetchChatAnalytics = async () => {
+    setIsLoadingChatAnalytics(true);
+    try {
+      const analytics = await AIService.getChatAnalytics();
+      setChatAnalytics(analytics);
+    } catch (error) {
+      console.error("Error fetching chat analytics:", error);
+    } finally {
+      setIsLoadingChatAnalytics(false);
     }
   };
 
@@ -1144,6 +1160,7 @@ export default function AdminDashboard() {
           {[
             { id: 'overview', label: 'Overview', icon: Activity },
             { id: 'courses', label: 'Courses & AI', icon: BookOpen },
+            { id: 'question-bank', label: 'Question Bank', icon: FileQuestion },
             { id: 'rag', label: 'Knowledge Base', icon: Database },
             { id: 'users', label: 'User Management', icon: Users },
             { id: 'communications', label: 'Communications', icon: Globe },
@@ -2019,6 +2036,12 @@ export default function AdminDashboard() {
       </div>
       )}
 
+      {activeTab === 'question-bank' && (
+        <div className="space-y-8">
+          <AdminQuestionBank />
+        </div>
+      )}
+
       {activeTab === 'rag' && (
         <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700">
           <div className="flex items-center gap-4 mb-6">
@@ -2715,7 +2738,7 @@ export default function AdminDashboard() {
                     ))}
                   </div>
 
-                  {!emailDebugInfo.connection.success && emailDebugInfo.connection.message.includes('535') && (
+                  {!emailDebugInfo.connection.success && emailDebugInfo.connection.message?.includes('535') && (
                     <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 p-4 rounded-2xl">
                       <div className="flex items-center gap-2 text-amber-800 dark:text-amber-200 font-bold mb-2">
                         <AlertCircle size={18} />
@@ -2888,6 +2911,77 @@ export default function AdminDashboard() {
                     )}
                   </tbody>
                 </table>
+              </div>
+            </div>
+
+            {/* Chat Analytics Section */}
+            <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700">
+              <div className="flex justify-between items-center mb-2">
+                <h3 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <MessageSquare className="text-blue-500" size={24} />
+                  Chat Analytics
+                </h3>
+                <button 
+                  onClick={fetchChatAnalytics}
+                  className="text-sm font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
+                >
+                  <RefreshCw size={14} className={isLoadingChatAnalytics ? 'animate-spin' : ''} />
+                  Refresh
+                </button>
+              </div>
+              <p className="text-sm text-slate-500 mb-6">
+                Discover what students are asking the AI most often. Use this data to identify knowledge gaps and plan future content.
+              </p>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {/* Top Topics */}
+                <div>
+                  <h4 className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-4 uppercase tracking-wider">Top Topics</h4>
+                  {isLoadingChatAnalytics ? (
+                    <div className="py-8 text-center text-slate-500 text-sm">Loading topics...</div>
+                  ) : chatAnalytics.topTopics.length > 0 ? (
+                    <div className="space-y-3">
+                      {chatAnalytics.topTopics.map((item, idx) => (
+                        <div key={idx} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-700/30 border border-slate-100 dark:border-slate-700/50">
+                          <span className="font-bold text-slate-800 dark:text-slate-200 capitalize">{item.topic}</span>
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                            {item.count} Mentions
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="py-8 text-center text-slate-500 text-sm">No topic data available.</div>
+                  )}
+                </div>
+
+                {/* Recent Queries */}
+                <div>
+                  <h4 className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-4 uppercase tracking-wider">Recent Queries</h4>
+                  {isLoadingChatAnalytics ? (
+                    <div className="py-8 text-center text-slate-500 text-sm">Loading queries...</div>
+                  ) : chatAnalytics.recentQueries.length > 0 ? (
+                    <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                      {chatAnalytics.recentQueries.map((item, idx) => (
+                        <div key={idx} className="p-3 rounded-xl bg-slate-50 dark:bg-slate-700/30 border border-slate-100 dark:border-slate-700/50">
+                          <p className="text-sm text-slate-800 dark:text-slate-200 line-clamp-2">"{item.query}"</p>
+                          <div className="flex justify-between items-center mt-2">
+                            <span className="text-xs text-slate-500 font-mono truncate max-w-[150px]">{item.context || 'General'}</span>
+                            <span className="text-[10px] text-slate-400">
+                              {item.timestamp ? (
+                                item.timestamp._seconds ? 
+                                  new Date(item.timestamp._seconds * 1000).toLocaleTimeString() :
+                                  new Date(item.timestamp).toLocaleTimeString()
+                              ) : ''}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="py-8 text-center text-slate-500 text-sm">No recent queries.</div>
+                  )}
+                </div>
               </div>
             </div>
 

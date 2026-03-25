@@ -51,15 +51,15 @@ export class MailService {
   static async verifyConnection() {
     const transporter = this.getTransporter();
     if (!transporter) {
-      return { success: false, error: 'Email service not configured. Please set SMTP environment variables.' };
+      return { success: false, message: 'Email service not configured. Please set SMTP environment variables.' };
     }
 
     try {
       await transporter.verify();
-      return { success: true };
+      return { success: true, message: 'SMTP connection verified successfully.' };
     } catch (error: any) {
       console.error('SMTP Connection Verification Failed:', error);
-      return { success: false, error: error.message };
+      return { success: false, message: error.message || 'Unknown error occurred' };
     }
   }
 

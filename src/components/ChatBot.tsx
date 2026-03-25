@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Send, User, Bot, X, MessageSquare, Mic, MicOff, Image as ImageIcon, Volume2, VolumeX, Maximize2, Minimize2, Copy, Check, Zap, Lightbulb, Sparkles, Settings, ArrowRight } from "lucide-react";
+import { Send, User, Bot, X, MessageSquare, Mic, MicOff, Image as ImageIcon, Volume2, VolumeX, Maximize2, Minimize2, Copy, Check, Zap, Lightbulb, Sparkles, Settings, ArrowRight, FileText } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { ChatMessage, CourseId, UserProgress, AIPersonality } from "../types";
 import { jsonrepair } from 'jsonrepair';
@@ -128,6 +128,10 @@ export default function ChatBot({
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      if (file.size > 10 * 1024 * 1024) {
+        alert("File size must be less than 10MB");
+        return;
+      }
       const reader = new FileReader();
       reader.onloadend = () => {
         setSelectedImage(reader.result as string);
@@ -603,7 +607,13 @@ export default function ChatBot({
 
             {selectedImage && (
               <div className="relative inline-block mb-4">
-                <img src={selectedImage} alt="Preview" className="h-20 w-20 object-cover rounded-2xl border-2 border-emerald-500 shadow-lg" />
+                {selectedImage.startsWith('data:application/pdf') ? (
+                  <div className="h-20 w-20 bg-slate-100 dark:bg-slate-800 rounded-2xl border-2 border-emerald-500 shadow-lg flex items-center justify-center">
+                    <FileText className="text-emerald-500" size={32} />
+                  </div>
+                ) : (
+                  <img src={selectedImage} alt="Preview" className="h-20 w-20 object-cover rounded-2xl border-2 border-emerald-500 shadow-lg" />
+                )}
                 <button 
                   onClick={() => setSelectedImage(null)}
                   className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 shadow-lg"
@@ -691,7 +701,7 @@ export default function ChatBot({
               type="file" 
               ref={fileInputRef} 
               onChange={handleImageSelect} 
-              accept="image/*" 
+              accept="image/*,application/pdf" 
               className="hidden" 
             />
           </div>
@@ -937,7 +947,13 @@ export default function ChatBot({
 
                 {selectedImage && (
                   <div className="relative inline-block mb-2">
-                    <img src={selectedImage} alt="Preview" className="h-24 w-24 object-cover rounded-2xl border-2 border-emerald-500 shadow-lg" />
+                    {selectedImage.startsWith('data:application/pdf') ? (
+                      <div className="h-24 w-24 bg-slate-100 dark:bg-slate-800 rounded-2xl border-2 border-emerald-500 shadow-lg flex items-center justify-center">
+                        <FileText className="text-emerald-500" size={40} />
+                      </div>
+                    ) : (
+                      <img src={selectedImage} alt="Preview" className="h-24 w-24 object-cover rounded-2xl border-2 border-emerald-500 shadow-lg" />
+                    )}
                     <button 
                       onClick={() => setSelectedImage(null)}
                       className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1.5 shadow-lg hover:scale-110 transition-transform"
@@ -1018,7 +1034,7 @@ export default function ChatBot({
                   type="file" 
                   ref={fileInputRef} 
                   onChange={handleImageSelect} 
-                  accept="image/*" 
+                  accept="image/*,application/pdf" 
                   className="hidden" 
                 />
               </div>

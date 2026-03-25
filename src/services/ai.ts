@@ -675,6 +675,23 @@ ALWAYS use LaTeX for ALL mathematical formulas and variables (e.g., use $x$ inst
     }
   },
 
+  getChatAnalytics: async () => {
+    try {
+      const token = await getAuthToken();
+      const response = await fetch('/api/admin/chat-analytics', {
+        headers: {
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        }
+      });
+      if (!response.ok) throw new Error('Failed to fetch chat analytics');
+      const data = await response.json();
+      return { topTopics: data.topTopics || [], recentQueries: data.recentQueries || [] };
+    } catch (error) {
+      console.error('Get Chat Analytics Error:', error);
+      return { topTopics: [], recentQueries: [] };
+    }
+  },
+
   generateArchitectPlan: async (timetable: TimetableEntry[], exams: ExamDate[], progress: UserProgress) => {
     const token = await getAuthToken();
     const response = await fetch('/api/study-architect/generate-plan', {

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, Edit2, BarChart2, ChevronRight, Mail, User, BookMarked, Moon, Sun, HelpCircle, Star, LogOut, ShieldCheck, Zap, FileText, BookOpen, Settings, CreditCard, Clock, CheckCircle2, Camera, Upload, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useUserProgress } from '../hooks/useUserProgress';
 import { View } from '../types';
 import { db, storage } from '../firebase';
 import { collection, query, where, orderBy, limit, getDocs, Timestamp } from 'firebase/firestore';
@@ -24,6 +25,7 @@ interface UserProfileProps {
 
 export default function UserProfile({ onBack, onNavigate }: UserProfileProps) {
   const { user, logout, profile, updateProfileData } = useAuth();
+  const { progress } = useUserProgress();
   const [isDarkMode, setIsDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -269,6 +271,12 @@ export default function UserProfile({ onBack, onNavigate }: UserProfileProps) {
               <div>
                 <h2 className="text-xl font-bold text-slate-900 dark:text-white">{profile?.displayName || user?.displayName || 'Scholar'}</h2>
                 <p className="text-slate-500 dark:text-slate-400 text-sm">{user?.email || 'No email linked'}</p>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
+                    <Zap size={12} />
+                    {progress.streak} Day Streak
+                  </span>
+                </div>
                 {profile?.bio && (
                   <p className="mt-2 text-sm text-slate-600 dark:text-slate-400 italic line-clamp-2">
                     "{profile.bio}"
