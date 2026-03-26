@@ -36,6 +36,7 @@ export class MailService {
         host,
         port,
         secure: port === 465, // true for 465, false for other ports
+        family: 4, // Force IPv4 to prevent ENETUNREACH on platforms lacking IPv6 support
         auth: {
           user,
           pass,

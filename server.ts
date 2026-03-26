@@ -22,10 +22,7 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-import { pastPapers } from './src/data/pastQuestionsData';
-import { COURSES } from './src/constants';
-import { findRelevantQuestions } from './src/utils/search';
-import { initializeVectorStore, findRelevantContentSemantic } from './server/vectorSearch';
+import { initializeVectorStore, findRelevantContentSemantic, addVectorItem, removeVectorItem } from './server/vectorSearch';
 
 import { GeminiOpenRouterProvider, MistralProvider, GroqProvider, CircuitBreaker } from './server/providers';
 import { getCachedResponse, setCachedResponse } from './server/cache';
@@ -1666,11 +1663,18 @@ app.post('/api/admin/extract-questions', verifyAuth, async (req, res) => {
       return res.status(403).json({ error: 'Unauthorized: Only admins can extract questions' });
     }
 
-    const { pdfData, mimeType, courseCode, year, semester } = req.body;
+    const { pdfData, mimeType, courseCode, year, semester, provider } = req.body;
     
-    const geminiOpenRouterProvider = globalGeminiProvider;
-    if (!geminiOpenRouterProvider) {
-      throw new Error('OpenRouter API Key missing for Question Extraction');
+    let aiProvider;
+    if (provider === 'mistral') {
+      aiProvider = globalMistralProvider;
+      if (!aiProvider) throw new Error('Mistral API Key missing');
+    } else if (provider === 'groq') {
+      aiProvider = globalGroqProvider;
+      if (!aiProvider) throw new Error('Groq API Key missing');
+    } else {
+      aiProvider = globalGeminiProvider;
+      if (!aiProvider) throw new Error('OpenRouter API Key missing for Question Extraction');
     }
 
     const systemInstruction = `You are the UniAce Past Question Extraction Engine.
@@ -1692,7 +1696,7 @@ app.post('/api/admin/extract-questions', verifyAuth, async (req, res) => {
       ]
     }`;
 
-    const response = await geminiOpenRouterProvider.generate([
+    const response = await aiProvider.generate([
       { role: 'system', content: systemInstruction },
       { 
         role: 'user', 
@@ -1759,6 +1763,228 @@ app.post('/api/admin/ingest', verifyAuth, async (req, res) => {
   } catch (error: any) {
     console.error("Ingestion Error:", error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// --- Question Bank Endpoints (Hybrid Approach) ---
+
+app.post('/api/admin/questions/add', verifyAuth, async (req, res) => {
+  const uid = (req as any).user.uid;
+  const { courseCode, year, semester, title, questions } = req.body;
+
+  try {
+    const app = getAdminApp();
+    const userDoc = await app.firestore().collection('users').doc(uid).get();
+    if (userDoc.data()?.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const apiKey = process.env.GEMINI_API_KEY;
+    const genAI = new GoogleGenAI({ apiKey: apiKey! });
+    
+    const pastPapersRef = app.firestore().collection('past_papers');
+    const querySnapshot = await pastPapersRef
+      .where('courseCode', '==', courseCode)
+      .where('year', '==', year)
+      .where('semester', '==', semester)
+      .get();
+
+    let paperDocRef;
+    let existingQuestions: any[] = [];
+
+    if (!querySnapshot.empty) {
+      paperDocRef = querySnapshot.docs[0].ref;
+      existingQuestions = querySnapshot.docs[0].data().questions || [];
+    } else {
+      paperDocRef = pastPapersRef.doc();
+    }
+
+    const newQuestions = questions.map((q: any, idx: number) => ({
+      ...q,
+      id: q.id || `q${Date.now()}_${idx}`,
+      type: 'multiple-choice'
+    }));
+
+    const updatedQuestions = [...existingQuestions, ...newQuestions];
+
+    const batch = app.firestore().batch();
+    
+    batch.set(paperDocRef, {
+      title,
+      year,
+      semester,
+      courseCode,
+      questions: updatedQuestions,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedBy: uid
+    }, { merge: true });
+
+    const kbRef = app.firestore().collection('knowledge_base');
+    const newVectorItems: any[] = [];
+
+    for (const q of newQuestions) {
+      const content = `Question: ${q.question}\nOptions: ${q.options.join(', ')}\nCorrect Answer: ${q.correctAnswer}\nExplanation: ${q.explanation}\nHint: ${q.hint || ''}`;
+      
+      try {
+        const embedRes = await genAI.models.embedContent({
+          model: 'gemini-embedding-2-preview',
+          contents: [content]
+        });
+        const vector = embedRes.embeddings[0].values;
+
+        const kbDocRef = kbRef.doc(q.id);
+        batch.set(kbDocRef, {
+          content,
+          course_code: courseCode,
+          module_name: 'Past Questions',
+          topic_name: `${year} - ${semester}`,
+          embedding: admin.firestore.VectorValue.fromArray(vector),
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          questionId: q.id,
+          paperId: paperDocRef.id
+        });
+        
+        newVectorItems.push({
+          id: q.id,
+          content,
+          source: 'Knowledge Base',
+          type: 'question',
+          embedding: vector
+        });
+
+        await new Promise(resolve => setTimeout(resolve, 600)); // Throttle
+      } catch (embedError) {
+        console.error('Error generating embedding for question:', q.id, embedError);
+      }
+    }
+
+    await batch.commit();
+    
+    // Update in-memory vector store
+    newVectorItems.forEach(item => {
+      addVectorItem(item.id, item.content, item.source, item.type, item.embedding);
+    });
+
+    res.json({ success: true, message: `Saved ${newQuestions.length} questions.` });
+  } catch (error: any) {
+    console.error('Add Questions Error:', error);
+    res.status(500).json({ error: 'Failed to add questions' });
+  }
+});
+
+app.post('/api/admin/questions/update', verifyAuth, async (req, res) => {
+  const uid = (req as any).user.uid;
+  const { paperId, question } = req.body;
+
+  try {
+    const app = getAdminApp();
+    const userDoc = await app.firestore().collection('users').doc(uid).get();
+    if (userDoc.data()?.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const apiKey = process.env.GEMINI_API_KEY;
+    const genAI = new GoogleGenAI({ apiKey: apiKey! });
+    
+    const paperRef = app.firestore().collection('past_papers').doc(paperId);
+    const paperDoc = await paperRef.get();
+    
+    if (!paperDoc.exists) {
+      return res.status(404).json({ error: 'Past paper not found' });
+    }
+
+    const paperData = paperDoc.data()!;
+    const questions = paperData.questions || [];
+    const questionIndex = questions.findIndex((q: any) => q.id === question.id);
+
+    if (questionIndex === -1) {
+      return res.status(404).json({ error: 'Question not found' });
+    }
+
+    questions[questionIndex] = { ...questions[questionIndex], ...question };
+
+    const batch = app.firestore().batch();
+    
+    batch.update(paperRef, {
+      questions,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedBy: uid
+    });
+
+    const content = `Question: ${question.question}\nOptions: ${question.options.join(', ')}\nCorrect Answer: ${question.correctAnswer}\nExplanation: ${question.explanation}\nHint: ${question.hint || ''}`;
+    
+    const embedRes = await genAI.models.embedContent({
+      model: 'gemini-embedding-2-preview',
+      contents: [content]
+    });
+    const vector = embedRes.embeddings[0].values;
+
+    const kbRef = app.firestore().collection('knowledge_base').doc(question.id);
+    batch.set(kbRef, {
+      content,
+      course_code: paperData.courseCode,
+      module_name: 'Past Questions',
+      topic_name: `${paperData.year} - ${paperData.semester}`,
+      embedding: admin.firestore.VectorValue.fromArray(vector),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      questionId: question.id,
+      paperId: paperId
+    }, { merge: true });
+
+    await batch.commit();
+    
+    // Update in-memory vector store
+    addVectorItem(question.id, content, 'Knowledge Base', 'question', vector);
+
+    res.json({ success: true, message: 'Question updated successfully.' });
+  } catch (error: any) {
+    console.error('Update Question Error:', error);
+    res.status(500).json({ error: 'Failed to update question' });
+  }
+});
+
+app.post('/api/admin/questions/delete', verifyAuth, async (req, res) => {
+  const uid = (req as any).user.uid;
+  const { paperId, questionId } = req.body;
+
+  try {
+    const app = getAdminApp();
+    const userDoc = await app.firestore().collection('users').doc(uid).get();
+    if (userDoc.data()?.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    
+    const paperRef = app.firestore().collection('past_papers').doc(paperId);
+    const paperDoc = await paperRef.get();
+    
+    if (!paperDoc.exists) {
+      return res.status(404).json({ error: 'Past paper not found' });
+    }
+
+    const paperData = paperDoc.data()!;
+    const questions = paperData.questions || [];
+    const updatedQuestions = questions.filter((q: any) => q.id !== questionId);
+
+    const batch = app.firestore().batch();
+    
+    batch.update(paperRef, {
+      questions: updatedQuestions,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedBy: uid
+    });
+
+    const kbRef = app.firestore().collection('knowledge_base').doc(questionId);
+    batch.delete(kbRef);
+
+    await batch.commit();
+    
+    // Update in-memory vector store
+    removeVectorItem(questionId);
+
+    res.json({ success: true, message: 'Question deleted successfully.' });
+  } catch (error: any) {
+    console.error('Delete Question Error:', error);
+    res.status(500).json({ error: 'Failed to delete question' });
   }
 });
 
@@ -2387,7 +2613,7 @@ async function startServer() {
   // 5. Initialize Vector Store for AI Tutor
   try {
     // Initialize in background to not block server start
-    initializeVectorStore(pastPapers, COURSES).catch(err => {
+    initializeVectorStore().catch(err => {
       console.error('Failed to initialize vector store:', err);
     });
   } catch (error) {

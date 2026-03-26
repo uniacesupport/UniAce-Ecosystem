@@ -1,7 +1,7 @@
 
 import { GoogleGenAI } from '@google/genai';
-import { PastPaper } from '../src/data/pastQuestionsData';
-import { QuizQuestion, Course } from '../src/types';
+import { Course } from '../src/types';
+import { getDb } from './firebaseAdmin';
 
 export interface SearchResult {
   content: string;
@@ -10,7 +10,7 @@ export interface SearchResult {
   score: number;
 }
 
-let indexedItems: { content: string; source: string; type: 'question' | 'syllabus' | 'formula'; embedding: number[] }[] = [];
+let indexedItems: { id: string; content: string; source: string; type: 'question' | 'syllabus' | 'formula'; embedding: number[] }[] = [];
 
 let aiInstance: GoogleGenAI | null = null;
 
@@ -25,74 +25,50 @@ function getAI() {
   return aiInstance;
 }
 
-/**
- * Generates embeddings for all questions, syllabus topics, and formulas.
- */
-export async function initializeVectorStore(pastPapers: PastPaper[], courses: Record<string, Course>) {
-  indexedItems = []; // Reset
-
-  console.log('Starting Vector Store Initialization...');
-  
-  try {
-    // 1. Index Questions
-    const allQuestions: QuizQuestion[] = [];
-    pastPapers.forEach(paper => {
-      allQuestions.push(...paper.questions);
-    });
-
-    const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-    for (const question of allQuestions) {
-      const content = `Question: ${question.question} Explanation: ${question.explanation}`;
-      await addIndexItem(content, `Past Paper Question`, 'question');
-      await sleep(700); // 700ms delay = ~85 requests per minute (under 100/min limit)
-    }
-
-    // 2. Index Course Syllabus
-    for (const courseId in courses) {
-      const course = courses[courseId];
-      for (const module of course.syllabus) {
-        for (const subTopic of module.subTopics) {
-          const content = `Course: ${course.title} Topic: ${module.title} Subtopic: ${subTopic.title} Content: ${subTopic.content}`;
-          await addIndexItem(content, `${course.title} - ${subTopic.title}`, 'syllabus');
-          await sleep(700);
-        }
-      }
-
-      // 3. Index Formulas
-      for (const formula of course.formulas) {
-        const content = `Course: ${course.title} Formula: ${formula.title} LaTeX: ${formula.latex} Description: ${formula.description}`;
-        await addIndexItem(content, `${course.title} - Formula: ${formula.title}`, 'formula');
-        await sleep(700);
-      }
-    }
-
-    console.log(`Vector store initialized with ${indexedItems.length} items.`);
-  } catch (error) {
-    console.error('Failed to initialize vector store:', error);
-  }
+export function addVectorItem(id: string, content: string, source: string, type: 'question' | 'syllabus' | 'formula', embedding: number[]) {
+  // Remove if it already exists to handle updates
+  removeVectorItem(id);
+  indexedItems.push({ id, content, source, type, embedding });
 }
 
-async function addIndexItem(content: string, source: string, type: 'question' | 'syllabus' | 'formula') {
-  try {
-    const ai = getAI();
-    const result = await ai.models.embedContent({
-      model: 'gemini-embedding-2-preview',
-      contents: content,
-    });
-    
-    if (result.embeddings && result.embeddings.length > 0) {
-      indexedItems.push({
-        content,
-        source,
-        type,
-        embedding: result.embeddings[0].values as number[],
-      });
-    }
+export function removeVectorItem(id: string) {
+  indexedItems = indexedItems.filter(item => item.id !== id);
+}
 
-    console.log(`Vector Store Initialized with ${indexedItems.length} items.`);
+/**
+ * Loads embeddings from the Firestore knowledge_base collection.
+ */
+export async function initializeVectorStore() {
+  indexedItems = []; // Reset
+
+  console.log('Starting Vector Store Initialization from Firestore...');
+  
+  try {
+    const db = getDb();
+    const knowledgeBaseRef = db.collection('knowledge_base');
+    const snapshot = await knowledgeBaseRef.get();
+    
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      if (data.embedding && data.content) {
+        // Convert VectorValue to array if necessary
+        const embeddingArray = typeof data.embedding.toArray === 'function' 
+          ? data.embedding.toArray() 
+          : data.embedding;
+
+        indexedItems.push({
+          id: doc.id,
+          content: data.content,
+          source: data.source || 'Knowledge Base',
+          type: data.type || 'question',
+          embedding: embeddingArray,
+        });
+      }
+    });
+
+    console.log(`Vector store initialized with ${indexedItems.length} items from Firestore.`);
   } catch (error) {
-    console.error(`Error generating embedding for ${source}:`, error);
+    console.error('Failed to initialize vector store from Firestore:', error);
   }
 }
 

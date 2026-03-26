@@ -65,7 +65,7 @@ export default function AdminDashboard() {
   const [isIngesting, setIsIngesting] = useState(false);
   const [ingestionStatus, setIngestionStatus] = useState('');
   const [kbStats, setKbStats] = useState({ totalChunks: 0 });
-  const [activeTab, setActiveTab] = useState<'overview' | 'courses' | 'users' | 'rag' | 'communications' | 'settings' | 'logs'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'courses' | 'users' | 'rag' | 'communications' | 'settings' | 'logs' | 'question-bank'>('overview');
   const [notificationText, setNotificationText] = useState('');
   const [whatsappLink, setWhatsappLink] = useState('');
   const [isSendingNotification, setIsSendingNotification] = useState(false);
@@ -108,7 +108,8 @@ export default function AdminDashboard() {
     quiz: 'groq',
     lesson: 'mistral',
     rag: 'gemini',
-    vision: 'gemini'
+    vision: 'gemini',
+    past_questions: 'gemini'
   });
   const [logs, setLogs] = useState<SystemLog[]>([]);
   const [isLoadingLogs, setIsLoadingLogs] = useState(false);
@@ -2427,94 +2428,96 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-8">
-            {/* System Event Logs */}
-            <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700">
-              <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
-                <Activity className="text-blue-500" size={24} />
-                Recent Activity
-              </h3>
-              <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 scrollbar-hide">
-                {logs.slice(0, 10).map((log) => (
-                  <div key={log.id} className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className={`text-[10px] font-black uppercase tracking-widest ${
-                        log.level === 'success' ? 'text-emerald-500' :
-                        log.level === 'warning' ? 'text-amber-500' :
-                        log.level === 'error' ? 'text-red-500' :
-                        'text-blue-500'
-                      }`}>
-                        {log.level}
-                      </span>
-                      <span className="text-[10px] text-slate-400 font-bold">
-                        {log.timestamp?.toDate ? log.timestamp.toDate().toLocaleTimeString() : 'Just now'}
-                      </span>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* Global AI Safety Controls */}
+            <div className="lg:col-span-1 space-y-6">
+              <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700">
+                <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
+                  <Shield className="text-red-500" size={24} />
+                  Safety Controls
+                </h3>
+                <div className="space-y-4">
+                  <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 flex items-center justify-between">
+                    <div>
+                      <div className="font-bold text-slate-900 dark:text-white">Global AI Killswitch</div>
+                      <div className="text-[10px] text-slate-500">Disable all AI interactions.</div>
                     </div>
-                    <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">{log.message}</p>
+                    <div 
+                      onClick={() => updateSystemConfig({ aiKillswitch: !systemConfig.aiKillswitch })}
+                      className={`w-10 h-5 rounded-full relative cursor-pointer transition-all ${systemConfig.aiKillswitch ? 'bg-red-500' : 'bg-slate-300 dark:bg-slate-700'}`}
+                    >
+                      <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${systemConfig.aiKillswitch ? 'right-0.5' : 'left-0.5'}`} />
+                    </div>
                   </div>
-                ))}
-                {logs.length === 0 && (
-                  <div className="text-center py-8 text-slate-500 text-sm italic">
-                    No recent activity logs found.
+                  <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 flex items-center justify-between">
+                    <div>
+                      <div className="font-bold text-slate-900 dark:text-white">Strict Academic Filter</div>
+                      <div className="text-[10px] text-slate-500">Block non-academic queries.</div>
+                    </div>
+                    <div 
+                      onClick={() => updateSystemConfig({ strictAcademicFilter: !systemConfig.strictAcademicFilter })}
+                      className={`w-10 h-5 rounded-full relative cursor-pointer transition-all ${systemConfig.strictAcademicFilter ? 'bg-blue-500' : 'bg-slate-300 dark:bg-slate-700'}`}
+                    >
+                      <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${systemConfig.strictAcademicFilter ? 'right-0.5' : 'left-0.5'}`} />
+                    </div>
                   </div>
-                )}
+                  <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 flex items-center justify-between">
+                    <div>
+                      <div className="font-bold text-slate-900 dark:text-white">Auto-Fallback Mode</div>
+                      <div className="text-[10px] text-slate-500">Enable automatic provider switching.</div>
+                    </div>
+                    <div 
+                      onClick={() => updateSystemConfig({ autoFallback: !systemConfig.autoFallback })}
+                      className={`w-10 h-5 rounded-full relative cursor-pointer transition-all ${systemConfig.autoFallback ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-700'}`}
+                    >
+                      <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${systemConfig.autoFallback ? 'right-0.5' : 'left-0.5'}`} />
+                    </div>
+                  </div>
+                </div>
               </div>
-              <button 
-                onClick={() => setActiveTab('logs')}
-                className="w-full mt-6 py-3 rounded-xl border border-dashed border-slate-300 dark:border-slate-600 text-slate-400 text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-900 transition-all"
-              >
-                View Full Audit Trail
-              </button>
-            </div>
-          </div>
 
-          {/* Global AI Safety Controls */}
-          <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700">
-            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
-              <Shield className="text-red-500" size={24} />
-              Safety & Compliance Controls
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="p-6 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 flex items-center justify-between">
-                <div>
-                  <div className="font-bold text-slate-900 dark:text-white">Global AI Killswitch</div>
-                  <div className="text-xs text-slate-500">Instantly disable all AI interactions.</div>
+              {/* System Event Logs */}
+              <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700">
+                <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
+                  <Activity className="text-blue-500" size={24} />
+                  Recent Activity
+                </h3>
+                <div className="space-y-4 max-h-[300px] overflow-y-auto pr-2 scrollbar-hide">
+                  {logs.slice(0, 5).map((log) => (
+                    <div key={log.id} className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className={`text-[10px] font-black uppercase tracking-widest ${
+                          log.level === 'success' ? 'text-emerald-500' :
+                          log.level === 'warning' ? 'text-amber-500' :
+                          log.level === 'error' ? 'text-red-500' :
+                          'text-blue-500'
+                        }`}>
+                          {log.level}
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-bold">
+                          {log.timestamp?.toDate ? log.timestamp.toDate().toLocaleTimeString() : 'Just now'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">{log.message}</p>
+                    </div>
+                  ))}
+                  {logs.length === 0 && (
+                    <div className="text-center py-8 text-slate-500 text-sm italic">
+                      No recent activity logs found.
+                    </div>
+                  )}
                 </div>
-                <div 
-                  onClick={() => updateSystemConfig({ aiKillswitch: !systemConfig.aiKillswitch })}
-                  className={`w-12 h-6 rounded-full relative cursor-pointer transition-all ${systemConfig.aiKillswitch ? 'bg-red-500' : 'bg-slate-300 dark:bg-slate-700'}`}
+                <button 
+                  onClick={() => setActiveTab('logs')}
+                  className="w-full mt-4 py-2 rounded-xl border border-dashed border-slate-300 dark:border-slate-600 text-slate-400 text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-900 transition-all"
                 >
-                  <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${systemConfig.aiKillswitch ? 'right-1' : 'left-1'}`} />
-                </div>
-              </div>
-              <div className="p-6 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 flex items-center justify-between">
-                <div>
-                  <div className="font-bold text-slate-900 dark:text-white">Strict Academic Filter</div>
-                  <div className="text-xs text-slate-500">Block non-academic AI queries.</div>
-                </div>
-                <div 
-                  onClick={() => updateSystemConfig({ strictAcademicFilter: !systemConfig.strictAcademicFilter })}
-                  className={`w-12 h-6 rounded-full relative cursor-pointer transition-all ${systemConfig.strictAcademicFilter ? 'bg-blue-500' : 'bg-slate-300 dark:bg-slate-700'}`}
-                >
-                  <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${systemConfig.strictAcademicFilter ? 'right-1' : 'left-1'}`} />
-                </div>
-              </div>
-              <div className="p-6 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 flex items-center justify-between">
-                <div>
-                  <div className="font-bold text-slate-900 dark:text-white">Auto-Fallback Mode</div>
-                  <div className="text-xs text-slate-500">Enable automatic provider switching.</div>
-                </div>
-                <div 
-                  onClick={() => updateSystemConfig({ autoFallback: !systemConfig.autoFallback })}
-                  className={`w-12 h-6 rounded-full relative cursor-pointer transition-all ${systemConfig.autoFallback ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-700'}`}
-                >
-                  <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${systemConfig.autoFallback ? 'right-1' : 'left-1'}`} />
-                </div>
+                  View Full Audit Trail
+                </button>
               </div>
             </div>
 
             {/* Task Routing Matrix */}
-            <div className="mt-8 bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700">
+            <div className="lg:col-span-2 bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700">
               <div className="flex items-center justify-between mb-8">
                 <div>
                   <h2 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
@@ -2535,9 +2538,10 @@ export default function AdminDashboard() {
                   { id: 'quiz', label: 'Quiz Generation', icon: Trophy, recommended: 'groq', desc: 'Creating assessments and practice questions.' },
                   { id: 'lesson', label: 'Lesson Content', icon: BookOpen, recommended: 'mistral', desc: 'Writing detailed educational modules.' },
                   { id: 'rag', label: 'Knowledge Retrieval', icon: Database, recommended: 'gemini', desc: 'Searching and summarizing internal documents.' },
-                  { id: 'vision', label: 'Vision Processing', icon: Search, recommended: 'gemini', desc: 'Analyzing images and handwritten notes.' }
+                  { id: 'vision', label: 'Vision Processing', icon: Search, recommended: 'gemini', desc: 'Analyzing images and handwritten notes.' },
+                  { id: 'past_questions', label: 'Past Questions Extraction', icon: FileText, recommended: 'gemini', desc: 'Extracting questions from uploaded PDFs.' }
                 ].map((task) => (
-                  <div key={task.id} className="flex flex-col md:flex-row md:items-center justify-between p-6 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 gap-4">
+                  <div key={task.id} className="flex flex-col md:flex-row md:items-center justify-between p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 gap-4">
                     <div className="flex items-center gap-4">
                       <div className="p-3 rounded-xl bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 shadow-sm">
                         <task.icon size={20} />
@@ -2560,15 +2564,15 @@ export default function AdminDashboard() {
                       >
                         Use Recommended
                       </button>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1 bg-white dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
                         {['gemini', 'groq', 'mistral'].map((provider) => (
                           <button
                             key={provider}
                             onClick={() => updateRoutingConfig(task.id, provider)}
-                            className={`px-4 py-2 rounded-xl text-xs font-bold capitalize transition-all ${
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold capitalize transition-all ${
                               routingConfig[task.id as keyof typeof routingConfig] === provider
-                                ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-md'
-                                : 'bg-white dark:bg-slate-800 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'
+                                ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-sm'
+                                : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700'
                             }`}
                           >
                             {provider}
@@ -2581,261 +2585,9 @@ export default function AdminDashboard() {
               </div>
             </div>
           </div>
-        </div>
-      )}
-      {activeTab === 'communications' && (
-          <div className="space-y-8">
-            <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700">
-              <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
-                <Globe className="text-blue-500" size={24} />
-                Global System Notification
-              </h3>
-              <p className="text-sm text-slate-500 mb-6">
-                This message will appear as a banner on the dashboard of every student currently using the platform.
-              </p>
-              <div className="space-y-4">
-                <textarea 
-                  placeholder="Type your global announcement here..." 
-                  value={notificationText}
-                  onChange={(e) => setNotificationText(e.target.value)}
-                  className="w-full h-32 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Optional: WhatsApp Channel Link</label>
-                  <input 
-                    type="url"
-                    placeholder="https://chat.whatsapp.com/..." 
-                    value={whatsappLink}
-                    onChange={(e) => setWhatsappLink(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
-                </div>
-                <div className="flex justify-end">
-                  <button 
-                    onClick={handleSendNotification}
-                    disabled={isSendingNotification || !notificationText}
-                    className="px-8 py-3 rounded-2xl font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-500/30 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2"
-                  >
-                    {isSendingNotification ? <Loader2 size={20} className="animate-spin" /> : <Zap size={20} />}
-                    Broadcast to All Students
-                  </button>
-                </div>
-              </div>
-            </div>
 
-            <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700">
-              <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
-                <FileText className="text-emerald-500" size={24} />
-                Direct Email Communication
-              </h3>
-              <p className="text-sm text-slate-500 mb-6">
-                Send a branded personal email to a specific student.
-              </p>
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Student Email (Recipient)</label>
-                    <input 
-                      type="email"
-                      placeholder="student@example.com" 
-                      value={emailTo}
-                      onChange={(e) => setEmailTo(e.target.value)}
-                      className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Sender Name (Branding)</label>
-                    <input 
-                      type="text"
-                      placeholder="UniAce Team" 
-                      value={emailFromName}
-                      onChange={(e) => setEmailFromName(e.target.value)}
-                      className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Subject Line</label>
-                  <input 
-                    type="text"
-                    placeholder="Important Update Regarding Your Account" 
-                    value={emailSubject}
-                    onChange={(e) => setEmailSubject(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Email Body (HTML supported)</label>
-                  <textarea 
-                    placeholder="Hi student, we noticed you've been doing great in your courses..." 
-                    value={emailBody}
-                    onChange={(e) => setEmailBody(e.target.value)}
-                    className="w-full h-48 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
-                </div>
-                <div className="flex justify-end">
-                  <button 
-                    onClick={handleSendEmail}
-                    disabled={isSendingEmail || !emailTo || !emailSubject || !emailBody}
-                    className="px-8 py-3 rounded-2xl font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-500/30 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2"
-                  >
-                    {isSendingEmail ? <Loader2 size={20} className="animate-spin" /> : <Plus size={20} />}
-                    Send Branded Email
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                  <Shield className="text-indigo-500" size={24} />
-                  Email System Diagnostics
-                </h3>
-                <button 
-                  onClick={handleDebugEmail}
-                  disabled={isDebuggingEmail}
-                  className="px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-500/30 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2"
-                >
-                  {isDebuggingEmail ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
-                  Run Connection Test
-                </button>
-              </div>
-              
-              <p className="text-sm text-slate-500 mb-6">
-                Test the SMTP connection and verify if all required environment variables are correctly configured.
-              </p>
-
-              {emailDebugInfo && (
-                <div className="space-y-6">
-                  <div className={`p-4 rounded-2xl flex items-start gap-4 ${emailDebugInfo.connection.success ? 'bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800' : 'bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800'}`}>
-                    <div className={`p-2 rounded-xl ${emailDebugInfo.connection.success ? 'bg-emerald-100 dark:bg-emerald-800 text-emerald-600 dark:text-emerald-400' : 'bg-rose-100 dark:bg-rose-800 text-rose-600 dark:text-rose-400'}`}>
-                      {emailDebugInfo.connection.success ? <CheckCircle size={20} /> : <AlertCircle size={20} />}
-                    </div>
-                    <div>
-                      <h4 className={`font-bold ${emailDebugInfo.connection.success ? 'text-emerald-900 dark:text-emerald-100' : 'text-rose-900 dark:text-rose-100'}`}>
-                        {emailDebugInfo.connection.success ? 'SMTP Connection Verified' : 'SMTP Connection Failed'}
-                      </h4>
-                      <p className={`text-sm mt-1 ${emailDebugInfo.connection.success ? 'text-emerald-700 dark:text-emerald-300' : 'text-rose-700 dark:text-rose-300'}`}>
-                        {emailDebugInfo.connection.message}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    {[
-                      { label: 'SMTP Host', value: emailDebugInfo.config.host, present: !!emailDebugInfo.config.host },
-                      { label: 'SMTP User', value: emailDebugInfo.config.user, present: !!emailDebugInfo.config.user },
-                      { label: 'SMTP Pass', value: emailDebugInfo.config.hasPass ? '********' : 'Missing', present: emailDebugInfo.config.hasPass },
-                      { label: 'From Email', value: emailDebugInfo.config.from, present: !!emailDebugInfo.config.from },
-                    ].map((item, idx) => (
-                      <div key={idx} className="bg-slate-50 dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800">
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">{item.label}</p>
-                        <p className={`text-sm font-mono truncate ${item.present ? 'text-slate-900 dark:text-white' : 'text-rose-500 font-bold'}`}>
-                          {item.value || 'Not Configured'}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-
-                  {!emailDebugInfo.connection.success && emailDebugInfo.connection.message?.includes('535') && (
-                    <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 p-4 rounded-2xl">
-                      <div className="flex items-center gap-2 text-amber-800 dark:text-amber-200 font-bold mb-2">
-                        <AlertCircle size={18} />
-                        Authentication Tip
-                      </div>
-                      <p className="text-sm text-amber-700 dark:text-amber-300">
-                        Error 535 usually means incorrect credentials. If you are using Gmail, make sure you are using a <strong>16-character App Password</strong>, not your regular account password.
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700">
-              <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
-                <Clock className="text-amber-500" size={24} />
-                Trial Expiration Reminder
-              </h3>
-              <p className="text-sm text-slate-500 mb-6">
-                Send a pre-formatted reminder to students whose 7-day trial is ending.
-              </p>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Student Email</label>
-                  <input 
-                    type="email"
-                    placeholder="student@example.com" 
-                    id="reminder-email"
-                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Student Name</label>
-                  <input 
-                    type="text"
-                    placeholder="Scholar Name" 
-                    id="reminder-name"
-                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Days Left</label>
-                  <select 
-                    id="reminder-days"
-                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-                  >
-                    <option value="1">1 Day Left</option>
-                    <option value="2">2 Days Left</option>
-                    <option value="3">3 Days Left</option>
-                  </select>
-                </div>
-              </div>
-              <div className="flex justify-end">
-                <button 
-                  onClick={async () => {
-                    const email = (document.getElementById('reminder-email') as HTMLInputElement).value;
-                    const name = (document.getElementById('reminder-name') as HTMLInputElement).value;
-                    const days = (document.getElementById('reminder-days') as HTMLSelectElement).value;
-                    
-                    if (!email || !name) {
-                      showToast('Please provide email and name', 'error');
-                      return;
-                    }
-
-                    setIsSendingEmail(true);
-                    try {
-                      const idToken = await auth.currentUser?.getIdToken();
-                      const res = await fetch('/api/admin/send-reminder', {
-                        method: 'POST',
-                        headers: { 
-                          'Authorization': `Bearer ${idToken}`,
-                          'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({ to: email, displayName: name, daysLeft: parseInt(days) })
-                      });
-                      if (res.ok) {
-                        showToast('Reminder sent successfully!', 'success');
-                      } else {
-                        showToast('Failed to send reminder', 'error');
-                      }
-                    } catch (err) {
-                      showToast('Error sending reminder', 'error');
-                    } finally {
-                      setIsSendingEmail(false);
-                    }
-                  }}
-                  disabled={isSendingEmail}
-                  className="px-8 py-3 rounded-2xl font-bold bg-amber-500 hover:bg-amber-600 text-white shadow-lg shadow-amber-500/30 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2"
-                >
-                  {isSendingEmail ? <Loader2 size={20} className="animate-spin" /> : <Clock size={20} />}
-                  Send Trial Reminder
-                </button>
-              </div>
-            </div>
-
-            <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700 h-full flex flex-col">
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
                   <BarChart3 className="text-purple-500" size={24} />
@@ -2853,7 +2605,7 @@ export default function AdminDashboard() {
                 This tracks how many students click "Explain Simpler" on specific lessons. High counts indicate content that may be too difficult.
               </p>
 
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto flex-grow">
                 <table className="w-full text-left">
                   <thead>
                     <tr className="border-b border-slate-200 dark:border-slate-700">
@@ -2915,7 +2667,7 @@ export default function AdminDashboard() {
             </div>
 
             {/* Chat Analytics Section */}
-            <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700">
+            <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700 h-full flex flex-col">
               <div className="flex justify-between items-center mb-2">
                 <h3 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
                   <MessageSquare className="text-blue-500" size={24} />
@@ -2933,14 +2685,14 @@ export default function AdminDashboard() {
                 Discover what students are asking the AI most often. Use this data to identify knowledge gaps and plan future content.
               </p>
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 flex-grow">
                 {/* Top Topics */}
-                <div>
+                <div className="flex flex-col">
                   <h4 className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-4 uppercase tracking-wider">Top Topics</h4>
                   {isLoadingChatAnalytics ? (
-                    <div className="py-8 text-center text-slate-500 text-sm">Loading topics...</div>
+                    <div className="py-8 text-center text-slate-500 text-sm flex-grow flex items-center justify-center">Loading topics...</div>
                   ) : chatAnalytics.topTopics.length > 0 ? (
-                    <div className="space-y-3">
+                    <div className="space-y-3 flex-grow overflow-y-auto max-h-[400px] custom-scrollbar pr-2">
                       {chatAnalytics.topTopics.map((item, idx) => (
                         <div key={idx} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-700/30 border border-slate-100 dark:border-slate-700/50">
                           <span className="font-bold text-slate-800 dark:text-slate-200 capitalize">{item.topic}</span>
@@ -2951,17 +2703,17 @@ export default function AdminDashboard() {
                       ))}
                     </div>
                   ) : (
-                    <div className="py-8 text-center text-slate-500 text-sm">No topic data available.</div>
+                    <div className="py-8 text-center text-slate-500 text-sm flex-grow flex items-center justify-center">No topic data available.</div>
                   )}
                 </div>
 
                 {/* Recent Queries */}
-                <div>
+                <div className="flex flex-col">
                   <h4 className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-4 uppercase tracking-wider">Recent Queries</h4>
                   {isLoadingChatAnalytics ? (
-                    <div className="py-8 text-center text-slate-500 text-sm">Loading queries...</div>
+                    <div className="py-8 text-center text-slate-500 text-sm flex-grow flex items-center justify-center">Loading queries...</div>
                   ) : chatAnalytics.recentQueries.length > 0 ? (
-                    <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                    <div className="space-y-3 flex-grow overflow-y-auto max-h-[400px] custom-scrollbar pr-2">
                       {chatAnalytics.recentQueries.map((item, idx) => (
                         <div key={idx} className="p-3 rounded-xl bg-slate-50 dark:bg-slate-700/30 border border-slate-100 dark:border-slate-700/50">
                           <p className="text-sm text-slate-800 dark:text-slate-200 line-clamp-2">"{item.query}"</p>
@@ -2979,38 +2731,301 @@ export default function AdminDashboard() {
                       ))}
                     </div>
                   ) : (
-                    <div className="py-8 text-center text-slate-500 text-sm">No recent queries.</div>
+                    <div className="py-8 text-center text-slate-500 text-sm flex-grow flex items-center justify-center">No recent queries.</div>
                   )}
                 </div>
               </div>
             </div>
+          </div>
 
-            <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700">
-              <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
-                <Shield className="text-purple-500" size={24} />
-                System Health & Logs
-              </h3>
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="p-4 bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-800 rounded-2xl">
-                    <div className="text-xs font-bold text-emerald-600 uppercase mb-1">Database</div>
-                    <div className="text-sm font-bold text-slate-900 dark:text-white">Operational</div>
-                  </div>
-                  <div className="p-4 bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-800 rounded-2xl">
-                    <div className="text-xs font-bold text-emerald-600 uppercase mb-1">AI Engine</div>
-                    <div className="text-sm font-bold text-slate-900 dark:text-white">Operational</div>
-                  </div>
-                  <div className="p-4 bg-amber-50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-800 rounded-2xl">
-                    <div className="text-xs font-bold text-amber-600 uppercase mb-1">RAG Index</div>
-                    <div className="text-sm font-bold text-slate-900 dark:text-white">Optimizing...</div>
-                  </div>
+          <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700">
+            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
+              <Shield className="text-purple-500" size={24} />
+              System Health & Logs
+            </h3>
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="p-4 bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-800 rounded-2xl">
+                  <div className="text-xs font-bold text-emerald-600 uppercase mb-1">Database</div>
+                  <div className="text-sm font-bold text-slate-900 dark:text-white">Operational</div>
+                </div>
+                <div className="p-4 bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-800 rounded-2xl">
+                  <div className="text-xs font-bold text-emerald-600 uppercase mb-1">AI Engine</div>
+                  <div className="text-sm font-bold text-slate-900 dark:text-white">Operational</div>
+                </div>
+                <div className="p-4 bg-amber-50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-800 rounded-2xl">
+                  <div className="text-xs font-bold text-amber-600 uppercase mb-1">RAG Index</div>
+                  <div className="text-sm font-bold text-slate-900 dark:text-white">Optimizing...</div>
+                </div>
+                <div className="p-4 bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-800 rounded-2xl">
+                  <div className="text-xs font-bold text-emerald-600 uppercase mb-1">Email Service</div>
+                  <div className="text-sm font-bold text-slate-900 dark:text-white">Operational</div>
                 </div>
               </div>
             </div>
           </div>
-        )}
-      </div>
-      {/* Confirm Modal */}
+        </div>
+      )}
+      {activeTab === 'communications' && (
+        <div className="space-y-8">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700 h-full flex flex-col">
+              <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
+                <Globe className="text-blue-500" size={24} />
+                Global System Notification
+              </h3>
+              <p className="text-sm text-slate-500 mb-6">
+                This message will appear as a banner on the dashboard of every student currently using the platform.
+              </p>
+              <div className="space-y-4 flex-grow flex flex-col">
+                <textarea 
+                  placeholder="Type your global announcement here..." 
+                  value={notificationText}
+                  onChange={(e) => setNotificationText(e.target.value)}
+                  className="w-full flex-grow min-h-[150px] bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                />
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Optional: WhatsApp Channel Link</label>
+                  <input 
+                    type="url"
+                    placeholder="https://chat.whatsapp.com/..." 
+                    value={whatsappLink}
+                    onChange={(e) => setWhatsappLink(e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <div className="flex justify-end pt-4">
+                  <button 
+                    onClick={handleSendNotification}
+                    disabled={isSendingNotification || !notificationText}
+                    className="w-full md:w-auto px-8 py-3 rounded-2xl font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-500/30 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {isSendingNotification ? <Loader2 size={20} className="animate-spin" /> : <Zap size={20} />}
+                    Broadcast to All Students
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700 h-full flex flex-col">
+              <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
+                <FileText className="text-emerald-500" size={24} />
+                Direct Email Communication
+              </h3>
+              <p className="text-sm text-slate-500 mb-6">
+                Send a branded personal email to a specific student.
+              </p>
+              <div className="space-y-4 flex-grow flex flex-col">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Student Email (Recipient)</label>
+                    <input 
+                      type="email"
+                      placeholder="student@example.com" 
+                      value={emailTo}
+                      onChange={(e) => setEmailTo(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Sender Name (Branding)</label>
+                    <input 
+                      type="text"
+                      placeholder="UniAce Team" 
+                      value={emailFromName}
+                      onChange={(e) => setEmailFromName(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Subject Line</label>
+                  <input 
+                    type="text"
+                    placeholder="Important Update Regarding Your Account" 
+                    value={emailSubject}
+                    onChange={(e) => setEmailSubject(e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <div className="space-y-2 flex-grow flex flex-col">
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Email Body (HTML supported)</label>
+                  <textarea 
+                    placeholder="Hi student, we noticed you've been doing great in your courses..." 
+                    value={emailBody}
+                    onChange={(e) => setEmailBody(e.target.value)}
+                    className="w-full flex-grow min-h-[150px] bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none"
+                  />
+                </div>
+                <div className="flex justify-end pt-4">
+                  <button 
+                    onClick={handleSendEmail}
+                    disabled={isSendingEmail || !emailTo || !emailSubject || !emailBody}
+                    className="w-full md:w-auto px-8 py-3 rounded-2xl font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-500/30 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {isSendingEmail ? <Loader2 size={20} className="animate-spin" /> : <Plus size={20} />}
+                    Send Branded Email
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700 h-full flex flex-col">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <Shield className="text-indigo-500" size={24} />
+                  Email System Diagnostics
+                </h3>
+                <button 
+                  onClick={handleDebugEmail}
+                  disabled={isDebuggingEmail}
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-500/30 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2"
+                >
+                  {isDebuggingEmail ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+                  Run Connection Test
+                </button>
+              </div>
+              
+              <p className="text-sm text-slate-500 mb-6">
+                Test the SMTP connection and verify if all required environment variables are correctly configured.
+              </p>
+
+              {emailDebugInfo && (
+                <div className="space-y-6 flex-grow">
+                  <div className={`p-4 rounded-2xl flex items-start gap-4 ${emailDebugInfo.connection.success ? 'bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800' : 'bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800'}`}>
+                    <div className={`p-2 rounded-xl ${emailDebugInfo.connection.success ? 'bg-emerald-100 dark:bg-emerald-800 text-emerald-600 dark:text-emerald-400' : 'bg-rose-100 dark:bg-rose-800 text-rose-600 dark:text-rose-400'}`}>
+                      {emailDebugInfo.connection.success ? <CheckCircle size={20} /> : <AlertCircle size={20} />}
+                    </div>
+                    <div>
+                      <h4 className={`font-bold ${emailDebugInfo.connection.success ? 'text-emerald-900 dark:text-emerald-100' : 'text-rose-900 dark:text-rose-100'}`}>
+                        {emailDebugInfo.connection.success ? 'SMTP Connection Verified' : 'SMTP Connection Failed'}
+                      </h4>
+                      <p className={`text-sm mt-1 ${emailDebugInfo.connection.success ? 'text-emerald-700 dark:text-emerald-300' : 'text-rose-700 dark:text-rose-300'}`}>
+                        {emailDebugInfo.connection.message}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {[
+                      { label: 'SMTP Host', value: emailDebugInfo.config.host, present: !!emailDebugInfo.config.host },
+                      { label: 'SMTP User', value: emailDebugInfo.config.user, present: !!emailDebugInfo.config.user },
+                      { label: 'SMTP Pass', value: emailDebugInfo.config.hasPass ? '********' : 'Missing', present: emailDebugInfo.config.hasPass },
+                      { label: 'From Email', value: emailDebugInfo.config.from, present: !!emailDebugInfo.config.from },
+                    ].map((item, idx) => (
+                      <div key={idx} className="bg-slate-50 dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">{item.label}</p>
+                        <p className={`text-sm font-mono truncate ${item.present ? 'text-slate-900 dark:text-white' : 'text-rose-500 font-bold'}`}>
+                          {item.value || 'Not Configured'}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+
+                  {!emailDebugInfo.connection.success && emailDebugInfo.connection.message?.includes('535') && (
+                    <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 p-4 rounded-2xl mt-4">
+                      <div className="flex items-center gap-2 text-amber-800 dark:text-amber-200 font-bold mb-2">
+                        <AlertCircle size={18} />
+                        Authentication Tip
+                      </div>
+                      <p className="text-sm text-amber-700 dark:text-amber-300">
+                        Error 535 usually means incorrect credentials. If you are using Gmail, make sure you are using a <strong>16-character App Password</strong>, not your regular account password.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700 h-full flex flex-col">
+              <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
+                <Clock className="text-amber-500" size={24} />
+                Trial Expiration Reminder
+              </h3>
+              <p className="text-sm text-slate-500 mb-6">
+                Send a pre-formatted reminder to students whose 7-day trial is ending.
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 flex-grow">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Student Email</label>
+                  <input 
+                    type="email"
+                    placeholder="student@example.com" 
+                    id="reminder-email"
+                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Student Name</label>
+                  <input 
+                    type="text"
+                    placeholder="Scholar Name" 
+                    id="reminder-name"
+                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Days Left</label>
+                  <select 
+                    id="reminder-days"
+                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  >
+                    <option value="1">1 Day Left</option>
+                    <option value="2">2 Days Left</option>
+                    <option value="3">3 Days Left</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex justify-end pt-4">
+                <button 
+                  onClick={async () => {
+                    const email = (document.getElementById('reminder-email') as HTMLInputElement).value;
+                    const name = (document.getElementById('reminder-name') as HTMLInputElement).value;
+                    const days = (document.getElementById('reminder-days') as HTMLSelectElement).value;
+                    
+                    if (!email || !name) {
+                      showToast('Please provide email and name', 'error');
+                      return;
+                    }
+
+                    setIsSendingEmail(true);
+                    try {
+                      const idToken = await auth.currentUser?.getIdToken();
+                      const res = await fetch('/api/admin/send-reminder', {
+                        method: 'POST',
+                        headers: { 
+                          'Authorization': `Bearer ${idToken}`,
+                          'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ to: email, displayName: name, daysLeft: parseInt(days) })
+                      });
+                      if (res.ok) {
+                        showToast('Reminder sent successfully!', 'success');
+                      } else {
+                        showToast('Failed to send reminder', 'error');
+                      }
+                    } catch (err) {
+                      showToast('Error sending reminder', 'error');
+                    } finally {
+                      setIsSendingEmail(false);
+                    }
+                  }}
+                  disabled={isSendingEmail}
+                  className="w-full md:w-auto px-8 py-3 rounded-2xl font-bold bg-amber-500 hover:bg-amber-600 text-white shadow-lg shadow-amber-500/30 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {isSendingEmail ? <Loader2 size={20} className="animate-spin" /> : <Clock size={20} />}
+                  Send Trial Reminder
+                </button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      )}
+    </div>
+  {/* Confirm Modal */}
       {confirmModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4">
           <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 max-w-md w-full shadow-2xl">

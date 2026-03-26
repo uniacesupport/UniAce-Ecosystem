@@ -1,20 +1,130 @@
-import React, { useState } from 'react';
-import { Upload, FileText, Plus, CheckCircle, Loader2, AlertCircle, Save, Trash2, Edit2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Upload, FileText, Plus, CheckCircle, Loader2, AlertCircle, Save, Trash2, Edit2, Search, List, FileUp, Bot, Shield, Zap, Star } from 'lucide-react';
 import { db, auth } from '../firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, getDocs, getDoc, doc, deleteDoc, updateDoc } from 'firebase/firestore';
 import { jsonrepair } from 'jsonrepair';
+import Papa from 'papaparse';
+
+type TabType = 'view' | 'add' | 'bulk';
 
 export default function AdminQuestionBank() {
-  const [isExtracting, setIsExtracting] = useState(false);
-  const [extractedQuestions, setExtractedQuestions] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState<TabType>('view');
+  
+  // Shared state
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // View Tab State
+  const [papers, setPapers] = useState<any[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [editingQuestion, setEditingQuestion] = useState<any | null>(null);
+
+  // Add/Bulk Tab State
   const [courseCode, setCourseCode] = useState('');
   const [year, setYear] = useState('');
   const [semester, setSemester] = useState('');
   const [title, setTitle] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  
+  // Bulk Tab State
+  const [extractedQuestions, setExtractedQuestions] = useState<any[]>([]);
+  const [selectedProvider, setSelectedProvider] = useState<'gemini' | 'mistral' | 'groq'>('gemini');
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Single Add State
+  const [singleQuestion, setSingleQuestion] = useState({
+    question: '',
+    options: ['', '', '', ''],
+    correctAnswer: '',
+    explanation: '',
+    hint: ''
+  });
+
+  useEffect(() => {
+    if (activeTab === 'view') {
+      fetchPapers();
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    const fetchRoutingConfig = async () => {
+      try {
+        const docRef = doc(db, 'system_config', 'routing');
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          const config = docSnap.data();
+          if (config.past_questions) {
+            setSelectedProvider(config.past_questions as any);
+          }
+        }
+      } catch (err) {
+        console.error("Error fetching routing config:", err);
+      }
+    };
+    fetchRoutingConfig();
+  }, []);
+
+  const fetchPapers = async () => {
+    setIsLoading(true);
+    try {
+      const snapshot = await getDocs(collection(db, 'past_papers'));
+      const fetchedPapers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setPapers(fetchedPapers);
+    } catch (err: any) {
+      setError('Failed to fetch questions: ' + err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSaveQuestions = async (questionsToSave: any[]) => {
+    if (!courseCode || !year || !semester || !title) {
+      setError('Please fill in Course Code, Year, Semester, and Title.');
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      const response = await fetch('/api/admin/questions/add', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          courseCode,
+          year,
+          semester,
+          title,
+          questions: questionsToSave
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to save questions');
+      }
+
+      setSuccess(`Successfully saved ${questionsToSave.length} questions and generated embeddings!`);
+      setExtractedQuestions([]);
+      setSingleQuestion({ question: '', options: ['', '', '', ''], correctAnswer: '', explanation: '', hint: '' });
+      
+      // Reset form if it was a single add
+      if (activeTab === 'add') {
+        setTimeout(() => setSuccess(null), 3000);
+      }
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || 'Failed to save to database.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -28,7 +138,7 @@ export default function AdminQuestionBank() {
       return;
     }
 
-    setIsExtracting(true);
+    setIsLoading(true);
     setError(null);
     setSuccess(null);
 
@@ -51,7 +161,8 @@ export default function AdminQuestionBank() {
               mimeType,
               courseCode,
               year,
-              semester
+              semester,
+              provider: selectedProvider
             })
           });
 
@@ -74,61 +185,186 @@ export default function AdminQuestionBank() {
           console.error(err);
           setError(err.message || 'An error occurred during extraction.');
         } finally {
-          setIsExtracting(false);
+          setIsLoading(false);
         }
       };
       reader.readAsDataURL(file);
     } catch (err: any) {
       console.error(err);
       setError(err.message || 'An error occurred during file reading.');
-      setIsExtracting(false);
+      setIsLoading(false);
     }
   };
 
-  const handleSaveToDatabase = async () => {
-    if (extractedQuestions.length === 0) return;
+  const handleCsvUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!courseCode || !year || !semester || !title) {
+      setError('Please fill in Course Code, Year, Semester, and Title before uploading.');
+      return;
+    }
+
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: (results) => {
+        try {
+          const parsedQuestions = results.data.map((row: any) => {
+            if (!row.Question || !row.OptionA || !row.OptionB || !row.OptionC || !row.OptionD || !row.CorrectAnswer) {
+              throw new Error("CSV must have columns: Question, OptionA, OptionB, OptionC, OptionD, CorrectAnswer, Explanation, Hint");
+            }
+            return {
+              question: row.Question,
+              options: [row.OptionA, row.OptionB, row.OptionC, row.OptionD],
+              correctAnswer: row[`Option${row.CorrectAnswer}`] || row.CorrectAnswer,
+              explanation: row.Explanation || '',
+              hint: row.Hint || ''
+            };
+          });
+          setExtractedQuestions(parsedQuestions);
+          setSuccess(`Successfully parsed ${parsedQuestions.length} questions from CSV! Review them below.`);
+        } catch (err: any) {
+          setError(err.message);
+        }
+      },
+      error: (error) => {
+        setError(`CSV Parsing Error: ${error.message}`);
+      }
+    });
+  };
+
+  const handleDeleteQuestion = async (paperId: string, questionId: string) => {
+    if (!window.confirm('Are you sure you want to delete this question? This will also remove its AI embedding.')) return;
     
-    setIsExtracting(true);
-    setError(null);
-    
+    setIsLoading(true);
     try {
-      // Create the Past Paper document
-      const pastPaperData = {
-        title,
-        year,
-        semester,
-        courseCode,
-        questions: extractedQuestions.map((q, idx) => ({
-          ...q,
-          id: `q${Date.now()}_${idx}`,
-          type: 'multiple-choice'
-        })),
-        createdAt: serverTimestamp(),
-        createdBy: auth.currentUser?.uid
-      };
+      const token = await auth.currentUser?.getIdToken();
+      const response = await fetch('/api/admin/questions/delete', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ paperId, questionId })
+      });
 
-      await addDoc(collection(db, 'past_papers'), pastPaperData);
+      if (!response.ok) throw new Error('Failed to delete question');
       
-      setSuccess('Past paper saved successfully to the database!');
-      setExtractedQuestions([]);
-      setTitle('');
-      setCourseCode('');
-      setYear('');
-      setSemester('');
+      setSuccess('Question deleted successfully.');
+      fetchPapers();
     } catch (err: any) {
-      console.error(err);
-      setError(err.message || 'Failed to save to database.');
+      setError(err.message);
     } finally {
-      setIsExtracting(false);
+      setIsLoading(false);
     }
   };
+
+  const handleUpdateQuestion = async () => {
+    if (!editingQuestion) return;
+    
+    setIsLoading(true);
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      const response = await fetch('/api/admin/questions/update', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ 
+          paperId: editingQuestion.paperId, 
+          question: editingQuestion 
+        })
+      });
+
+      if (!response.ok) throw new Error('Failed to update question');
+      
+      setSuccess('Question updated successfully.');
+      setEditingQuestion(null);
+      fetchPapers();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const renderMetadataForm = () => (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700">
+      <div>
+        <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Course Code</label>
+        <input 
+          type="text" 
+          value={courseCode}
+          onChange={(e) => setCourseCode(e.target.value)}
+          placeholder="e.g. MAT 103"
+          className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        />
+      </div>
+      <div>
+        <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Paper Title</label>
+        <input 
+          type="text" 
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="e.g. Summer Semester Examinations"
+          className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        />
+      </div>
+      <div>
+        <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Academic Year</label>
+        <input 
+          type="text" 
+          value={year}
+          onChange={(e) => setYear(e.target.value)}
+          placeholder="e.g. 2023/2024"
+          className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        />
+      </div>
+      <div>
+        <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Semester</label>
+        <select 
+          value={semester}
+          onChange={(e) => setSemester(e.target.value)}
+          className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        >
+          <option value="">Select Semester</option>
+          <option value="First">First Semester</option>
+          <option value="Second">Second Semester</option>
+          <option value="Summer">Summer Semester</option>
+        </select>
+      </div>
+    </div>
+  );
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Magic PDF Importer</h2>
-          <p className="text-slate-500 dark:text-slate-400">Upload a past exam PDF and let AI extract the questions.</p>
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Question Bank</h2>
+          <p className="text-slate-500 dark:text-slate-400">Manage past questions and AI knowledge base embeddings.</p>
+        </div>
+        
+        <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+          <button
+            onClick={() => setActiveTab('view')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-colors ${activeTab === 'view' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
+          >
+            <List size={16} /> View All
+          </button>
+          <button
+            onClick={() => setActiveTab('add')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-colors ${activeTab === 'add' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
+          >
+            <Plus size={16} /> Add Single
+          </button>
+          <button
+            onClick={() => setActiveTab('bulk')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-colors ${activeTab === 'bulk' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
+          >
+            <FileUp size={16} /> Bulk Upload
+          </button>
         </div>
       </div>
 
@@ -146,138 +382,355 @@ export default function AdminQuestionBank() {
         </div>
       )}
 
-      <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-          <div>
-            <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Course Code</label>
+      {/* VIEW TAB */}
+      {activeTab === 'view' && (
+        <div className="space-y-6">
+          <div className="relative">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
             <input 
-              type="text" 
-              value={courseCode}
-              onChange={(e) => setCourseCode(e.target.value)}
-              placeholder="e.g. MAT 103"
-              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              type="text"
+              placeholder="Search questions by course code, year, or content..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl pl-12 pr-4 py-4 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm"
             />
           </div>
-          <div>
-            <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Paper Title</label>
-            <input 
-              type="text" 
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. Summer Semester Examinations"
-              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Academic Year</label>
-            <input 
-              type="text" 
-              value={year}
-              onChange={(e) => setYear(e.target.value)}
-              placeholder="e.g. 2023/2024"
-              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Semester</label>
-            <select 
-              value={semester}
-              onChange={(e) => setSemester(e.target.value)}
-              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            >
-              <option value="">Select Semester</option>
-              <option value="First">First Semester</option>
-              <option value="Second">Second Semester</option>
-              <option value="Summer">Summer Semester</option>
-            </select>
-          </div>
-        </div>
 
-        <div className="border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-3xl p-12 text-center hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors relative">
-          <input 
-            type="file" 
-            accept="application/pdf,image/*" 
-            onChange={handleFileUpload}
-            disabled={isExtracting}
-            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
-          />
-          <div className="flex flex-col items-center justify-center pointer-events-none">
-            {isExtracting ? (
-              <>
-                <Loader2 className="w-12 h-12 text-indigo-500 animate-spin mb-4" />
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Analyzing Document...</h3>
-                <p className="text-slate-500 dark:text-slate-400 mt-2">The AI is reading the exam and extracting questions.</p>
-              </>
-            ) : (
-              <>
-                <div className="w-16 h-16 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-full flex items-center justify-center mb-4">
-                  <Upload size={32} />
-                </div>
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Upload Past Paper PDF</h3>
-                <p className="text-slate-500 dark:text-slate-400 mt-2">Drag and drop or click to browse (Max 10MB)</p>
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {extractedQuestions.length > 0 && (
-        <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
-          <div className="p-6 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50">
-            <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <FileText className="text-indigo-500" />
-              Extracted Questions ({extractedQuestions.length})
-            </h3>
-            <button 
-              onClick={handleSaveToDatabase}
-              disabled={isExtracting}
-              className="flex items-center gap-2 bg-indigo-600 text-white px-6 py-2.5 rounded-xl font-bold hover:bg-indigo-700 transition-colors disabled:opacity-50"
-            >
-              {isExtracting ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
-              Save to Database
-            </button>
-          </div>
-          
-          <div className="divide-y divide-slate-200 dark:divide-slate-700">
-            {extractedQuestions.map((q, idx) => (
-              <div key={idx} className="p-6 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                <div className="flex justify-between items-start mb-4">
-                  <h4 className="font-bold text-slate-900 dark:text-white text-lg">
-                    <span className="text-indigo-500 mr-2">Q{idx + 1}.</span>
-                    {q.question}
-                  </h4>
-                  <button 
-                    onClick={() => setExtractedQuestions(prev => prev.filter((_, i) => i !== idx))}
-                    className="text-slate-400 hover:text-rose-500 transition-colors p-2"
-                  >
-                    <Trash2 size={18} />
-                  </button>
-                </div>
-                
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4 pl-8">
-                  {q.options.map((opt: string, oIdx: number) => (
-                    <div 
-                      key={oIdx} 
-                      className={`p-3 rounded-xl border ${opt === q.correctAnswer ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 font-medium' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'}`}
-                    >
-                      <span className="font-bold mr-2">{String.fromCharCode(65 + oIdx)}.</span> {opt}
-                    </div>
-                  ))}
-                </div>
-                
-                <div className="pl-8 space-y-2">
-                  <div className="bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-200 p-3 rounded-xl text-sm">
-                    <strong>Explanation:</strong> {q.explanation}
+          {isLoading ? (
+            <div className="flex justify-center p-12">
+              <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
+            </div>
+          ) : (
+            <div className="space-y-8">
+              {papers.filter(p => p.courseCode.toLowerCase().includes(searchQuery.toLowerCase()) || p.title.toLowerCase().includes(searchQuery.toLowerCase())).map(paper => (
+                <div key={paper.id} className="bg-white dark:bg-slate-800 rounded-3xl overflow-hidden shadow-sm border border-slate-200 dark:border-slate-700">
+                  <div className="bg-slate-50 dark:bg-slate-800/50 p-6 border-b border-slate-200 dark:border-slate-700">
+                    <h3 className="text-xl font-bold text-slate-900 dark:text-white">{paper.courseCode} - {paper.title}</h3>
+                    <p className="text-slate-500 dark:text-slate-400">{paper.semester} Semester, {paper.year} • {paper.questions?.length || 0} Questions</p>
                   </div>
-                  {q.hint && (
-                    <div className="bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-200 p-3 rounded-xl text-sm">
-                      <strong>Hint:</strong> {q.hint}
-                    </div>
-                  )}
+                  <div className="divide-y divide-slate-200 dark:divide-slate-700">
+                    {paper.questions?.map((q: any, idx: number) => (
+                      <div key={q.id} className="p-6 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                        {editingQuestion?.id === q.id ? (
+                          <div className="space-y-4">
+                            <textarea 
+                              value={editingQuestion.question}
+                              onChange={e => setEditingQuestion({...editingQuestion, question: e.target.value})}
+                              className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-slate-900 dark:text-white"
+                              rows={3}
+                            />
+                            <div className="grid grid-cols-2 gap-4">
+                              {editingQuestion.options.map((opt: string, oIdx: number) => (
+                                <input 
+                                  key={oIdx}
+                                  value={opt}
+                                  onChange={e => {
+                                    const newOpts = [...editingQuestion.options];
+                                    newOpts[oIdx] = e.target.value;
+                                    setEditingQuestion({...editingQuestion, options: newOpts});
+                                  }}
+                                  className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-slate-900 dark:text-white"
+                                />
+                              ))}
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Correct Answer</label>
+                                <input 
+                                  value={editingQuestion.correctAnswer}
+                                  onChange={e => setEditingQuestion({...editingQuestion, correctAnswer: e.target.value})}
+                                  className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-slate-900 dark:text-white"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Explanation</label>
+                                <input 
+                                  value={editingQuestion.explanation}
+                                  onChange={e => setEditingQuestion({...editingQuestion, explanation: e.target.value})}
+                                  className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-slate-900 dark:text-white"
+                                />
+                              </div>
+                            </div>
+                            <div className="flex justify-end gap-3 mt-4">
+                              <button onClick={() => setEditingQuestion(null)} className="px-4 py-2 text-slate-600 dark:text-slate-400 font-bold hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl">Cancel</button>
+                              <button onClick={handleUpdateQuestion} disabled={isLoading} className="px-4 py-2 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700">Save Changes</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="flex justify-between items-start mb-4">
+                              <h4 className="font-bold text-slate-900 dark:text-white text-lg">
+                                <span className="text-indigo-500 mr-2">Q{idx + 1}.</span>
+                                {q.question}
+                              </h4>
+                              <div className="flex gap-2">
+                                <button onClick={() => setEditingQuestion({...q, paperId: paper.id})} className="text-slate-400 hover:text-indigo-500 transition-colors p-2">
+                                  <Edit2 size={18} />
+                                </button>
+                                <button onClick={() => handleDeleteQuestion(paper.id, q.id)} className="text-slate-400 hover:text-rose-500 transition-colors p-2">
+                                  <Trash2 size={18} />
+                                </button>
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4 pl-8">
+                              {q.options?.map((opt: string, oIdx: number) => (
+                                <div key={oIdx} className={`p-3 rounded-xl border ${opt === q.correctAnswer ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 font-medium' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'}`}>
+                                  <span className="font-bold mr-2">{String.fromCharCode(65 + oIdx)}.</span> {opt}
+                                </div>
+                              ))}
+                            </div>
+                            <div className="pl-8 text-sm text-slate-500 dark:text-slate-400">
+                              <strong>Explanation:</strong> {q.explanation}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    ))}
+                    {(!paper.questions || paper.questions.length === 0) && (
+                      <div className="p-6 text-center text-slate-500 dark:text-slate-400">No questions in this paper.</div>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {papers.length === 0 && (
+                <div className="text-center py-12 text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-700">
+                  No past papers found. Add some questions!
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ADD SINGLE TAB */}
+      {activeTab === 'add' && (
+        <div className="space-y-6">
+          {renderMetadataForm()}
+          
+          <div className="bg-white dark:bg-slate-800 p-8 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm">
+            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-6">Question Details</h3>
+            <div className="space-y-6">
+              <div>
+                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Question Text</label>
+                <textarea 
+                  value={singleQuestion.question}
+                  onChange={e => setSingleQuestion({...singleQuestion, question: e.target.value})}
+                  className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-4 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  rows={3}
+                  placeholder="Enter the question here..."
+                />
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {singleQuestion.options.map((opt, idx) => (
+                  <div key={idx}>
+                    <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Option {String.fromCharCode(65 + idx)}</label>
+                    <input 
+                      type="text"
+                      value={opt}
+                      onChange={e => {
+                        const newOpts = [...singleQuestion.options];
+                        newOpts[idx] = e.target.value;
+                        setSingleQuestion({...singleQuestion, options: newOpts});
+                      }}
+                      className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      placeholder={`Option ${String.fromCharCode(65 + idx)} text`}
+                    />
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Correct Answer (Exact Text)</label>
+                  <select 
+                    value={singleQuestion.correctAnswer}
+                    onChange={e => setSingleQuestion({...singleQuestion, correctAnswer: e.target.value})}
+                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="">Select Correct Option</option>
+                    {singleQuestion.options.map((opt, idx) => opt && (
+                      <option key={idx} value={opt}>Option {String.fromCharCode(65 + idx)}: {opt}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Explanation</label>
+                  <input 
+                    type="text"
+                    value={singleQuestion.explanation}
+                    onChange={e => setSingleQuestion({...singleQuestion, explanation: e.target.value})}
+                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="Why is this the correct answer?"
+                  />
                 </div>
               </div>
-            ))}
+
+              <div className="flex justify-end pt-4">
+                <button 
+                  onClick={() => handleSaveQuestions([singleQuestion])}
+                  disabled={isLoading || !singleQuestion.question || !singleQuestion.correctAnswer}
+                  className="flex items-center gap-2 bg-indigo-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-indigo-700 transition-colors disabled:opacity-50"
+                >
+                  {isLoading ? <Loader2 size={20} className="animate-spin" /> : <Save size={20} />}
+                  Save Question
+                </button>
+              </div>
+            </div>
           </div>
+        </div>
+      )}
+
+      {activeTab === 'bulk' && (
+        <div className="space-y-6">
+          {renderMetadataForm()}
+
+          {/* AI Provider Selection */}
+          <div className="bg-white dark:bg-slate-800 p-6 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm">
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+              <Bot size={18} className="text-indigo-500" />
+              Select AI Extraction Provider
+            </h3>
+            <div className="flex flex-wrap gap-3">
+              <button
+                onClick={() => setSelectedProvider('gemini')}
+                className={`px-4 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 transition-all ${
+                  selectedProvider === 'gemini'
+                    ? 'bg-blue-100 text-blue-700 border-2 border-blue-500 dark:bg-blue-900/30 dark:text-blue-400'
+                    : 'bg-slate-50 text-slate-600 border-2 border-slate-100 hover:border-blue-300 dark:bg-slate-900 dark:text-slate-400 dark:border-slate-700 dark:hover:border-blue-700'
+                }`}
+              >
+                <Shield size={16} />
+                Gemini (Pro)
+              </button>
+              <button
+                onClick={() => setSelectedProvider('groq')}
+                className={`px-4 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 transition-all ${
+                  selectedProvider === 'groq'
+                    ? 'bg-orange-100 text-orange-700 border-2 border-orange-500 dark:bg-orange-900/30 dark:text-orange-400'
+                    : 'bg-slate-50 text-slate-600 border-2 border-slate-100 hover:border-orange-300 dark:bg-slate-900 dark:text-slate-400 dark:border-slate-700 dark:hover:border-orange-700'
+                }`}
+              >
+                <Zap size={16} />
+                Groq (Turbo)
+              </button>
+              <button
+                onClick={() => setSelectedProvider('mistral')}
+                className={`px-4 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 transition-all ${
+                  selectedProvider === 'mistral'
+                    ? 'bg-purple-100 text-purple-700 border-2 border-purple-500 dark:bg-purple-900/30 dark:text-purple-400'
+                    : 'bg-slate-50 text-slate-600 border-2 border-slate-100 hover:border-purple-300 dark:bg-slate-900 dark:text-slate-400 dark:border-slate-700 dark:hover:border-purple-700'
+                }`}
+              >
+                <Star size={16} />
+                Mistral (Creative)
+              </button>
+            </div>
+            <p className="text-[10px] text-slate-500 mt-3 italic">
+              * This choice overrides the system default routing for this specific upload.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-3xl p-12 text-center hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors relative bg-white dark:bg-slate-800">
+              <input 
+                type="file" 
+                accept="application/pdf,image/*" 
+                onChange={handlePdfUpload}
+                disabled={isLoading}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
+              />
+              <div className="flex flex-col items-center justify-center pointer-events-none">
+                {isLoading ? (
+                  <>
+                    <Loader2 className="w-12 h-12 text-indigo-500 animate-spin mb-4" />
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-white">Analyzing Document...</h3>
+                    <p className="text-slate-500 dark:text-slate-400 mt-2">The AI is extracting questions.</p>
+                  </>
+                ) : (
+                  <>
+                    <div className="w-16 h-16 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-full flex items-center justify-center mb-4">
+                      <Upload size={32} />
+                    </div>
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-white">Upload PDF (AI Magic)</h3>
+                    <p className="text-slate-500 dark:text-slate-400 mt-2">Let AI extract questions from a PDF.</p>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-3xl p-12 text-center hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors relative bg-white dark:bg-slate-800">
+              <input 
+                type="file" 
+                accept=".csv" 
+                onChange={handleCsvUpload}
+                disabled={isLoading}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
+              />
+              <div className="flex flex-col items-center justify-center pointer-events-none">
+                <div className="w-16 h-16 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-full flex items-center justify-center mb-4">
+                  <FileText size={32} />
+                </div>
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Upload CSV</h3>
+                <p className="text-slate-500 dark:text-slate-400 mt-2">Upload a formatted CSV file.</p>
+              </div>
+            </div>
+          </div>
+
+          {extractedQuestions.length > 0 && (
+            <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden mt-8">
+              <div className="p-6 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50">
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <FileText className="text-indigo-500" />
+                  Preview Extracted Questions ({extractedQuestions.length})
+                </h3>
+                <button 
+                  onClick={() => handleSaveQuestions(extractedQuestions)}
+                  disabled={isLoading}
+                  className="flex items-center gap-2 bg-indigo-600 text-white px-6 py-2.5 rounded-xl font-bold hover:bg-indigo-700 transition-colors disabled:opacity-50"
+                >
+                  {isLoading ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+                  Save All to Database
+                </button>
+              </div>
+              
+              <div className="divide-y divide-slate-200 dark:divide-slate-700 max-h-[600px] overflow-y-auto">
+                {extractedQuestions.map((q, idx) => (
+                  <div key={idx} className="p-6 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                    <div className="flex justify-between items-start mb-4">
+                      <h4 className="font-bold text-slate-900 dark:text-white text-lg">
+                        <span className="text-indigo-500 mr-2">Q{idx + 1}.</span>
+                        {q.question}
+                      </h4>
+                      <button 
+                        onClick={() => setExtractedQuestions(prev => prev.filter((_, i) => i !== idx))}
+                        className="text-slate-400 hover:text-rose-500 transition-colors p-2"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4 pl-8">
+                      {q.options.map((opt: string, oIdx: number) => (
+                        <div 
+                          key={oIdx} 
+                          className={`p-3 rounded-xl border ${opt === q.correctAnswer ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 font-medium' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'}`}
+                        >
+                          <span className="font-bold mr-2">{String.fromCharCode(65 + oIdx)}.</span> {opt}
+                        </div>
+                      ))}
+                    </div>
+                    
+                    <div className="pl-8 space-y-2">
+                      <div className="bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-200 p-3 rounded-xl text-sm">
+                        <strong>Explanation:</strong> {q.explanation}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

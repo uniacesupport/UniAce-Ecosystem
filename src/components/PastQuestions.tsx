@@ -1,7 +1,6 @@
 import { FileText, Search, Download, ExternalLink, GraduationCap, ArrowLeft, Brain, Clock, CheckCircle2, XCircle, Lightbulb, RotateCcw, Trophy, ArrowRight, Lock } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useState, useEffect } from 'react';
-import { pastPapers as hardcodedPapers, PastPaper } from '../data/pastQuestionsData';
 import { CourseId } from '../types';
 import MarkdownRenderer from './MarkdownRenderer';
 import { useAuth } from '../context/AuthContext';
@@ -9,6 +8,23 @@ import { usePremiumStatus } from '../hooks/usePremiumStatus';
 import PricingModal from './PricingModal';
 import { db } from '../firebase';
 import { collection, getDocs } from 'firebase/firestore';
+
+export interface PastPaper {
+  id: string;
+  courseCode: string;
+  year: string;
+  semester: string;
+  title: string;
+  questions: {
+    id: string;
+    type: 'multiple-choice' | 'true-false' | 'short-answer';
+    question: string;
+    options: string[];
+    correctAnswer: string;
+    explanation: string;
+    hint?: string;
+  }[];
+}
 
 interface PastQuestionsProps {
   activeCourseId: CourseId | null;
@@ -28,7 +44,7 @@ export default function PastQuestions({ activeCourseId }: PastQuestionsProps) {
   const [showResults, setShowResults] = useState(false);
   const [isStarted, setIsStarted] = useState(false);
   const [showPricingModal, setShowPricingModal] = useState(false);
-  const [allPapers, setAllPapers] = useState<PastPaper[]>(hardcodedPapers);
+  const [allPapers, setAllPapers] = useState<PastPaper[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -39,7 +55,7 @@ export default function PastQuestions({ activeCourseId }: PastQuestionsProps) {
         querySnapshot.forEach((doc) => {
           dbPapers.push({ id: doc.id, ...doc.data() } as PastPaper);
         });
-        setAllPapers([...hardcodedPapers, ...dbPapers]);
+        setAllPapers(dbPapers);
       } catch (error) {
         console.error("Error fetching past papers:", error);
       } finally {

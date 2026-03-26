@@ -1,4 +1,4 @@
-import { PastPaper } from '../data/pastQuestionsData';
+import { PastPaper } from '../components/PastQuestions';
 import { QuizQuestion } from '../types';
 
 export function findRelevantQuestions(query: string, pastPapers: PastPaper[], limit: number = 3): QuizQuestion[] {
@@ -8,7 +8,7 @@ export function findRelevantQuestions(query: string, pastPapers: PastPaper[], li
 
   const allQuestions: QuizQuestion[] = [];
   pastPapers.forEach(paper => {
-    allQuestions.push(...paper.questions);
+    allQuestions.push(...(paper.questions as QuizQuestion[]));
   });
 
   const scoredQuestions = allQuestions.map(question => {
