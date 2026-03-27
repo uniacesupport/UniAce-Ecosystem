@@ -92,7 +92,7 @@ app.use((req, res, next) => {
 // Adaptive Rate Limiter
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+  max: 500, // Increased from 100 to 500 to accommodate bulk course generation
   message: 'Too many requests from this IP, please try again after 15 minutes',
   standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
   legacyHeaders: false, // Disable the `X-RateLimit-*` headers
@@ -119,13 +119,22 @@ app.get('/api/config/paystack', (req, res) => {
 // Strict Rate Limiter for AI Generation Endpoints (Denial of Wallet Protection)
 const aiGenerationLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
-  max: 50, // limit each IP to 50 AI generations per hour
+  max: 100, // limit each IP to 100 AI generations per hour for regular users
   message: { error: 'Too many AI generation requests from this IP, please try again after an hour' },
   standardHeaders: true,
   legacyHeaders: false,
 });
 
-app.use('/api/course/generate', aiGenerationLimiter);
+// Much higher limit for course generation as it's admin-only and requires many sequential calls
+const courseGenerationLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 2000, // High limit for course generation
+  message: { error: 'Too many course generation requests from this IP, please try again after an hour' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use('/api/course/generate', courseGenerationLimiter);
 app.use('/api/openrouter/generate', aiGenerationLimiter);
 app.use('/api/openrouter/stream', aiGenerationLimiter);
 app.use('/api/chat', aiGenerationLimiter);
