@@ -95,8 +95,8 @@ export default function PricingModal({ isOpen, onClose, featureName, onUpgradeCl
                 <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform opacity-70" />
               </button>
               
-              <p className="text-center text-xs text-slate-500 mt-4 font-medium">
-                {isVolumeStop ? 'Only ₦500 for 500 Sparks' : 'Plans start at just ₦500 / week.'}
+              <p className="text-center text-xs text-slate-500 dark:text-zinc-500 mt-4 font-medium">
+                {isVolumeStop ? 'Only ₦500 for 500 Sparks' : 'Plans start at just ₦1,500 / 30 Days.'}
               </p>
             </div>
           </motion.div>

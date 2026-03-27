@@ -91,6 +91,7 @@ export interface UserProfile {
   created_at: string;
   themeColor?: string;
   rank?: number;
+  admin_pin_verified_until?: any;
 }
 
 export interface LearningProfile {

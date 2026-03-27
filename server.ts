@@ -328,6 +328,42 @@ app.get('/api/debug', (req, res) => {
   });
 });
 
+// --- Admin Authentication Endpoint ---
+app.post('/api/admin/verify-pin', verifyAuth, async (req, res) => {
+  try {
+    const user = (req as any).user;
+    const { pin } = req.body;
+
+    // Check if requester is already an admin
+    const userDocRef = getAdminApp().firestore().collection('users').doc(user.uid);
+    const userDoc = await userDocRef.get();
+    
+    if (userDoc.data()?.role !== 'admin') {
+      return res.status(403).json({ error: 'Forbidden: Admin access required' });
+    }
+
+    const expectedPin = process.env.ADMIN_PIN || 'admin1234';
+    
+    // Simple rate limiting could be added here in a production environment
+    
+    if (pin === expectedPin) {
+      // Set the verification timestamp (valid for 2 hours)
+      const verifiedUntil = admin.firestore.Timestamp.fromDate(new Date(Date.now() + 2 * 60 * 60 * 1000));
+      
+      await userDocRef.update({
+        admin_pin_verified_until: verifiedUntil
+      });
+
+      return res.json({ success: true, message: 'PIN verified successfully' });
+    } else {
+      return res.status(401).json({ error: 'Invalid PIN' });
+    }
+  } catch (error) {
+    console.error('Error verifying admin PIN:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // --- Admin Email Endpoints ---
 
 // Send personal email to a student (Admin only)
@@ -767,8 +803,9 @@ app.post('/api/chat', verifyAuth, async (req, res) => {
 
       // Daily Spark Refill Logic
       if (lastReset !== todayStr && role !== 'admin' && plan !== 'scholar') {
-        sparks = 50;
+        sparks = dailyLimit;
         updates.last_spark_reset = todayStr;
+        updates.ai_sparks = dailyLimit;
       }
       
       const isFreeUser = plan === 'free' && role !== 'admin';

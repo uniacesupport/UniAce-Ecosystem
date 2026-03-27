@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { usePremiumStatus } from '../hooks/usePremiumStatus';
 
 export const TrialExpirationBanner = () => {
-  const { isTrialActive, daysRemaining } = usePremiumStatus();
+  const { isTrialActive, daysRemaining, hoursRemaining } = usePremiumStatus();
   const [isVisible, setIsVisible] = useState(true);
 
   if (!isTrialActive || daysRemaining > 2 || !isVisible) {
@@ -17,7 +17,7 @@ export const TrialExpirationBanner = () => {
         <div>
           <h4 className="font-bold">Trial Ending Soon!</h4>
           <p className="text-sm text-amber-50">
-            Your premium trial ends in {daysRemaining} day{daysRemaining === 1 ? '' : 's'}. Upgrade now to keep your access.
+            Your premium trial ends in {hoursRemaining <= 24 ? `${hoursRemaining} hours` : `${daysRemaining} day${daysRemaining === 1 ? '' : 's'}`}. Upgrade now to keep your access.
           </p>
         </div>
       </div>

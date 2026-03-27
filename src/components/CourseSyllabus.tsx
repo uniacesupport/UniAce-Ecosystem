@@ -140,7 +140,7 @@ export default function CourseSyllabus({
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
             {syllabus.map((module, i) => {
               const Icon = MODULE_ICONS[module.id] || Book;
-              const isLockedModule = isLocked && i > 0;
+              const isLockedModule = false; // Modules are no longer locked, only subtopics are locked
               return (
                 <motion.button
                   key={module.id}

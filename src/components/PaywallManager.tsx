@@ -11,7 +11,7 @@ interface PaywallManagerProps {
 
 export default function PaywallManager({ onUpgrade }: PaywallManagerProps) {
   const { profile } = useAuth();
-  const { isTrialActive, daysRemaining, isPremium } = usePremiumStatus();
+  const { isTrialActive, daysRemaining, hoursRemaining, isPremium } = usePremiumStatus();
   const [showSoftWarning, setShowSoftWarning] = useState(false);
   const [showHardStop, setShowHardStop] = useState(false);
   const [isDismissed, setIsDismissed] = useState(false);
@@ -35,7 +35,7 @@ export default function PaywallManager({ onUpgrade }: PaywallManagerProps) {
     if (isTrialExpired && !isPremium) {
       setShowHardStop(true);
     }
-  }, [profile, isTrialActive, daysRemaining, isPremium, isDismissed]);
+  }, [profile, isTrialActive, daysRemaining, hoursRemaining, isPremium, isDismissed]);
 
   if (showHardStop) {
     return (
@@ -98,16 +98,18 @@ export default function PaywallManager({ onUpgrade }: PaywallManagerProps) {
           <div className="bg-amber-500 text-white p-4 rounded-2xl shadow-xl flex items-center justify-between gap-4 border border-white/20">
             <div className="flex items-center gap-3">
               <div className="bg-white/20 p-2 rounded-xl">
-                {daysRemaining <= 1 ? <Clock size={20} /> : <Zap size={20} />}
+                {isTrialActive && daysRemaining <= 1 ? <Clock size={20} /> : <Zap size={20} />}
               </div>
               <div>
                 <p className="font-bold text-sm">
-                  {daysRemaining <= 1 
-                    ? "Your Premium Trial ends tomorrow!" 
+                  {isTrialActive && daysRemaining <= 1 
+                    ? (hoursRemaining <= 24 ? `Your Premium Trial ends in ${hoursRemaining} hours!` : "Your Premium Trial ends tomorrow!")
                     : `Low Sparks: You have ${profile?.ai_sparks} Sparks left.`}
                 </p>
                 <p className="text-xs opacity-90 font-medium">
-                  Upgrade now to keep your study momentum going.
+                  {isTrialActive && daysRemaining <= 1
+                    ? "Upgrade now to keep your study momentum going."
+                    : "Upgrade to get unlimited AI tutoring."}
                 </p>
               </div>
             </div>

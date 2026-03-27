@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { User, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "firebase/auth";
+import { User, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut, browserPopupRedirectResolver } from "firebase/auth";
 import { doc, getDoc, setDoc, serverTimestamp, onSnapshot } from "firebase/firestore";
 import { getToken } from "firebase/messaging";
 import toast from "react-hot-toast";
@@ -27,6 +27,7 @@ interface UserProfile {
   rank?: number;
   created_at?: string;
   sessionId?: string;
+  admin_pin_verified_until?: any;
 }
 
 interface AuthContextType {
@@ -139,8 +140,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         streak: userDoc.exists() ? (userDoc.data().streak || 0) : 0,
         themeColor: userDoc.exists() ? userDoc.data().themeColor : undefined,
         rank: userDoc.exists() ? userDoc.data().rank : undefined,
-        created_at: userDoc.exists() ? userDoc.data().created_at : new Date().toISOString(),
+        created_at: userDoc.exists() ? (
+          userDoc.data().createdAt?.toDate ? userDoc.data().createdAt.toDate().toISOString() : 
+          (userDoc.data().createdAt || userDoc.data().created_at || new Date().toISOString())
+        ) : new Date().toISOString(),
         sessionId: currentSessionId,
+        admin_pin_verified_until: userDoc.exists() ? userDoc.data().admin_pin_verified_until : undefined,
       };
 
       const dataToSave: any = {
@@ -341,7 +346,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     try {
-      await signInWithPopup(auth, provider);
+      console.log("AuthContext: Starting signInWithPopup...");
+      await signInWithPopup(auth, provider, browserPopupRedirectResolver);
+      console.log("AuthContext: signInWithPopup completed successfully.");
     } catch (error: any) {
       console.error("Error signing in with Google", error);
       if (error.code === 'auth/popup-closed-by-user') {

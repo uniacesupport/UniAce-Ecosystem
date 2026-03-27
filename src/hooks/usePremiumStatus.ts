@@ -22,6 +22,7 @@ export const usePremiumStatus = () => {
   
   const isTrialActive = diffInMs < sevenDaysInMs;
   const daysRemaining = Math.max(0, Math.ceil((sevenDaysInMs - diffInMs) / (24 * 60 * 60 * 1000)));
+  const hoursRemaining = Math.max(0, Math.ceil((sevenDaysInMs - diffInMs) / (60 * 60 * 1000)));
 
   // If trial is active, they get 'scholar' plan benefits
   const effectivePlan = isTrialActive ? 'scholar' : profile.plan_type;
@@ -30,6 +31,7 @@ export const usePremiumStatus = () => {
     isPremium: isPremium || isTrialActive,
     isTrialActive,
     daysRemaining,
+    hoursRemaining,
     planType: effectivePlan
   };
 };

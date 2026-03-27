@@ -18,6 +18,7 @@ import UserProfile from './components/UserProfile';
 import HelpSupport from './components/HelpSupport';
 import AdminSupport from './components/AdminSupport';
 import AdminDashboard from './components/AdminDashboard';
+import AdminLogin from './components/AdminLogin';
 import Arena from './components/Arena';
 import ConceptMap from './components/ConceptMap';
 import StudyPlan from './components/StudyPlan';
@@ -173,7 +174,47 @@ export default function App() {
   }
 
   if (!user) {
+    if (window.location.pathname === '/admin/login' || window.location.pathname === '/admin/dashboard') {
+      return <AdminLogin requireGoogleLogin={true} />;
+    }
     return <LandingPage />;
+  }
+
+  if (window.location.pathname === '/admin/login') {
+    const isAdmin = profile?.role === 'admin' || user?.email === 'olalekan4565@gmail.com' || user?.email === 'uniace.support@gmail.com';
+    if (!isAdmin) {
+      window.location.href = '/';
+      return null;
+    }
+    
+    const verifiedUntil = profile?.admin_pin_verified_until;
+    const isVerified = verifiedUntil && new Date(verifiedUntil.toDate ? verifiedUntil.toDate() : verifiedUntil).getTime() > Date.now();
+    
+    if (isVerified) {
+      window.location.href = '/admin/dashboard';
+      return null;
+    }
+    
+    return <AdminLogin />;
+  }
+
+  if (window.location.pathname === '/admin/dashboard') {
+    const isAdmin = profile?.role === 'admin' || user?.email === 'olalekan4565@gmail.com' || user?.email === 'uniace.support@gmail.com';
+    if (!isAdmin) {
+      window.location.href = '/';
+      return null;
+    }
+    
+    // Check if PIN verified recently (within last 2 hours)
+    const verifiedUntil = profile?.admin_pin_verified_until;
+    const isVerified = verifiedUntil && new Date(verifiedUntil.toDate ? verifiedUntil.toDate() : verifiedUntil).getTime() > Date.now();
+    
+    if (!isVerified) {
+      window.location.href = '/admin/login';
+      return null;
+    }
+
+    return <AdminDashboard />;
   }
 
   return (
@@ -463,24 +504,6 @@ export default function App() {
           />
         )}
 
-        {activeView === 'admin-dashboard' && (
-          profile?.role === 'admin' || user?.email === 'olalekan4565@gmail.com' || user?.email === 'uniace.support@gmail.com' ? (
-            <AdminDashboard />
-          ) : (
-            <Dashboard 
-              activeSubject={activeSubject}
-              onModuleSelect={handleModuleSelect} 
-              onSubTopicSelect={handleSubTopicSelect}
-              onViewSelect={handleViewSelect}
-              onProfileClick={() => setActiveView('profile')}
-              onCourseSelect={handleCourseSelect}
-              progress={progress}
-              activeCourseId={activeCourseId}
-              syllabus={syllabus}
-            />
-          )
-        )}
-
         {activeView === 'arena' && (
           <Arena 
             activeCourseId={activeCourseId}
@@ -497,6 +520,28 @@ export default function App() {
 
         {activeView === 'study-plan' && (
           <StudyPlan progress={progress} syllabus={syllabus} />
+        )}
+
+        {activeView === 'admin-dashboard' && (
+          (() => {
+            const isAdmin = profile?.role === 'admin' || user?.email === 'olalekan4565@gmail.com' || user?.email === 'uniace.support@gmail.com';
+            
+            if (!isAdmin) {
+              return <Dashboard 
+                activeSubject={activeSubject}
+                onModuleSelect={handleModuleSelect} 
+                onSubTopicSelect={handleSubTopicSelect}
+                onViewSelect={handleViewSelect}
+                onProfileClick={() => setActiveView('profile')}
+                onCourseSelect={handleCourseSelect}
+                progress={progress}
+                activeCourseId={activeCourseId}
+                syllabus={syllabus}
+              />;
+            }
+            
+            return <AdminDashboard />;
+          })()
         )}
 
         {activeView === 'ai-tutor' && (

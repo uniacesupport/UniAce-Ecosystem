@@ -348,7 +348,7 @@ export default function Sidebar({
                 {syllabus.map((module, index) => {
                   const Icon = MODULE_ICONS[module.id] || LayoutGrid;
                   const isActive = activeView === 'study' && activeModuleId === module.id;
-                  const isLockedModule = isLocked && index > 0;
+                  const isLockedModule = false; // Modules are no longer locked, only subtopics are locked
 
                   return (
                     <button

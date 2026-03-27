@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, FileText, Plus, CheckCircle, Loader2, BookOpen, AlertCircle, Settings, Trash2, Users, Activity, Database, Search, Zap, Trophy, Star, Bot, Shield, BarChart3, Globe, Edit2, RefreshCw, Clock, FileQuestion, MessageSquare } from 'lucide-react';
+import { Upload, FileText, Plus, CheckCircle, Loader2, BookOpen, AlertCircle, Settings, Trash2, Users, Activity, Database, Search, Zap, Trophy, Star, Bot, Shield, BarChart3, Globe, Edit2, RefreshCw, Clock, FileQuestion, MessageSquare, ArrowLeft } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   LineChart, Line, AreaChart, Area, PieChart, Pie, Cell
@@ -1125,6 +1125,13 @@ export default function AdminDashboard() {
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div>
+            <button 
+              onClick={() => window.location.href = '/'}
+              className="flex items-center gap-2 text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 mb-4 transition-colors font-medium text-sm"
+            >
+              <ArrowLeft size={16} />
+              Back to App
+            </button>
             <h1 className="text-4xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-3">
               🎓 Admin Dashboard
             </h1>
