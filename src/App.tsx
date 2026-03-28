@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { AnimatePresence } from 'motion/react';
 import Sidebar from './components/Sidebar';
 import BottomNav from './components/BottomNav';
 import ContentArea from './components/ContentArea';
@@ -28,6 +29,7 @@ import PushNotificationPrompt from './components/PushNotificationPrompt';
 import GlobalNotification from './components/GlobalNotification';
 import PaywallManager from './components/PaywallManager';
 import PWAInstallPrompt from './components/PWAInstallPrompt';
+import Calculator from './components/Calculator';
 import { useUserProgress } from './hooks/useUserProgress';
 import { useAuth } from './context/AuthContext';
 import { useCourses } from './context/CourseContext';
@@ -63,6 +65,7 @@ export default function App() {
   const [autoStartQuiz, setAutoStartQuiz] = useState(false);
   const [regenerationProgress, setRegenerationProgress] = useState(0);
   const [regenerationStatus, setRegenerationStatus] = useState('');
+  const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
 
   useEffect(() => {
     const handleResize = () => {
@@ -167,7 +170,7 @@ export default function App() {
 
   if (loading) {
     return (
-      <div className="h-screen w-full flex items-center justify-center bg-slate-50">
+      <div className="h-screen w-full flex items-center justify-center bg-slate-50 dark:bg-zinc-950">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500"></div>
       </div>
     );
@@ -218,7 +221,7 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-screen w-full bg-slate-50 font-sans overflow-hidden relative">
+    <div className="flex h-screen w-full bg-slate-50 dark:bg-zinc-950 font-sans overflow-hidden relative transition-colors duration-300">
       {user && (
         <PaywallManager onUpgrade={() => setActiveView('pricing')} />
       )}
@@ -240,10 +243,17 @@ export default function App() {
         activeCourseId={activeCourseId}
         syllabus={syllabus}
         isOnline={isOnline}
+        onToggleCalculator={() => setIsCalculatorOpen(!isCalculatorOpen)}
       />
 
+      <AnimatePresence>
+        {isCalculatorOpen && (
+          <Calculator isOpen={isCalculatorOpen} onClose={() => setIsCalculatorOpen(false)} />
+        )}
+      </AnimatePresence>
+
       {/* Main Content Area */}
-      <div className={`flex-1 flex flex-col h-full overflow-y-auto relative ${activeView === 'ai-tutor' ? '' : 'pb-20 lg:pb-0'}`}>
+      <div className={`flex-1 flex flex-col h-full overflow-y-auto relative ${activeView === 'ai-tutor' ? '' : 'pb-16 lg:pb-0'}`}>
         {/* Toggle Button for Sidebar (Visible when sidebar is closed on Desktop) */}
         {!isSidebarOpen && activeView !== 'study' && (
           <div className="hidden lg:block absolute top-4 left-4 z-40">
@@ -441,6 +451,7 @@ export default function App() {
             autoStartQuiz={autoStartQuiz}
             onViewSelect={handleViewSelect}
             progress={progress}
+            onToggleCalculator={() => setIsCalculatorOpen(!isCalculatorOpen)}
           />
         )}
 

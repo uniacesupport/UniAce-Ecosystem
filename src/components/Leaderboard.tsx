@@ -55,7 +55,7 @@ export default function Leaderboard() {
             <Trophy size={24} />
           </div>
           <div>
-            <h2 className="text-2xl font-black text-zinc-900 dark:text-white tracking-tight">Global Hall of Fame</h2>
+            <h2 className="text-xl sm:text-2xl font-black text-zinc-900 dark:text-white tracking-tight">Global Hall of Fame</h2>
             <p className="text-xs text-zinc-500 font-bold uppercase tracking-widest">Top 10 Gladiators</p>
           </div>
         </div>

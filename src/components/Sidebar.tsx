@@ -1,6 +1,6 @@
 import { LogService } from '../services/logService';
 import { Module, View, CourseId } from '../types';
-import { LayoutGrid, Book, Layers, Activity, GraduationCap, X, ChevronLeft, FileText, Brain, Home, Award, Calculator, Bot, Grid, LogIn, LogOut, User as UserIcon, BookOpen, Zap, BrainCircuit, Trophy, Settings, Maximize2, Calendar, Share2, Swords, Sun, Moon, Lock } from 'lucide-react';
+import { LayoutGrid, Book, Layers, Activity, GraduationCap, X, ChevronLeft, FileText, Brain, Home, Award, Calculator as CalcIcon, Bot, Grid, LogIn, LogOut, User as UserIcon, BookOpen, Zap, BrainCircuit, Trophy, Settings, Maximize2, Calendar, Share2, Swords, Sun, Moon, Lock } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { UserProgress } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -21,6 +21,7 @@ interface SidebarProps {
   activeCourseId: CourseId | null;
   syllabus: Module[];
   isOnline: boolean;
+  onToggleCalculator?: () => void;
 }
 
 const MODULE_ICONS: Record<string, any> = {
@@ -47,7 +48,8 @@ export default function Sidebar({
   progress,
   activeCourseId,
   syllabus,
-  isOnline
+  isOnline,
+  onToggleCalculator
 }: SidebarProps) {
   const { user, profile, signInWithGoogle, logout } = useAuth();
   const { theme: appTheme, toggleTheme } = useTheme();
@@ -82,14 +84,14 @@ export default function Sidebar({
             transition={{ type: 'spring', damping: 25, stiffness: 200 }}
             className="fixed lg:relative w-72 bg-slate-900 dark:bg-zinc-950 text-white flex flex-col h-full border-r border-slate-800 dark:border-zinc-900 z-50"
           >
-            <div className="p-8 border-b border-slate-800 dark:border-zinc-900 flex justify-between items-center">
+            <div className="p-6 border-b border-slate-800 dark:border-zinc-900 flex justify-between items-center">
               <div className="flex items-center gap-3">
-                <div className={`${theme.bg} w-10 h-10 rounded-xl shadow-lg ${theme.shadow} flex items-center justify-center text-2xl`}>
+                <div className={`${theme.bg} w-9 h-9 rounded-xl shadow-lg ${theme.shadow} flex items-center justify-center text-xl`}>
                   🎓
                 </div>
                 <div>
-                  <h1 className="text-xl font-black tracking-tight text-white leading-none">UniAce Mastery Hub</h1>
-                  <p className={`${theme.text} text-[10px] font-bold uppercase tracking-widest mt-1`}>
+                  <h1 className="text-lg font-black tracking-tight text-white leading-none">UniAce Hub</h1>
+                  <p className={`${theme.text} text-[9px] font-bold uppercase tracking-widest mt-1`}>
                     {activeCourseId ? activeCourseId : 'Learning System'}
                   </p>
                 </div>
@@ -295,8 +297,16 @@ export default function Sidebar({
                         : 'text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800/50'
                     }`}
                   >
-                    <Calculator size={18} />
+                    <CalcIcon size={18} />
                     <span className="text-[10px] font-medium">Formulas</span>
+                  </button>
+
+                  <button
+                    onClick={onToggleCalculator}
+                    className={`flex flex-col items-center justify-center gap-1.5 p-2.5 rounded-xl transition-all text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800/50`}
+                  >
+                    <CalcIcon size={18} />
+                    <span className="text-[10px] font-medium">Calc</span>
                   </button>
 
                   <button

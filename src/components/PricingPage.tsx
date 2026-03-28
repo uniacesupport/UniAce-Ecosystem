@@ -105,16 +105,16 @@ export default function PricingPage() {
     <div className="min-h-screen bg-slate-50 dark:bg-zinc-950 p-4 sm:p-8 lg:p-12 pb-24 transition-colors">
       <div className="max-w-6xl mx-auto space-y-16">
         <div className="text-center space-y-4">
-          <h1 className="text-4xl md:text-6xl font-black text-slate-900 dark:text-white tracking-tight">
+          <h1 className="text-3xl sm:text-4xl md:text-6xl font-black text-slate-900 dark:text-white tracking-tight">
             Invest in Your <span className="text-emerald-500">Grades</span>
           </h1>
-          <p className="text-lg md:text-xl text-slate-600 dark:text-zinc-400 max-w-2xl mx-auto">
+          <p className="text-base sm:text-lg md:text-xl text-slate-600 dark:text-zinc-400 max-w-2xl mx-auto">
             Get the AI Sparks you need to crush every course this semester, no matter your major. Simple, affordable pricing for every student.
           </p>
         </div>
 
         <div className="bg-emerald-500 text-white rounded-3xl p-8 text-center shadow-xl shadow-emerald-500/20 mb-12">
-          <h2 className="text-3xl font-black mb-4">Why Upgrade?</h2>
+          <h2 className="text-2xl sm:text-3xl font-black mb-4">Why Upgrade?</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div>
               <h3 className="font-bold text-xl mb-2">24/7 AI Tutoring</h3>
@@ -150,9 +150,9 @@ export default function PricingPage() {
 
               <div className="space-y-6">
                 <div>
-                  <h3 className="text-sm font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-wider">{plan.name}</h3>
+                  <h3 className="text-xs sm:text-sm font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-wider">{plan.name}</h3>
                   <div className="flex items-baseline gap-1 mt-2">
-                    <span className="text-4xl font-black text-slate-900 dark:text-white">₦{plan.price.toLocaleString()}</span>
+                    <span className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white">₦{plan.price.toLocaleString()}</span>
                     <span className="text-slate-500 dark:text-zinc-400 font-medium">/ {plan.duration}</span>
                   </div>
                 </div>

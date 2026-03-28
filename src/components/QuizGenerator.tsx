@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Module, SubTopic, QuizQuestion, QuestionType } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { Brain, Loader2, CheckCircle2, XCircle, ArrowRight, RefreshCw, Settings2, Bookmark, Timer, Flag, LayoutGrid, ChevronLeft, ChevronRight, Lock } from 'lucide-react';
+import { Brain, Loader2, CheckCircle2, XCircle, ArrowRight, RefreshCw, Settings2, Bookmark, Timer, Flag, LayoutGrid, ChevronLeft, ChevronRight, Lock, Calculator as CalcIcon } from 'lucide-react';
 import MarkdownRenderer from './MarkdownRenderer';
 import { AIService } from '../services/ai';
 import { db } from '../firebase';
@@ -21,9 +21,21 @@ interface QuizGeneratorProps {
   isNextTopicLocked?: boolean;
   onBookmark?: (question: QuizQuestion) => void;
   isProactive?: boolean;
+  onToggleCalculator?: () => void;
 }
 
-export default function QuizGenerator({ courseId, module, subTopic, onClose, onComplete, onNextTopic, isNextTopicLocked, onBookmark, isProactive }: QuizGeneratorProps) {
+export default function QuizGenerator({ 
+  courseId, 
+  module, 
+  subTopic, 
+  onClose, 
+  onComplete, 
+  onNextTopic, 
+  isNextTopicLocked, 
+  onBookmark, 
+  isProactive,
+  onToggleCalculator
+}: QuizGeneratorProps) {
   const [step, setStep] = useState<'config' | 'loading' | 'quiz' | 'results'>('config');
   const [isClaimingReward, setIsClaimingReward] = useState(false);
   const [rewardMessage, setRewardMessage] = useState<string | null>(null);
@@ -323,6 +335,16 @@ export default function QuizGenerator({ courseId, module, subTopic, onClose, onC
             </div>
           )}
 
+          {step === 'quiz' && (
+            <button 
+              onClick={onToggleCalculator}
+              className="text-slate-400 hover:text-slate-900 dark:hover:text-white p-2 rounded-full hover:bg-slate-200 dark:hover:bg-zinc-800 transition-colors"
+              title="Open Calculator"
+            >
+              <CalcIcon size={20} />
+            </button>
+          )}
+
           <button onClick={onClose} className="text-slate-400 hover:text-slate-900 dark:hover:text-white p-2 rounded-full hover:bg-slate-200 dark:hover:bg-zinc-800 transition-colors">
             <XCircle size={24} />
           </button>
@@ -569,7 +591,7 @@ export default function QuizGenerator({ courseId, module, subTopic, onClose, onC
 
                   <div className="space-y-6">
                     <div className="flex justify-between items-start gap-4">
-                      <div className="text-xl font-bold text-slate-900 dark:text-white leading-relaxed markdown-body flex-1">
+                      <div className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white leading-relaxed markdown-body flex-1">
                         <MarkdownRenderer content={questions[currentQuestionIndex].question} />
                       </div>
                       {onBookmark && (
@@ -650,7 +672,7 @@ export default function QuizGenerator({ courseId, module, subTopic, onClose, onC
                               key={i}
                               disabled={(mode === 'practice' || mode === 'adaptive') && showExplanation}
                               onClick={() => handleAnswer(opt)}
-                              className={`w-full p-5 rounded-2xl text-left font-medium transition-all flex items-center justify-between ${btnClass}`}
+                              className={`w-full p-4 sm:p-5 rounded-xl sm:rounded-2xl text-left font-medium transition-all flex items-center justify-between ${btnClass}`}
                             >
                               <span className="markdown-body">
                                 <MarkdownRenderer content={opt} />
@@ -669,7 +691,7 @@ export default function QuizGenerator({ courseId, module, subTopic, onClose, onC
                           disabled={(mode === 'practice' || mode === 'adaptive') && showExplanation}
                           placeholder="Type your answer here..."
                           value={userAnswers[questions[currentQuestionIndex].id] || ''}
-                          className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-zinc-800 border-2 border-slate-100 dark:border-zinc-700 focus:border-slate-900 dark:focus:border-white focus:ring-0 transition-all font-medium text-slate-900 dark:text-white"
+                          className="w-full p-4 sm:p-5 rounded-xl sm:rounded-2xl bg-slate-50 dark:bg-zinc-800 border-2 border-slate-100 dark:border-zinc-700 focus:border-slate-900 dark:focus:border-white focus:ring-0 transition-all font-medium text-slate-900 dark:text-white"
                           onChange={(e) => {
                             if (mode === 'exam') {
                               setUserAnswers(prev => ({ ...prev, [questions[currentQuestionIndex].id]: e.target.value }));

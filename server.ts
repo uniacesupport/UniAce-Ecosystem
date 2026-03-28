@@ -89,6 +89,22 @@ app.use((req, res, next) => {
   next();
 });
 
+// --- Middleware: Populate User (Optional Auth) ---
+const populateUser = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const token = req.headers.authorization?.split('Bearer ')[1];
+  if (!token) return next();
+
+  try {
+    const app = getAdminApp();
+    if (!app) return next();
+    const decodedToken = await app.auth().verifyIdToken(token);
+    (req as any).user = decodedToken;
+    next();
+  } catch (error) {
+    next();
+  }
+};
+
 // Adaptive Rate Limiter
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -96,9 +112,14 @@ const apiLimiter = rateLimit({
   message: 'Too many requests from this IP, please try again after 15 minutes',
   standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
   legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+  skip: (req: any) => {
+    const email = req.user?.email;
+    return email === 'uniace.support@gmail.com' || email === 'olalekan4565@gmail.com' || req.user?.role === 'admin';
+  }
 });
 
 // Apply to /api/ routes
+app.use('/api/', populateUser);
 app.use('/api/', apiLimiter);
 
 // --- Health Check for Render Cold Starts ---
@@ -123,6 +144,10 @@ const aiGenerationLimiter = rateLimit({
   message: { error: 'Too many AI generation requests from this IP, please try again after an hour' },
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req: any) => {
+    const email = req.user?.email;
+    return email === 'uniace.support@gmail.com' || email === 'olalekan4565@gmail.com' || req.user?.role === 'admin';
+  }
 });
 
 // Much higher limit for course generation as it's admin-only and requires many sequential calls
@@ -132,6 +157,10 @@ const courseGenerationLimiter = rateLimit({
   message: { error: 'Too many course generation requests from this IP, please try again after an hour' },
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req: any) => {
+    const email = req.user?.email;
+    return email === 'uniace.support@gmail.com' || email === 'olalekan4565@gmail.com' || req.user?.role === 'admin';
+  }
 });
 
 app.use('/api/course/generate', courseGenerationLimiter);
@@ -148,6 +177,8 @@ app.use(express.json({
 
 // --- Middleware: Verify Firebase ID Token ---
 const verifyAuth = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if ((req as any).user) return next();
+  
   const token = req.headers.authorization?.split('Bearer ')[1];
   
   if (!token) {
@@ -191,7 +222,9 @@ const getAndValidateSparks = async (uid: string, email: string | undefined): Pro
   const userRef = app.firestore().collection('users').doc(uid);
   
   try {
-    return await app.firestore().runTransaction(async (t) => {
+    let isNewUser = false;
+    const result = await app.firestore().runTransaction(async (t) => {
+      isNewUser = false; // Reset on each retry
       console.log(`Transaction started for user: ${uid}`);
       const doc = await t.get(userRef);
       const now = new Date();
@@ -209,12 +242,7 @@ const getAndValidateSparks = async (uid: string, email: string | undefined): Pro
         };
         t.set(userRef, initialData);
         
-        // Trigger welcome email asynchronously after transaction
-        if (email) {
-          MailService.sendWelcomeEmail(email, email.split('@')[0]).catch(err => {
-            console.error('Failed to send welcome email:', err);
-          });
-        }
+        isNewUser = true;
 
         return { sparks: 50, plan: 'free', role: initialData.role };
       }
@@ -293,6 +321,15 @@ const getAndValidateSparks = async (uid: string, email: string | undefined): Pro
         subscription_start_date: startDate
       };
     });
+
+    // Send welcome email outside the transaction to avoid duplicates on retries
+    if (isNewUser && email) {
+      MailService.sendWelcomeEmail(email, email.split('@')[0]).catch(err => {
+        console.error('Failed to send welcome email:', err);
+      });
+    }
+
+    return result;
   } catch (error) {
     console.error(`Transaction failed for user ${uid}:`, error);
     throw error;
@@ -1024,12 +1061,11 @@ app.post('/api/chat', verifyAuth, async (req, res) => {
       } else if (complexity === 'high') {
         if (mistralBreaker) providers.push(mistralBreaker);
         if (geminiOpenRouterBreaker) providers.push(geminiOpenRouterBreaker);
-        if (groqBreaker) providers.push(groqBreaker);
       } else {
-        // For standard chat, prioritize Groq for speed
-        if (groqBreaker) providers.push(groqBreaker);
+        // Prioritize Mistral for reasoning and quality as per user request
         if (mistralBreaker) providers.push(mistralBreaker);
         if (geminiOpenRouterBreaker) providers.push(geminiOpenRouterBreaker);
+        if (groqBreaker) providers.push(groqBreaker);
       }
 
       let lastError;
@@ -1329,10 +1365,10 @@ app.post('/api/openrouter/generate', verifyAuth, async (req, res) => {
 
     const providers = [];
     if (complexity === 'quiz') {
-      // Prioritize Groq for quizzes as requested for speed and JSON reliability
-      if (groqBreaker) providers.push(groqBreaker);
+      // Prioritize Mistral for quality as per user request
       if (mistralBreaker) providers.push(mistralBreaker);
       if (geminiOpenRouterBreaker) providers.push(geminiOpenRouterBreaker);
+      if (groqBreaker) providers.push(groqBreaker);
     } else {
       // For general content generation, Mistral is often best, then Gemini
       if (mistralBreaker) providers.push(mistralBreaker);
@@ -1404,9 +1440,10 @@ app.post('/api/openrouter/stream', verifyAuth, async (req, res) => {
       if (geminiOpenRouterBreaker) providers.push(geminiOpenRouterBreaker);
       if (groqBreaker) providers.push(groqBreaker);
     } else {
-      if (groqBreaker) providers.push(groqBreaker);
+      // Prioritize Mistral as per user request
       if (mistralBreaker) providers.push(mistralBreaker);
       if (geminiOpenRouterBreaker) providers.push(geminiOpenRouterBreaker);
+      if (groqBreaker) providers.push(groqBreaker);
     }
 
     if (providers.length === 0) {
@@ -1760,7 +1797,91 @@ app.post('/api/admin/extract-questions', verifyAuth, async (req, res) => {
   }
 });
 
+// --- Formula Search Endpoint ---
+app.post('/api/formulas/search', verifyAuth, async (req, res) => {
+  try {
+    const { query, courseId } = req.body;
+    if (!query) return res.status(400).json({ error: 'Query is required' });
+
+    const systemInstruction = `You are the UniAce Formula Expert, a high-performance academic assistant. 
+    Your task is to find or generate a list of 3-5 highly related mathematical or scientific formulas based on the student's query.
+    
+    [SYLLABUS RELEVANCE DIRECTIVE]: ONLY provide formulas that are commonly found in a standard University Undergraduate Syllabus. 
+    DO NOT provide obscure, advanced research-level, or unknown formulas that a typical student would not encounter in their curriculum.
+    Ensure the formulas are relevant to the academic context of the query.
+
+    [STUDENT-FRIENDLY DIRECTIVE]: Use clear, simple language in the description. Explain each variable clearly. 
+    The goal is to help a student understand the formula, not to provide a complex derivation.
+
+    Return a JSON object with the following structure:
+    {
+      "formulas": [
+        {
+          "id": "string (unique slug)",
+          "title": "string (name of the formula)",
+          "latex": "string (the formula in LaTeX format, DO NOT include any $ or $$ delimiters)",
+          "description": "string (brief, student-friendly explanation of the formula and its variables in Markdown. ALWAYS wrap mathematical symbols, variables, and equations in $ ... $ delimiters, e.g. $x^2$ or $\\mathbf{a}$)",
+          "category": "string (e.g. Calculus, Physics, Chemistry, etc.)"
+        }
+      ]
+    }
+    
+    [ANTI-JAILBREAK DIRECTIVE]: Only generate academic formulas. If the request is not for a formula, return an empty array.`;
+
+    const prompt = `Find related university-level formulas for: ${query}${courseId ? ` in the context of ${courseId}` : ''}. Ensure they are relevant to a standard university syllabus.`;
+
+    // Prioritize Mistral as per user request
+    const aiProvider = globalMistralBreaker || globalMistralProvider || globalGroqBreaker || globalGroqProvider;
+    if (!aiProvider) {
+      throw new Error('No AI provider configured for formula search');
+    }
+
+    const response = await aiProvider.generate([
+      { role: 'system', content: systemInstruction },
+      { role: 'user', content: prompt }
+    ], { complexity: 'standard', jsonMode: true });
+
+    const data = parseRobustJSON(response.text, { formulas: [] });
+    const formulas = data.formulas || [];
+
+    if (formulas.length === 0) {
+      return res.status(404).json({ error: 'No related formulas found' });
+    }
+
+    res.json(formulas);
+  } catch (error: any) {
+    console.error('Formula Search Error:', error);
+    res.status(500).json({ error: 'Failed to search for formula' });
+  }
+});
+
 // Phase 2: Knowledge Base Ingestion Endpoint (Admin Only)
+const sanitizeForFirestore = (obj: any): any => {
+  if (obj === undefined) return null;
+  if (obj === null) return null;
+  if (typeof obj !== 'object') return obj;
+  
+  // Only process arrays and plain objects. Preserve special objects (Date, FieldValue, VectorValue, etc.)
+  if (Array.isArray(obj)) {
+    return obj.map(item => sanitizeForFirestore(item));
+  }
+  
+  if (obj.constructor !== Object) {
+    return obj; // It's a special object, return as-is
+  }
+  
+  const sanitized: any = {};
+  for (const key in obj) {
+    if (Object.prototype.hasOwnProperty.call(obj, key)) {
+      const val = obj[key];
+      if (val !== undefined) {
+        sanitized[key] = sanitizeForFirestore(val);
+      }
+    }
+  }
+  return sanitized;
+};
+
 app.post('/api/admin/ingest', verifyAuth, async (req, res) => {
   const uid = (req as any).user.uid;
   const { content, course_code, module_name, topic_name } = req.body;
@@ -1790,14 +1911,14 @@ app.post('/api/admin/ingest', verifyAuth, async (req, res) => {
       const vector = embedRes.embeddings[0].values;
 
       const docRef = kbRef.doc();
-      batch.set(docRef, {
+      batch.set(docRef, sanitizeForFirestore({
         content: chunk,
         course_code,
         module_name,
         topic_name,
         embedding: admin.firestore.VectorValue.fromArray(vector),
         createdAt: admin.firestore.FieldValue.serverTimestamp()
-      });
+      }));
       
       // Throttling to avoid Gemini API rate limits (100 RPM)
       await new Promise(resolve => setTimeout(resolve, 700));
@@ -1855,7 +1976,7 @@ app.post('/api/admin/questions/add', verifyAuth, async (req, res) => {
 
     const batch = app.firestore().batch();
     
-    batch.set(paperDocRef, {
+    batch.set(paperDocRef, sanitizeForFirestore({
       title,
       year,
       semester,
@@ -1863,7 +1984,7 @@ app.post('/api/admin/questions/add', verifyAuth, async (req, res) => {
       questions: updatedQuestions,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedBy: uid
-    }, { merge: true });
+    }), { merge: true });
 
     const kbRef = app.firestore().collection('knowledge_base');
     const newVectorItems: any[] = [];
@@ -1879,7 +2000,7 @@ app.post('/api/admin/questions/add', verifyAuth, async (req, res) => {
         const vector = embedRes.embeddings[0].values;
 
         const kbDocRef = kbRef.doc(q.id);
-        batch.set(kbDocRef, {
+        batch.set(kbDocRef, sanitizeForFirestore({
           content,
           course_code: courseCode,
           module_name: 'Past Questions',
@@ -1888,7 +2009,7 @@ app.post('/api/admin/questions/add', verifyAuth, async (req, res) => {
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
           questionId: q.id,
           paperId: paperDocRef.id
-        });
+        }));
         
         newVectorItems.push({
           id: q.id,
@@ -1951,11 +2072,11 @@ app.post('/api/admin/questions/update', verifyAuth, async (req, res) => {
 
     const batch = app.firestore().batch();
     
-    batch.update(paperRef, {
+    batch.update(paperRef, sanitizeForFirestore({
       questions,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedBy: uid
-    });
+    }));
 
     const content = `Question: ${question.question}\nOptions: ${question.options.join(', ')}\nCorrect Answer: ${question.correctAnswer}\nExplanation: ${question.explanation}\nHint: ${question.hint || ''}`;
     
@@ -1966,7 +2087,7 @@ app.post('/api/admin/questions/update', verifyAuth, async (req, res) => {
     const vector = embedRes.embeddings[0].values;
 
     const kbRef = app.firestore().collection('knowledge_base').doc(question.id);
-    batch.set(kbRef, {
+    batch.set(kbRef, sanitizeForFirestore({
       content,
       course_code: paperData.courseCode,
       module_name: 'Past Questions',
@@ -1975,7 +2096,7 @@ app.post('/api/admin/questions/update', verifyAuth, async (req, res) => {
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       questionId: question.id,
       paperId: paperId
-    }, { merge: true });
+    }), { merge: true });
 
     await batch.commit();
     
@@ -2013,11 +2134,11 @@ app.post('/api/admin/questions/delete', verifyAuth, async (req, res) => {
 
     const batch = app.firestore().batch();
     
-    batch.update(paperRef, {
+    batch.update(paperRef, sanitizeForFirestore({
       questions: updatedQuestions,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedBy: uid
-    });
+    }));
 
     const kbRef = app.firestore().collection('knowledge_base').doc(questionId);
     batch.delete(kbRef);
@@ -2637,11 +2758,11 @@ async function startServer() {
       console.error('Failed to load Vite middleware:', e);
     }
   } else {
-    console.log('Serving static assets from dist...');
+    console.log('Serving static assets from build...');
     // Serve built assets in production
-    app.use(express.static(path.join(__dirname, 'dist')));
+    app.use(express.static(path.join(__dirname, 'build')));
     app.get('*', (req, res) => {
-      res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+      res.sendFile(path.join(__dirname, 'build', 'index.html'));
     });
   }
 
@@ -2837,7 +2958,9 @@ async function startServer() {
 
         if (app && userRef) {
           try {
+            let isNewUser = false;
             const result = await app.firestore().runTransaction(async (t) => {
+              isNewUser = false; // Reset on each retry
               const doc = await t.get(userRef);
               const now = new Date();
               const todayStr = now.toISOString().split('T')[0];
@@ -2853,6 +2976,7 @@ async function startServer() {
                    last_spark_reset: todayStr
                  };
                  t.set(userRef, initialData);
+                 isNewUser = true;
                  return { sparks: 50 - SPARK_COST, plan: 'free' };
               }
 
@@ -2894,6 +3018,13 @@ async function startServer() {
               return { sparks: role === 'admin' || plan === 'scholar' ? 999999 : sparks, plan };
             });
             sparksRemaining = result.sparks;
+
+            // Send welcome email outside the transaction to avoid duplicates on retries
+            if (isNewUser && user.email) {
+              MailService.sendWelcomeEmail(user.email, user.email.split('@')[0]).catch(err => {
+                console.error('Failed to send welcome email (WS):', err);
+              });
+            }
           } catch (dbError: any) {
             if (dbError.message && dbError.message.includes('PERMISSION_DENIED')) {
               console.warn('Firestore transaction failed (WS): PERMISSION_DENIED. Check Firebase Admin SDK credentials.');

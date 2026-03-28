@@ -22,7 +22,7 @@ export default function BottomNav({ activeView, onViewSelect }: BottomNavProps) 
           }`}
         >
           <Grid size={24} />
-          <span className="text-[10px] font-bold">Hub</span>
+          <span className="text-[9px] font-bold tracking-tight">Hub</span>
         </button>
 
         <button
@@ -34,7 +34,7 @@ export default function BottomNav({ activeView, onViewSelect }: BottomNavProps) 
           }`}
         >
           <Home size={24} />
-          <span className="text-[10px] font-bold">Home</span>
+          <span className="text-[9px] font-bold tracking-tight">Home</span>
         </button>
 
         <button
@@ -53,7 +53,7 @@ export default function BottomNav({ activeView, onViewSelect }: BottomNavProps) 
           }`}
         >
           <Trophy size={24} />
-          <span className="text-[10px] font-bold">Arena</span>
+          <span className="text-[9px] font-bold tracking-tight">Arena</span>
         </button>
 
         <button
@@ -65,7 +65,7 @@ export default function BottomNav({ activeView, onViewSelect }: BottomNavProps) 
           }`}
         >
           <User size={24} />
-          <span className="text-[10px] font-bold">Profile</span>
+          <span className="text-[9px] font-bold tracking-tight">Profile</span>
         </button>
       </div>
     </div>

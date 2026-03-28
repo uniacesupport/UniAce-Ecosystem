@@ -91,6 +91,8 @@ const ensureArray = (data: any, fallback: any[] = []): any[] => {
   return fallback;
 };
 
+import { sanitizeLatex } from './aiCourseGenerator';
+
 export const AIService = {
   generateChatResponse: async (
     messages: ChatMessage[], 
@@ -555,7 +557,7 @@ ALWAYS use LaTeX for ALL mathematical formulas and variables (e.g., use $x$ inst
     Output ONLY the markdown content. Do not include any other text or conversational filler.`;
 
     const response = await callAI(prompt, undefined, undefined, 4000);
-    return response.text || "Failed to generate lesson content.";
+    return sanitizeLatex(response.text || "Failed to generate lesson content.");
   },
 
   generateTTS: async (text: string) => {

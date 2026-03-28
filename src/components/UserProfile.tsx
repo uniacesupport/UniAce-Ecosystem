@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, Edit2, BarChart2, ChevronRight, Mail, User, BookMarked, Moon, Sun, HelpCircle, Star, LogOut, ShieldCheck, Zap, FileText, BookOpen, Settings, CreditCard, Clock, CheckCircle2, Camera, Upload, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useUserProgress } from '../hooks/useUserProgress';
+import { useTheme } from '../context/ThemeContext';
 import { View } from '../types';
 import { db, storage } from '../firebase';
 import { collection, query, where, orderBy, limit, getDocs, Timestamp } from 'firebase/firestore';
@@ -26,33 +27,8 @@ interface UserProfileProps {
 export default function UserProfile({ onBack, onNavigate }: UserProfileProps) {
   const { user, logout, profile, updateProfileData } = useAuth();
   const { progress } = useUserProgress();
-  const [isDarkMode, setIsDarkMode] = useState(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const savedTheme = localStorage.getItem('theme');
-        if (savedTheme) return savedTheme === 'dark';
-      } catch (e) {
-        console.warn('localStorage access denied, using default theme');
-      }
-      return document.documentElement.classList.contains('dark');
-    }
-    return false;
-  });
-
-  useEffect(() => {
-    const root = document.documentElement;
-    if (isDarkMode) {
-      root.classList.add('dark');
-      try {
-        localStorage.setItem('theme', 'dark');
-      } catch (e) {}
-    } else {
-      root.classList.remove('dark');
-      try {
-        localStorage.setItem('theme', 'light');
-      } catch (e) {}
-    }
-  }, [isDarkMode]);
+  const { theme, toggleTheme } = useTheme();
+  const isDarkMode = theme === 'dark';
 
   const isAdmin = profile?.role === 'admin' || user?.email === 'olalekan4565@gmail.com' || user?.email === 'uniace.support@gmail.com';
 
@@ -210,7 +186,7 @@ export default function UserProfile({ onBack, onNavigate }: UserProfileProps) {
       icon: isDarkMode ? Sun : Moon,
       label: 'Device Appearance',
       color: 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400',
-      onClick: () => setIsDarkMode(!isDarkMode),
+      onClick: toggleTheme,
       value: isDarkMode ? 'Dark Mode' : 'Light Mode'
     },
     {

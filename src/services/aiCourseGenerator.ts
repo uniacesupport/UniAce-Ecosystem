@@ -29,11 +29,14 @@ const getAuthToken = async () => {
   }
 };
 
-function sanitizeLatex(content: string): string {
+export function sanitizeLatex(content: string): string {
   if (!content) return content;
   
+  // 0. Remove markdown code block wrappers if the AI incorrectly wrapped the entire response
+  let sanitized = content.replace(/^```(?:markdown)?\n([\s\S]*?)\n```$/g, '$1');
+  
   // 1. Replace \[ ... \] with $$ ... $$ for block math
-  let sanitized = content.replace(/\\\[/g, '$$$$').replace(/\\\]/g, '$$$$');
+  sanitized = sanitized.replace(/\\\[/g, '$$$$').replace(/\\\]/g, '$$$$');
   
   // 2. Replace \( ... \) with $ ... $ for inline math
   sanitized = sanitized.replace(/\\\(/g, '$').replace(/\\\)/g, '$');
@@ -162,6 +165,47 @@ async function callGenerateAPI(prompt: string, type: 'skeleton' | 'module' | 'le
   }
 }
 
+export async function generateCourseFormulas(
+  courseName: string,
+  courseDescription: string,
+  provider: string = 'mistral'
+): Promise<any> {
+  const formulaPrompt = `
+    You are an expert university professor. Generate a comprehensive list of essential formulas, equations, and theorems for the following course.
+    
+    Course Name: ${courseName}
+    Description: ${courseDescription}
+    
+    Requirements:
+    1. Generate 10-15 of the most important formulas for this course.
+    2. Group them into logical categories (e.g., "Kinematics", "Thermodynamics", "Calculus", "Statistics").
+    3. Provide the LaTeX representation for each formula.
+    4. Provide a brief, clear description of what the formula is used for and what its variables mean.
+    
+    CRITICAL: You must return ONLY valid JSON matching this exact structure:
+    {
+      "formulas": [
+        {
+          "title": "Newton's Second Law",
+          "latex": "F = ma",
+          "description": "Relates the net force (F) acting on an object to its mass (m) and acceleration (a).",
+          "category": "Dynamics"
+        }
+      ]
+    }
+    CRITICAL: Do NOT wrap the JSON in markdown blocks. Output raw JSON only.
+    CRITICAL: Escape all backslashes in LaTeX strings (e.g., "\\\\frac{a}{b}").
+  `;
+
+  const result = await callGenerateAPI(formulaPrompt, 'skeleton', provider);
+  
+  if (!result.formulas || !Array.isArray(result.formulas)) {
+    throw new Error("AI generated invalid formula format. Expected a 'formulas' array.");
+  }
+
+  return result.formulas;
+}
+
 export async function generateCourseSkeleton(
   courseName: string, 
   courseDescription: string, 
@@ -280,6 +324,7 @@ export async function generateLessonContent(
     5. Use LaTeX for ALL mathematical equations, variables, and scientific notation.
     6. CRITICAL: Use $ ... $ for inline math and $$ ... $$ for block math. Ensure LaTeX commands are properly formatted (e.g., use \\frac{a}{b} not frac{a}{b}).
     7. CRITICAL: Output ONLY raw Markdown. Do NOT output JSON. Do not wrap in \`\`\`markdown. Just the raw text.
+    8. CRITICAL: Ensure the lesson is COMPLETE and does not cut off abruptly. Provide a clear conclusion or summary at the end.
   `;
 
   const rawMarkdown = await callGenerateAPI(lessonPrompt, 'lesson', provider);

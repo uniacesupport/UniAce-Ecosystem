@@ -324,11 +324,11 @@ export default function Arena({ activeCourseId }: ArenaProps) {
           {/* Header */}
           <header className="flex flex-col md:flex-row md:items-center justify-between gap-8">
             <div className="space-y-2">
-              <div className="flex items-center gap-3 text-purple-500 font-black uppercase tracking-[0.2em] text-xs">
+              <div className="flex items-center gap-3 text-purple-500 font-black uppercase tracking-[0.2em] text-[10px] sm:text-xs">
                 <Swords size={16} />
                 <span>PvP Combat Zone</span>
               </div>
-              <h1 className="text-5xl font-black text-white tracking-tight italic uppercase">The Arena</h1>
+              <h1 className="text-3xl sm:text-5xl font-black text-white tracking-tight italic uppercase">The Arena</h1>
               <p className="text-slate-500 font-medium">Battle other students in real-time to earn XP and Rank.</p>
             </div>
             
@@ -345,7 +345,7 @@ export default function Arena({ activeCourseId }: ArenaProps) {
               <button
                 onClick={findMatch}
                 disabled={!activeCourseId}
-                className="px-10 py-5 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white rounded-[2rem] font-black text-xl shadow-2xl shadow-purple-600/30 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-3"
+                className="px-10 py-5 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white rounded-[2rem] font-black text-lg sm:text-xl shadow-2xl shadow-purple-600/30 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-3"
               >
                 <Zap size={24} fill="currentColor" />
                 ENTER BATTLE
@@ -523,7 +523,7 @@ export default function Arena({ activeCourseId }: ArenaProps) {
                 animate={{ y: 0, opacity: 1 }}
                 className="text-center space-y-6"
               >
-                <h2 className="text-2xl sm:text-3xl font-bold text-white leading-tight">
+                <h2 className="text-xl sm:text-3xl font-bold text-white leading-tight">
                   {currentQ.question}
                 </h2>
                 
@@ -599,7 +599,7 @@ export default function Arena({ activeCourseId }: ArenaProps) {
             )}
           </div>
 
-          <h1 className="text-4xl font-black text-white mb-2">
+          <h1 className="text-3xl sm:text-4xl font-black text-white mb-2">
             {isWinner ? 'VICTORY!' : isDraw ? 'DRAW!' : 'DEFEAT'}
           </h1>
           <p className="text-slate-400 mb-8 font-medium">

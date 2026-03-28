@@ -71,7 +71,7 @@ export default function QuickCheck({ subTopic, onCorrect }: QuickCheckProps) {
       </div>
 
       <div className="space-y-6">
-        <div className="text-lg font-semibold text-zinc-800 dark:text-zinc-200 leading-relaxed">
+        <div className="text-base sm:text-lg font-semibold text-zinc-800 dark:text-zinc-200 leading-relaxed">
           <MarkdownRenderer content={question.question} />
         </div>
 

@@ -1,6 +1,6 @@
 import { Module, SubTopic, UserProgress } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { BookOpen, ChevronRight, Brain, Menu, Volume2, Loader2, ArrowLeft, Sparkles, Wand2, Lock } from 'lucide-react';
+import { BookOpen, ChevronRight, Brain, Menu, Volume2, Loader2, ArrowLeft, Sparkles, Wand2, Lock, Calculator as CalcIcon } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import QuizGenerator from './QuizGenerator';
 import QuickCheck from './QuickCheck';
@@ -30,6 +30,7 @@ interface ContentAreaProps {
   onBookmark?: (item: any) => void;
   onViewSelect?: (view: any) => void;
   progress?: UserProgress;
+  onToggleCalculator?: () => void;
 }
 
 export default function ContentArea({ 
@@ -46,7 +47,8 @@ export default function ContentArea({
   autoStartQuiz = false,
   onBookmark,
   onViewSelect,
-  progress
+  progress,
+  onToggleCalculator
 }: ContentAreaProps) {
   const [showQuiz, setShowQuiz] = useState(autoStartQuiz);
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -275,20 +277,20 @@ export default function ContentArea({
             <ArrowLeft size={16} />
             <span>Syllabus</span>
           </button>
-        </div>
-        
-        <div className="flex items-center gap-2">
           {profile?.role === 'admin' && (
             <button 
               onClick={handleGenerateLesson}
               disabled={isGenerating}
-              className="flex items-center gap-2 px-3 py-1 rounded-md text-sm font-medium transition-all active:scale-95 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 disabled:opacity-50"
+              className="flex items-center gap-2 px-3 py-1 rounded-md text-xs font-medium transition-all active:scale-95 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 disabled:opacity-50"
               title="Regenerate Full University Note"
             >
-              <Wand2 size={16} />
-              <span className="hidden sm:inline">Regenerate Full Note</span>
+              <Wand2 size={14} />
+              <span className="hidden sm:inline">Regenerate</span>
             </button>
           )}
+        </div>
+        
+        <div className="flex items-center gap-2">
           <button
             onClick={handleListen}
             disabled={isSpeaking && !audioUrl}
@@ -317,6 +319,14 @@ export default function ContentArea({
           </div>
 
           <button
+            onClick={onToggleCalculator}
+            className="flex items-center gap-2 px-3 py-1 rounded-md text-sm font-medium transition-all active:scale-95 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-zinc-300"
+          >
+            <CalcIcon size={14} />
+            <span>Calc</span>
+          </button>
+
+          <button
             onClick={() => setShowQuiz(true)}
             className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded-md text-sm font-medium transition-all active:scale-95"
           >
@@ -327,7 +337,7 @@ export default function ContentArea({
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-10 pb-24 lg:pb-10">
+      <div className="flex-1 p-4 sm:p-6 lg:p-10 pb-4 lg:pb-10">
         <div className="max-w-3xl mx-auto space-y-8">
           <motion.div
             key={activeSubTopic.id}
@@ -343,7 +353,7 @@ export default function ContentArea({
               <span className="text-zinc-900 dark:text-zinc-100">{activeSubTopic.title}</span>
             </div>
 
-            <h1 className="text-4xl font-extrabold text-zinc-950 dark:text-white mb-8 tracking-tight">{activeSubTopic.title}</h1>
+            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-zinc-950 dark:text-white mb-6 sm:mb-8 tracking-tight">{activeSubTopic.title}</h1>
 
             {isGenerating ? (
               <div className="flex flex-col items-center justify-center py-20 space-y-6 text-center">
@@ -457,6 +467,7 @@ export default function ContentArea({
             onNextTopic={nextSubTopic ? handleNextTopicClick : undefined}
             isNextTopicLocked={isLocked && activeSubTopicIndex + 1 > 0}
             onBookmark={onBookmark}
+            onToggleCalculator={onToggleCalculator}
           />
         )}
       </AnimatePresence>

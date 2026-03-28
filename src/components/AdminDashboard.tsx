@@ -13,7 +13,7 @@ import AdminSeeder from './AdminSeeder';
 import AdminQuestionBank from './AdminQuestionBank';
 import CourseEditModal from './CourseEditModal';
 import { AIService } from '../services/ai';
-import { generateCourseContent, generateCourseSkeleton, generateModuleContent } from '../services/aiCourseGenerator';
+import { generateCourseContent, generateCourseSkeleton, generateModuleContent, generateCourseFormulas } from '../services/aiCourseGenerator';
 import { CourseService } from '../services/courseService';
 import { Course, UserProgress, Subject, CourseId } from '../types';
 import { LogService, SystemLog } from '../services/logService';
@@ -455,6 +455,33 @@ export default function AdminDashboard() {
         description: courseSkeleton.description || `A comprehensive course on ${quickCourseName}.`,
         syllabus: syllabus
       } as any);
+
+      // Generate Formulas
+      setStatusMessage('Step 3: Generating essential formulas...');
+      try {
+        const generatedFormulas = await generateCourseFormulas(
+          quickCourseName,
+          courseSkeleton.description || `A comprehensive course on ${quickCourseName}.`,
+          aiProvider
+        );
+        
+        if (generatedFormulas && generatedFormulas.length > 0) {
+          const batch = writeBatch(db);
+          generatedFormulas.forEach((formula: any, idx: number) => {
+            const formulaId = `f${idx + 1}`;
+            const formulaRef = doc(db, `courses/${courseId}/formulas`, formulaId);
+            batch.set(formulaRef, {
+              id: formulaId,
+              ...formula
+            });
+          });
+          await batch.commit();
+          setStatusMessage('Formulas generated successfully!');
+        }
+      } catch (formulaError) {
+        console.error('Failed to generate formulas:', formulaError);
+        showToast('Course generated, but formula generation failed.', 'error');
+      }
 
       setGenerationProgress(100);
       setUploadSuccess(true);

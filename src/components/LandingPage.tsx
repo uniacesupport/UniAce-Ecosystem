@@ -34,14 +34,14 @@ export default function LandingPage() {
             transition={{ duration: 0.6 }}
             className="space-y-8"
           >
-            <h1 className="text-5xl lg:text-7xl font-black text-slate-900 dark:text-white tracking-tight leading-[1.1]">
+            <h1 className="text-3xl sm:text-4xl lg:text-6xl font-black text-slate-900 dark:text-white tracking-tight leading-[1.1]">
               Ace Your Hardest Courses <br />
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-500 to-teal-500">
                 with Premium AI Tutoring
               </span>
             </h1>
             
-            <p className="text-xl text-slate-500 dark:text-zinc-400 leading-relaxed max-w-lg">
+            <p className="text-lg sm:text-xl text-slate-500 dark:text-zinc-400 leading-relaxed max-w-lg">
               Master complex science formulas and theories in half the time. 
               Your personalized, 24/7 intelligent study companion is here.
             </p>
@@ -49,12 +49,12 @@ export default function LandingPage() {
             <div className="flex flex-col sm:flex-row gap-4 pt-4 w-full">
               <button 
                 onClick={signInWithGoogle}
-                className="px-8 py-4 bg-emerald-500 text-white rounded-2xl font-bold text-lg hover:bg-emerald-400 hover:scale-[1.02] transition-all shadow-xl shadow-emerald-200 dark:shadow-none flex items-center justify-center gap-2 group w-full"
+                className="px-8 py-4 bg-emerald-500 text-white rounded-2xl font-bold text-base sm:text-lg hover:bg-emerald-400 hover:scale-[1.02] transition-all shadow-xl shadow-emerald-200 dark:shadow-none flex items-center justify-center gap-2 group w-full"
               >
-                Start My 7-Day Premium Trial
+                Get 7-Day Premium Access
               </button>
             </div>
-            <p className="text-sm text-slate-500 dark:text-zinc-400">No credit card required. Full access for 7 days.</p>
+            <p className="text-sm text-slate-500 dark:text-zinc-400">No credit card required. Cancel anytime.</p>
 
             <div className="pt-8 grid grid-cols-3 gap-4 text-sm text-slate-600 dark:text-zinc-400 font-medium">
               <div className="flex flex-col items-center gap-2 text-center">
@@ -147,8 +147,8 @@ export default function LandingPage() {
       <section className="py-24 bg-white dark:bg-zinc-900 transition-colors">
         <div className="max-w-7xl mx-auto px-6">
           <div className="text-center max-w-2xl mx-auto mb-16">
-            <h2 className="text-3xl font-black text-slate-900 dark:text-white mb-4">Everything you need to excel</h2>
-            <p className="text-slate-500 dark:text-zinc-400 text-lg">Stop struggling with textbooks. Get an intelligent study companion that adapts to your learning style.</p>
+            <h2 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white mb-4">Everything you need to excel</h2>
+            <p className="text-slate-500 dark:text-zinc-400 text-base sm:text-lg">Stop struggling with textbooks. Get an intelligent study companion that adapts to your learning style.</p>
           </div>
 
           <div className="grid md:grid-cols-3 gap-8">
@@ -195,19 +195,19 @@ export default function LandingPage() {
           <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500 rounded-full blur-[100px] opacity-20" />
           
           <div className="relative z-10 space-y-8">
-            <h2 className="text-4xl md:text-5xl font-black text-white tracking-tight">
+            <h2 className="text-2xl sm:text-3xl md:text-4xl font-black text-white tracking-tight">
               Ready to boost your grades?
             </h2>
-            <p className="text-slate-400 text-xl max-w-xl mx-auto">
+            <p className="text-slate-400 text-lg sm:text-xl max-w-xl mx-auto">
               Join the community of students mastering their subjects with UniAce today. Claim your premium access.
             </p>
             <button 
               onClick={signInWithGoogle}
-              className="px-10 py-5 bg-emerald-500 text-white rounded-2xl font-bold text-xl hover:bg-emerald-400 hover:scale-105 transition-all shadow-lg shadow-emerald-500/25"
+              className="px-10 py-5 bg-emerald-500 text-white rounded-2xl font-bold text-lg sm:text-xl hover:bg-emerald-400 hover:scale-105 transition-all shadow-lg shadow-emerald-500/25"
             >
-              Start My 7-Day Premium Trial
+              Get 7-Day Premium Access
             </button>
-            <p className="text-sm text-slate-500">No credit card required • Cancel anytime</p>
+            <p className="text-sm text-slate-500">No credit card required. Cancel anytime.</p>
           </div>
         </div>
       </section>

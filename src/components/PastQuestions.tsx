@@ -66,10 +66,15 @@ export default function PastQuestions({ activeCourseId }: PastQuestionsProps) {
   }, []);
 
   const filteredPapers = allPapers.filter(paper => {
-    const matchesCourse = activeCourseId ? paper.courseCode.replace(' ', '') === activeCourseId : true;
-    const matchesSearch = paper.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      paper.year.includes(searchQuery) ||
-      paper.courseCode.toLowerCase().includes(searchQuery.toLowerCase());
+    const title = paper.title || '';
+    const courseCode = paper.courseCode || '';
+    const year = paper.year || '';
+    const searchLower = searchQuery.toLowerCase();
+
+    const matchesCourse = activeCourseId ? courseCode.replace(' ', '') === activeCourseId : true;
+    const matchesSearch = title.toLowerCase().includes(searchLower) ||
+      year.includes(searchQuery) ||
+      courseCode.toLowerCase().includes(searchLower);
     return matchesCourse && matchesSearch;
   });
 
@@ -110,7 +115,7 @@ export default function PastQuestions({ activeCourseId }: PastQuestionsProps) {
 
     if (!isStarted) {
       return (
-        <div className="flex-1 overflow-y-auto bg-slate-50 p-4 sm:p-6 lg:p-12 pb-24 lg:pb-12 transition-colors">
+        <div className="flex-1 bg-slate-50 p-4 sm:p-6 lg:p-12 pb-4 lg:pb-12 transition-colors">
           <div className="max-w-2xl mx-auto space-y-8">
             <div className="lg:pl-4 xl:pl-0">
               <button 

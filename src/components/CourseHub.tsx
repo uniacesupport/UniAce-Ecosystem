@@ -96,7 +96,7 @@ export default function CourseHub({ activeSubject, onSubjectChange, onSelectCour
   const activeEnrolledCourses = enrolledCourses.filter(id => courses[id]?.subject === activeSubject);
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-zinc-950 flex flex-col p-4 sm:p-6 lg:p-12 pb-24 lg:pb-16 relative overflow-x-hidden overflow-y-auto transition-colors">
+    <div className="min-h-screen bg-slate-50 dark:bg-zinc-950 flex flex-col p-4 sm:p-6 lg:p-12 pb-4 lg:pb-16 relative overflow-x-hidden transition-colors">
       {/* Configuration Warning */}
       {!isConfigured && (
         <div className="fixed top-0 left-0 right-0 bg-amber-500 text-white p-2 text-center text-xs font-bold z-50 shadow-lg">
@@ -106,10 +106,10 @@ export default function CourseHub({ activeSubject, onSubjectChange, onSelectCour
       {/* Header */}
       <header className="flex items-center justify-between w-full max-w-7xl mx-auto mb-12 sm:mb-16 relative z-30 lg:pl-4 xl:pl-0">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
+          <h1 className="text-xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
             🎓 Welcome back, {user?.displayName?.split(' ')[0] || 'Scholar'}
           </h1>
-          <p className="text-sm sm:text-base text-slate-500 dark:text-zinc-400 font-medium">
+          <p className="text-xs sm:text-base text-slate-500 dark:text-zinc-400 font-medium">
             Ready to continue your journey?
           </p>
         </div>
@@ -183,7 +183,7 @@ export default function CourseHub({ activeSubject, onSubjectChange, onSelectCour
           <span>UniAce Ecosystem</span>
         </motion.div>
         
-        <div className="text-3xl sm:text-5xl md:text-7xl font-black text-slate-900 dark:text-white mb-6 sm:mb-8 tracking-tighter leading-tight sm:leading-none flex flex-col items-center gap-2 sm:gap-4">
+        <div className="text-2xl sm:text-4xl md:text-5xl font-black text-slate-900 dark:text-white mb-6 sm:mb-8 tracking-tighter leading-tight sm:leading-none flex flex-col items-center gap-2 sm:gap-4">
           <h1>Master Your</h1>
           <div className="relative inline-block group z-30">
             <button 
@@ -191,7 +191,7 @@ export default function CourseHub({ activeSubject, onSubjectChange, onSelectCour
               className={`flex items-center gap-2 sm:gap-3 px-4 py-2 sm:px-6 sm:py-3 rounded-xl sm:rounded-2xl bg-white/50 dark:bg-zinc-900/50 backdrop-blur-sm border-2 border-dashed ${currentSubject.borderClass} hover:border-current transition-all cursor-pointer group-hover:scale-105`}
               style={{ color: 'inherit' }}
             >
-              <span className={`text-2xl sm:text-5xl md:text-7xl font-black ${currentSubject.textClass}`}>
+              <span className={`text-xl sm:text-4xl md:text-5xl font-black ${currentSubject.textClass}`}>
                 {activeSubject}
               </span>
               <ChevronDown size={24} className={`${currentSubject.textClass} transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} />
@@ -236,7 +236,7 @@ export default function CourseHub({ activeSubject, onSubjectChange, onSelectCour
           </div>
         </div>
         
-        <p className="text-slate-500 dark:text-blue-300 max-w-xl mx-auto text-base sm:text-lg md:text-xl font-medium leading-relaxed px-4">
+        <p className="text-slate-500 dark:text-blue-300 max-w-xl mx-auto text-sm sm:text-lg md:text-xl font-medium leading-relaxed px-4">
           {currentSubject.description}. <br className="hidden sm:block" />
           Select a course below to begin your journey.
         </p>
@@ -274,7 +274,7 @@ export default function CourseHub({ activeSubject, onSubjectChange, onSelectCour
             <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 flex items-center justify-center">
               <BookOpen size={18} className="text-emerald-600 dark:text-emerald-400" />
             </div>
-            <h2 className="text-2xl font-bold text-slate-900 dark:text-white">My Enrolled Courses</h2>
+            <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">My Enrolled Courses</h2>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {activeEnrolledCourses.map((courseId, index) => {
@@ -289,7 +289,7 @@ export default function CourseHub({ activeSubject, onSubjectChange, onSelectCour
                   onClick={() => onSelectCourse(course.id as CourseId)}
                   className="group relative bg-white dark:bg-zinc-900 rounded-3xl p-6 shadow-xl shadow-slate-200/50 dark:shadow-none border-2 border-emerald-500/20 dark:border-emerald-500/10 text-left hover:border-emerald-500 transition-all hover:shadow-2xl hover:shadow-emerald-100/50 dark:hover:shadow-none flex flex-col h-full"
                 >
-                  <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+                  <h3 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white mb-2 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
                     {course.title}
                   </h3>
                   <p className="text-slate-500 dark:text-zinc-400 mb-6 line-clamp-2 text-sm flex-grow">
@@ -311,7 +311,7 @@ export default function CourseHub({ activeSubject, onSubjectChange, onSelectCour
       )}
 
       <div className="max-w-7xl w-full px-4 mx-auto mb-6">
-        <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Explore {activeSubject}</h2>
+        <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">Explore {activeSubject}</h2>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-7xl w-full px-4 mx-auto">
@@ -366,7 +366,7 @@ export default function CourseHub({ activeSubject, onSubjectChange, onSelectCour
                 )}
               </div>
               
-              <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+              <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white mb-2 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
                 {course.title}
               </h2>
               <p className="text-slate-500 dark:text-blue-300 mb-8 line-clamp-2 flex-grow">
@@ -386,7 +386,7 @@ export default function CourseHub({ activeSubject, onSubjectChange, onSelectCour
         ) : (
           <div className="col-span-full text-center py-20">
             <div className="bg-slate-100 dark:bg-slate-800 rounded-3xl p-12 inline-block">
-              <div className={`w-20 h-20 mx-auto bg-${SUBJECTS[activeSubject].color}-100 rounded-full flex items-center justify-center mb-6 text-${SUBJECTS[activeSubject].color}-600`}>
+              <div className={`w-20 h-20 mx-auto ${SUBJECTS[activeSubject].bgClass} bg-opacity-10 rounded-full flex items-center justify-center mb-6 ${SUBJECTS[activeSubject].textClass}`}>
                 {React.createElement(SUBJECTS[activeSubject].icon, { size: 40 })}
               </div>
               <h3 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">
@@ -401,7 +401,7 @@ export default function CourseHub({ activeSubject, onSubjectChange, onSelectCour
         )}
       </div>
 
-      <footer className="mt-16 text-slate-400 dark:text-blue-400 text-sm font-medium text-center w-full">
+      <footer className="mt-16 text-slate-400 dark:text-zinc-500 text-sm font-medium text-center w-full">
         Powered by UniAce Ecosystem 2.0
       </footer>
     </div>

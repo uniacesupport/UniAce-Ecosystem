@@ -9,6 +9,12 @@
 @variant dark (&:where(.dark, .dark *));
 
 @layer base {
+  html {
+    @apply text-[15px] sm:text-[16px] antialiased;
+    -webkit-tap-highlight-color: transparent;
+    text-rendering: optimizeLegibility;
+  }
+
   :root {
     color-scheme: light;
   }
@@ -16,6 +22,18 @@
   .dark {
     color-scheme: dark;
   }
+
+  body {
+    @apply font-sans text-slate-900 dark:text-zinc-100 selection:bg-emerald-100 dark:selection:bg-emerald-900/30 leading-normal;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply tracking-tight font-semibold;
+  }
+
+  h1 { @apply text-3xl sm:text-4xl; }
+  h2 { @apply text-2xl sm:text-3xl; }
+  h3 { @apply text-xl sm:text-2xl; }
 }
 
 @utility scrollbar-hide {
@@ -51,7 +69,15 @@
 }
 
 .markdown-body {
-  @apply leading-relaxed dark:text-zinc-300;
+  @apply leading-relaxed dark:text-zinc-300 overflow-x-hidden text-[15px] sm:text-base;
+}
+
+.markdown-body > *:last-child {
+  @apply mb-0;
+}
+
+.markdown-body .katex-display {
+  @apply my-4 overflow-x-auto overflow-y-hidden py-2 max-w-full;
 }
 
 .markdown-body h3 {
@@ -59,15 +85,15 @@
 }
 
 .markdown-body p {
-  @apply mb-4;
+  @apply mb-3;
 }
 
 .markdown-body ul {
-  @apply list-disc pl-6 mb-4;
+  @apply list-disc pl-6 mb-2;
 }
 
 .markdown-body li {
-  @apply mb-1;
+  @apply mb-0.5;
 }
 
 .markdown-body code {

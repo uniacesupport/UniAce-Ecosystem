@@ -130,20 +130,20 @@ export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSele
   }, [activeCourseId, progress.mastery, enrolledCourses.length]);
 
   return (
-    <div className="flex-1 overflow-y-auto bg-slate-50 dark:bg-zinc-950 p-4 sm:p-6 lg:p-12 pb-24 lg:pb-12 no-scrollbar">
-      <div className="max-w-6xl mx-auto space-y-12">
+    <div className="flex-1 bg-slate-50 dark:bg-zinc-950 p-4 sm:p-6 lg:p-12 pb-4 lg:pb-12 no-scrollbar">
+      <div className="max-w-6xl mx-auto space-y-8">
         <TrialExpirationBanner />
 
         {/* New Header Design */}
         <header className="flex items-center justify-between mb-8 lg:pl-4 xl:pl-0">
           <div className="space-y-1">
-            <h1 className="text-4xl lg:text-5xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-3 flex-wrap">
+            <h1 className="text-xl sm:text-3xl lg:text-4xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-3 flex-wrap">
               🎓 Hi {user?.displayName?.split(' ')[0] || 'Scholar'}
-              <span className="text-lg bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 px-3 py-1 rounded-full border border-emerald-200 dark:border-emerald-800 whitespace-nowrap">
+              <span className="text-sm sm:text-lg bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 px-3 py-1 rounded-full border border-emerald-200 dark:border-emerald-800 whitespace-nowrap">
                 Lvl {progress.level}
               </span>
             </h1>
-            <p className="text-slate-500 dark:text-slate-400 font-medium">Ready to master your courses today?</p>
+            <p className="text-sm sm:text-base text-slate-500 dark:text-slate-400 font-medium">Ready to master your courses today?</p>
           </div>
           
           <div className="flex items-center gap-4 sm:gap-6">
@@ -201,13 +201,13 @@ export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSele
         )}
 
         {/* Quick Access Grid */}
-        <div className="flex flex-col gap-8">
+        <div className="flex flex-col gap-6">
           {/* Due Reviews Section */}
           {dueReviews.length > 0 && (
             <section className="w-full">
-              <div className="flex items-center gap-3 mb-6">
+              <div className="flex items-center gap-3 mb-4">
                 <RefreshCw className="text-emerald-600 dark:text-emerald-400" size={24} />
-                <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Due for Review</h2>
+                <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">Due for Review</h2>
                 <span className="bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 px-3 py-1 rounded-full text-xs font-bold">
                   {dueReviews.length} Topics
                 </span>
@@ -253,9 +253,9 @@ export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSele
 
           {/* Daily Mission Card (AI Powered) */}
           <section className="w-full">
-            <div className="flex items-center gap-3 mb-6">
+            <div className="flex items-center gap-3 mb-4">
               <Target className="text-blue-600 dark:text-blue-400" size={24} />
-              <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Today's Smart Mission</h2>
+              <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">Today's Smart Mission</h2>
             </div>
             
             <motion.div
@@ -276,8 +276,8 @@ export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSele
                       <span>{dailyMission.type === 'review' ? 'Critical Review' : dailyMission.type === 'mastery' ? 'Mastery Push' : 'New Challenge'}</span>
                     </div>
                     <div className="space-y-2">
-                      <h3 className="text-3xl sm:text-4xl font-black leading-tight">{dailyMission.title}</h3>
-                      <p className="text-blue-100 text-lg leading-relaxed opacity-90">
+                      <h3 className="text-xl sm:text-3xl font-black leading-tight">{dailyMission.title}</h3>
+                      <p className="text-blue-100 text-base sm:text-lg leading-relaxed opacity-90">
                         {dailyMission.reason}
                       </p>
                     </div>
@@ -295,7 +295,7 @@ export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSele
                           }
                         }, 50);
                       }}
-                      className="group flex items-center gap-3 bg-white text-blue-600 px-8 py-4 rounded-2xl font-black text-lg hover:bg-blue-50 transition-all shadow-xl active:scale-95"
+                      className="group flex items-center gap-3 bg-white text-blue-600 px-8 py-4 rounded-2xl font-black text-base sm:text-lg hover:bg-blue-50 transition-all shadow-xl active:scale-95"
                     >
                       Accept Mission
                       <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform" />
@@ -327,7 +327,7 @@ export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSele
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-3">
               <GraduationCap className="text-slate-900 dark:text-white" size={24} />
-              <h2 className="text-2xl font-bold text-slate-900 dark:text-white">My Courses</h2>
+              <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">My Courses</h2>
             </div>
             <button onClick={() => onViewSelect('hub')} className="text-sm font-bold text-blue-600 hover:underline">Browse All</button>
           </div>
@@ -384,7 +384,7 @@ export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSele
             <div className="flex items-center justify-between mb-8">
               <div className="flex items-center gap-3">
                 <Calendar className="text-amber-500" size={24} />
-                <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Upcoming</h2>
+                <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">Upcoming</h2>
               </div>
               <span className="bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 px-3 py-1 rounded-full text-xs font-bold">
                 {upcomingAssignments.length} Pending
@@ -425,7 +425,7 @@ export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSele
             <div className="flex items-center justify-between mb-8">
               <div className="flex items-center gap-3">
                 <Activity className="text-emerald-500" size={24} />
-                <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Performance</h2>
+                <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">Performance</h2>
               </div>
               <span className="text-xs font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-wider">Recent Grades</span>
             </div>
@@ -469,7 +469,7 @@ export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSele
               <Flame size={32} />
             </div>
             <div>
-              <div className="text-5xl font-black text-slate-900 dark:text-white">{progress.streak}</div>
+              <div className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white">{progress.streak}</div>
               <div className="text-xs font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-wider">Day Streak</div>
             </div>
           </div>
@@ -478,7 +478,7 @@ export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSele
               <Zap size={32} />
             </div>
             <div>
-              <div className="text-5xl font-black">{progress.xp}</div>
+              <div className="text-3xl sm:text-4xl font-black">{progress.xp}</div>
               <div className="text-xs font-bold text-slate-500 dark:text-zinc-500 uppercase tracking-wider">Total XP</div>
             </div>
           </div>
@@ -489,7 +489,7 @@ export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSele
           <section>
             <div className="flex items-center gap-3 mb-6">
               <Sparkles className="text-amber-500" size={24} />
-              <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Recommended for You</h2>
+              <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">Recommended for You</h2>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {recommendations.map((rec, index) => (
@@ -528,7 +528,7 @@ export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSele
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-3">
               <Zap className="text-purple-600" size={24} />
-              <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Mastery Hacks</h2>
+              <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">Mastery Hacks</h2>
             </div>
             <span className="text-xs font-bold text-purple-600 bg-purple-50 dark:bg-purple-900/30 px-3 py-1 rounded-full uppercase tracking-wider">
               Elite Exam Strategies
@@ -600,8 +600,8 @@ export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSele
                 <Layout size={24} />
               </div>
               <div className="space-y-2">
-                <h3 className="text-2xl font-bold text-white leading-tight">Study Architect</h3>
-                <p className="text-purple-100 text-sm">Optimize your study sessions around your lecture timetable.</p>
+                <h3 className="text-xl sm:text-2xl font-bold text-white leading-tight">Study Architect</h3>
+                <p className="text-purple-100 text-xs sm:text-sm">Optimize your study sessions around your lecture timetable.</p>
               </div>
             </div>
             <div className="flex items-center gap-2 font-bold text-white text-sm">
@@ -628,8 +628,8 @@ export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSele
                 <Camera size={24} />
               </div>
               <div className="space-y-2">
-                <h3 className="text-2xl font-bold text-white leading-tight">Vision-to-Mastery</h3>
-                <p className="text-emerald-50 text-sm">Snap a photo of your notes to generate instant quizzes.</p>
+                <h3 className="text-xl sm:text-2xl font-bold text-white leading-tight">Vision-to-Mastery</h3>
+                <p className="text-emerald-50 text-xs sm:text-sm">Snap a photo of your notes to generate instant quizzes.</p>
               </div>
             </div>
             <div className="flex items-center gap-2 font-bold text-white text-sm">
@@ -649,8 +649,8 @@ export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSele
                 <Swords size={24} />
               </div>
               <div className="space-y-2">
-                <h3 className="text-2xl font-bold text-white leading-tight">AI Arena</h3>
-                <p className="text-slate-400 dark:text-zinc-500 text-sm">Challenge other students in real-time PvP battles.</p>
+                <h3 className="text-xl sm:text-2xl font-bold text-white leading-tight">AI Arena</h3>
+                <p className="text-slate-400 dark:text-zinc-500 text-xs sm:text-sm">Challenge other students in real-time PvP battles.</p>
               </div>
             </div>
             <div className="flex items-center gap-2 font-bold text-purple-400 text-sm">
@@ -669,8 +669,8 @@ export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSele
                 <Brain size={24} />
               </div>
               <div className="space-y-2">
-                <h3 className="text-2xl font-bold leading-tight">Quiz Hub</h3>
-                <p className="text-slate-400 dark:text-zinc-500 dark:group-hover:text-zinc-600 text-sm">Generate custom quizzes to master the material.</p>
+                <h3 className="text-xl sm:text-2xl font-bold leading-tight">Quiz Hub</h3>
+                <p className="text-slate-400 dark:text-zinc-500 dark:group-hover:text-zinc-600 text-xs sm:text-sm">Generate custom quizzes to master the material.</p>
               </div>
             </div>
             <div className="flex items-center gap-2 font-bold text-emerald-400 dark:text-emerald-600 text-sm">
@@ -696,8 +696,8 @@ export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSele
                 <Award size={24} />
               </div>
               <div className="space-y-2">
-                <h3 className="text-2xl font-bold text-slate-900 dark:text-white leading-tight">Mastery Center</h3>
-                <p className="text-slate-500 dark:text-zinc-400 text-sm">View your knowledge heatmap and learning analytics.</p>
+                <h3 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white leading-tight">Mastery Center</h3>
+                <p className="text-slate-500 dark:text-zinc-400 text-xs sm:text-sm">View your knowledge heatmap and learning analytics.</p>
               </div>
             </div>
             <div className="flex items-center gap-2 font-bold text-slate-900 dark:text-white text-sm">
@@ -717,8 +717,8 @@ export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSele
                 <Calculator size={24} />
               </div>
               <div className="space-y-2">
-                <h3 className="text-2xl font-bold text-slate-900 dark:text-white leading-tight">Formula Vault</h3>
-                <p className="text-slate-500 dark:text-zinc-400 text-sm">A centralized repository of every formula and theorem.</p>
+                <h3 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white leading-tight">Formula Vault</h3>
+                <p className="text-slate-500 dark:text-zinc-400 text-xs sm:text-sm">A centralized repository of every formula and theorem.</p>
               </div>
             </div>
             <div className="flex items-center gap-2 font-bold text-slate-900 dark:text-white text-sm">
@@ -737,8 +737,8 @@ export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSele
                 <FileText size={24} />
               </div>
               <div className="space-y-2">
-                <h3 className="text-2xl font-bold text-slate-900 dark:text-white leading-tight">Past Questions</h3>
-                <p className="text-slate-500 dark:text-zinc-400 text-sm">Access a collection of previous exam questions.</p>
+                <h3 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white leading-tight">Past Questions</h3>
+                <p className="text-slate-500 dark:text-zinc-400 text-xs sm:text-sm">Access a collection of previous exam questions.</p>
               </div>
             </div>
             <div className="flex items-center gap-2 font-bold text-slate-900 dark:text-white text-sm">
@@ -764,8 +764,8 @@ export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSele
                 <Maximize2 size={24} />
               </div>
               <div className="space-y-2">
-                <h3 className="text-2xl font-bold text-slate-900 dark:text-white leading-tight">Concept Map</h3>
-                <p className="text-slate-500 dark:text-zinc-400 text-sm">Visualize how biological concepts are interconnected.</p>
+                <h3 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white leading-tight">Concept Map</h3>
+                <p className="text-slate-500 dark:text-zinc-400 text-xs sm:text-sm">Visualize how biological concepts are interconnected.</p>
               </div>
             </div>
             <div className="flex items-center gap-2 font-bold text-slate-900 dark:text-white text-sm">
