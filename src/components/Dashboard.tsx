@@ -33,6 +33,7 @@ interface DashboardProps {
   activeCourseId: CourseId | null;
   syllabus: Module[];
   activeSubject: Subject;
+  onToggleCalculator: () => void;
 }
 
 interface SmartMission {
@@ -43,7 +44,7 @@ interface SmartMission {
   type: 'review' | 'new' | 'mastery';
 }
 
-export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSelect, onProfileClick, onCourseSelect, progress, activeCourseId, syllabus, activeSubject }: DashboardProps) {
+export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSelect, onProfileClick, onCourseSelect, progress, activeCourseId, syllabus, activeSubject, onToggleCalculator }: DashboardProps) {
   const { user, profile, signInWithGoogle } = useAuth();
   const { courses } = useCourses();
   const { isPremium, isTrialActive, daysRemaining } = usePremiumStatus();
@@ -161,6 +162,13 @@ export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSele
             )}
             
             <NotificationCenter />
+            
+            <button 
+              onClick={onToggleCalculator}
+              className="p-3 rounded-xl bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-400 hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors"
+            >
+              <Calculator size={20} />
+            </button>
             
             <button 
               onClick={onProfileClick}

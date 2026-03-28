@@ -577,6 +577,7 @@ function AppContent() {
             progress={progress}
             profile={profile}
             onUpdatePersonality={updateAIPersonality}
+            onToggleCalculator={() => setIsCalculatorOpen(!isCalculatorOpen)}
           />
         )}
       </div>
@@ -594,6 +595,7 @@ function AppContent() {
           progress={progress}
           profile={profile}
           onUpdatePersonality={updateAIPersonality}
+          onToggleCalculator={() => setIsCalculatorOpen(!isCalculatorOpen)}
         />
       )}
 

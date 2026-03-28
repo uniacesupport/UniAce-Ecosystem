@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Send, User, Bot, X, MessageSquare, Mic, MicOff, Image as ImageIcon, Volume2, VolumeX, Maximize2, Minimize2, Copy, Check, Zap, Lightbulb, Sparkles, Settings, ArrowRight, FileText } from "lucide-react";
+import { Send, User, Bot, X, MessageSquare, Mic, MicOff, Image as ImageIcon, Volume2, VolumeX, Maximize2, Minimize2, Copy, Check, Zap, Lightbulb, Sparkles, Settings, ArrowRight, FileText, Calculator } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { ChatMessage, CourseId, UserProgress, AIPersonality } from "../types";
 import { jsonrepair } from 'jsonrepair';
@@ -21,6 +21,7 @@ interface ChatBotProps {
   progress?: UserProgress;
   profile?: any;
   onUpdatePersonality?: (personality: AIPersonality) => void;
+  onToggleCalculator?: () => void;
 }
 
 export default function ChatBot({ 
@@ -34,7 +35,8 @@ export default function ChatBot({
   subTopicContent,
   progress,
   profile,
-  onUpdatePersonality
+  onUpdatePersonality,
+  onToggleCalculator
 }: ChatBotProps) {
   const { user, updateProfileData, signInWithGoogle } = useAuth();
   const { isConnected: isWsConnected, sendMessage: sendWsMessage } = useWebSocketChat();
@@ -408,6 +410,12 @@ export default function ChatBot({
               <Settings size={20} />
             </button>
             <button 
+              onClick={onToggleCalculator}
+              className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-full transition-colors"
+            >
+              <Calculator size={20} />
+            </button>
+            <button 
               onClick={() => onToggleFullPage?.()}
               className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-full transition-colors"
             >
@@ -776,6 +784,13 @@ export default function ChatBot({
                         title="Customize Personality"
                       >
                         <Settings size={18} />
+                      </button>
+                      <button 
+                        onClick={onToggleCalculator}
+                        className="hover:bg-white/10 p-2 rounded-xl transition-colors text-slate-400 hover:text-white"
+                        title="Calculator"
+                      >
+                        <Calculator size={18} />
                       </button>
                       <button 
                         onClick={onToggleFullPage} 
