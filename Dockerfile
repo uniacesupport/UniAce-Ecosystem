@@ -13,8 +13,8 @@ RUN npm install
 # Copy the rest of your application's source code
 COPY . .
 
-# Build the React frontend into static files (build/ folder)
-RUN npm run build
+# Build the React frontend into static files (dist/ folder)
+RUN npm run build && test -d dist || (echo "Build failed: dist directory not found" && exit 1)
 
 # Expose the port that the Express server will listen on
 EXPOSE 3000
