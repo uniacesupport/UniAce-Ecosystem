@@ -30,6 +30,7 @@ import GlobalNotification from './components/GlobalNotification';
 import PaywallManager from './components/PaywallManager';
 import PWAInstallPrompt from './components/PWAInstallPrompt';
 import Calculator from './components/Calculator';
+import { CalculatorProvider, useCalculator } from './context/CalculatorContext';
 import { useUserProgress } from './hooks/useUserProgress';
 import { useAuth } from './context/AuthContext';
 import { useCourses } from './context/CourseContext';
@@ -40,6 +41,14 @@ import { generateModuleContent, generateCourseSkeleton } from './services/aiCour
 
 export default function App() {
   console.log('App.tsx: Rendering...');
+  return (
+    <CalculatorProvider>
+      <AppContent />
+    </CalculatorProvider>
+  );
+}
+
+function AppContent() {
   const { isConfigured, user, profile, loading, signInWithGoogle } = useAuth();
   const { courses, refreshCourses } = useCourses();
   const { progress, addXp, updateMastery, recordStudyTime, addBookmark, removeBookmark, enrollCourse, unenrollCourse, updateAIPersonality, isOnline, checkAndUpdateStreak } = useUserProgress();
@@ -65,7 +74,7 @@ export default function App() {
   const [autoStartQuiz, setAutoStartQuiz] = useState(false);
   const [regenerationProgress, setRegenerationProgress] = useState(0);
   const [regenerationStatus, setRegenerationStatus] = useState('');
-  const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
+  const { isCalculatorOpen, setIsCalculatorOpen } = useCalculator();
 
   useEffect(() => {
     const handleResize = () => {

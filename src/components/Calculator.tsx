@@ -1,6 +1,14 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { X, Maximize2, Minimize2, Calculator as CalcIcon } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { X, Calculator as CalcIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useCalculator } from '../context/CalculatorContext';
+import { create, all } from 'mathjs';
+import { sanitizeInput } from '../utils/calculatorUtils';
+
+const math = create(all, {
+  number: 'BigNumber',
+  precision: 14
+});
 
 interface CalculatorProps {
   isOpen: boolean;
@@ -8,67 +16,65 @@ interface CalculatorProps {
 }
 
 export default function Calculator({ isOpen, onClose }: CalculatorProps) {
-  const [display, setDisplay] = useState('0');
-  const [equation, setEquation] = useState('');
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [isDragging, setIsDragging] = useState(false);
-  const [position, setPosition] = useState({ x: window.innerWidth - 350, y: 100 });
-  const dragRef = useRef<{ startX: number; startY: number; initialX: number; initialY: number } | null>(null);
-
-  // Handle window resize to keep calculator on screen
-  useEffect(() => {
-    const handleResize = () => {
-      setPosition(prev => ({
-        x: Math.min(Math.max(20, prev.x), window.innerWidth - (isExpanded ? 400 : 320)),
-        y: Math.min(Math.max(20, prev.y), window.innerHeight - 500)
-      }));
-    };
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, [isExpanded]);
-
-  const handlePointerDown = (e: React.PointerEvent) => {
-    if ((e.target as HTMLElement).closest('button')) return; // Don't drag if clicking a button
-    setIsDragging(true);
-    dragRef.current = {
-      startX: e.clientX,
-      startY: e.clientY,
-      initialX: position.x,
-      initialY: position.y
-    };
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
-  };
-
-  const handlePointerMove = (e: React.PointerEvent) => {
-    if (!isDragging || !dragRef.current) return;
-    const dx = e.clientX - dragRef.current.startX;
-    const dy = e.clientY - dragRef.current.startY;
-    setPosition({
-      x: dragRef.current.initialX + dx,
-      y: dragRef.current.initialY + dy
-    });
-  };
-
-  const handlePointerUp = (e: React.PointerEvent) => {
-    setIsDragging(false);
-    dragRef.current = null;
-    (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-  };
+  const { display, equation, setDisplay, setEquation } = useCalculator();
+  const [isScientific, setIsScientific] = useState(false);
+  const [isShift, setIsShift] = useState(false);
+  const [errorText, setErrorText] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const handleInput = (val: string) => {
+    setErrorText(''); // Clear error on new input
+    
+    // Decimal validation logic
+    if (val === '.') {
+      // Split by operators to get the current number token
+      const tokens = display.split(/[\+\-\×\÷\(\)\^\/]/);
+      const currentToken = tokens[tokens.length - 1];
+      if (currentToken.includes('.')) return; // Ignore if already has decimal
+      if (currentToken === '') val = '0.'; // Prepend 0 if empty
+    }
+
     if (display === '0' || display === 'Error') {
-      setDisplay(val);
+      if (val === '.') setDisplay('0.');
+      else setDisplay(val);
     } else {
       setDisplay(display + val);
     }
   };
 
+  const handleFraction = () => {
+    const input = inputRef.current;
+    if (!input) return;
+
+    let newDisplay = '';
+    let newCursorPos = 0;
+
+    if (display === '0' || display === '') {
+      newDisplay = '( / )';
+      newCursorPos = 1; // Between ( and /
+    } else {
+      // Wrap existing number
+      newDisplay = '(' + display + ')/()';
+      newCursorPos = newDisplay.length - 1; // Inside the second ()
+    }
+    
+    setDisplay(newDisplay);
+    
+    // Focus and set selection after state update
+    setTimeout(() => {
+      input.focus();
+      input.setSelectionRange(newCursorPos, newCursorPos);
+    }, 0);
+  };
+
   const handleClear = () => {
     setDisplay('0');
     setEquation('');
+    setErrorText('');
   };
 
   const handleDelete = () => {
+    setErrorText('');
     if (display.length > 1) {
       setDisplay(display.slice(0, -1));
     } else {
@@ -78,57 +84,34 @@ export default function Calculator({ isOpen, onClose }: CalculatorProps) {
 
   const calculate = () => {
     try {
-      // Replace symbols for evaluation
-      let evalStr = display
-        .replace(/×/g, '*')
-        .replace(/÷/g, '/')
-        .replace(/π/g, 'Math.PI')
-        .replace(/e/g, 'Math.E')
-        .replace(/\^/g, '**');
-
-      // Handle trig functions (assume degrees and convert to radians)
-      evalStr = evalStr.replace(/sin\(([^)]+)\)/g, (_, angle) => `Math.sin((${angle}) * Math.PI / 180)`);
-      evalStr = evalStr.replace(/cos\(([^)]+)\)/g, (_, angle) => `Math.cos((${angle}) * Math.PI / 180)`);
-      evalStr = evalStr.replace(/tan\(([^)]+)\)/g, (_, angle) => `Math.tan((${angle}) * Math.PI / 180)`);
+      setErrorText('');
+      const safeExpression = sanitizeInput(display);
       
-      // Handle other functions
-      evalStr = evalStr.replace(/log\(/g, 'Math.log10(');
-      evalStr = evalStr.replace(/ln\(/g, 'Math.log(');
-      evalStr = evalStr.replace(/√\(/g, 'Math.sqrt(');
-
-      // Auto-close parentheses
-      let openParentheses = (evalStr.match(/\(/g) || []).length;
-      let closeParentheses = (evalStr.match(/\)/g) || []).length;
-      while (openParentheses > closeParentheses) {
-        evalStr += ')';
-        closeParentheses++;
-      }
-
-      // Basic safety check before eval
-      // Allow numbers, operators, parentheses, dots, spaces, and Math functions
-      if (/[^0-9+\-*/(). Math.a-z]/i.test(evalStr) || evalStr.trim() === '') {
-        throw new Error('Invalid characters');
-      }
-
-      // eslint-disable-next-line no-eval
-      const result = eval(evalStr);
+      const result = math.evaluate(safeExpression, {
+        sin: math.sin,
+        cos: math.cos,
+        tan: math.tan,
+        asin: math.asin,
+        acos: math.acos,
+        atan: math.atan,
+        log10: math.log10,
+        log: math.log,
+        sqrt: math.sqrt,
+        pi: math.pi,
+        e: math.e
+      });
       
-      if (!isFinite(result) || isNaN(result)) {
-        throw new Error('Math Error');
-      }
-
       setEquation(display + ' =');
       
-      // Format result to avoid long decimals
-      const formattedResult = Number.isInteger(result) ? result.toString() : parseFloat(result.toFixed(10)).toString();
+      // Format result
+      const formattedResult = result.toString();
       setDisplay(formattedResult);
     } catch (error) {
-      setDisplay('Error');
-      setEquation('');
+      setErrorText('Syntax Error');
     }
   };
 
-  const basicButtons = [
+  const standardButtons = [
     ['C', 'DEL', '(', ')'],
     ['7', '8', '9', '÷'],
     ['4', '5', '6', '×'],
@@ -137,103 +120,106 @@ export default function Calculator({ isOpen, onClose }: CalculatorProps) {
   ];
 
   const scientificButtons = [
-    ['sin(', 'cos(', 'tan('],
-    ['log(', 'ln(', 'e'],
-    ['π', '√(', '^']
+    { label: isShift ? 'SHIFT' : 'SHIFT', action: () => setIsShift(!isShift), isSpecial: true },
+    { label: isShift ? 'sin⁻¹' : 'sin', input: isShift ? 'sin⁻¹(' : 'sin(' },
+    { label: isShift ? 'cos⁻¹' : 'cos', input: isShift ? 'cos⁻¹(' : 'cos(' },
+    { label: isShift ? 'tan⁻¹' : 'tan', input: isShift ? 'tan⁻¹(' : 'tan(' },
+    
+    { label: 'a/b', action: handleFraction, isSpecial: true },
+    { label: isShift ? 'eˣ' : 'ln', input: isShift ? 'e^(' : 'ln(' },
+    { label: 'log', input: 'log(' },
+    { label: '×10ˣ', input: 'EXP' },
+    
+    { label: 'π', input: 'π' },
+    { label: 'e', input: 'e' },
+    { label: isShift ? '∛' : '√', input: isShift ? '∛(' : '√(' },
+    { label: 'xʸ', input: '^' },
   ];
 
   return (
     <AnimatePresence>
-      <motion.div
-        initial={{ opacity: 0, scale: 0.9, y: 20 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.9, y: 20 }}
-        style={{ left: position.x, top: position.y }}
-        className="fixed z-[100] shadow-2xl rounded-3xl overflow-hidden border border-slate-200 bg-white"
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerUp}
-      >
-        {/* Header (Draggable Area) */}
-        <div className="bg-slate-900 text-white p-3 flex items-center justify-between cursor-move select-none">
-          <div className="flex items-center gap-2 px-2">
-            <CalcIcon size={16} className="text-emerald-400" />
-            <span className="text-sm font-bold tracking-wide">Calculator</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <button 
-              onClick={(e) => { e.stopPropagation(); setIsExpanded(!isExpanded); }}
-              className="p-1.5 hover:bg-slate-800 rounded-lg transition-colors text-slate-400 hover:text-white"
-            >
-              {isExpanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-            </button>
-            <button 
-              onClick={(e) => { e.stopPropagation(); onClose(); }}
-              className="p-1.5 hover:bg-red-500/20 hover:text-red-400 rounded-lg transition-colors text-slate-400"
-            >
-              <X size={16} />
-            </button>
-          </div>
-        </div>
-
-        {/* Display */}
-        <div className="bg-slate-50 p-6 border-b border-slate-200 text-right select-none">
-          <div className="text-slate-500 text-sm h-5 mb-1 font-mono tracking-wider overflow-hidden text-ellipsis whitespace-nowrap">
-            {equation}
-          </div>
-          <div className="text-4xl font-light text-slate-900 font-mono tracking-tight overflow-hidden text-ellipsis whitespace-nowrap">
-            {display}
-          </div>
-        </div>
-
-        {/* Keypad */}
-        <div className="p-4 flex gap-4 select-none">
-          {isExpanded && (
-            <div className="grid grid-cols-3 gap-2 border-r border-slate-200 pr-4">
-              {scientificButtons.map((row, i) => (
-                <React.Fragment key={i}>
-                  {row.map(btn => (
-                    <button
-                      key={btn}
-                      onClick={() => handleInput(btn)}
-                      className="w-12 h-12 rounded-xl bg-slate-100 text-slate-700 font-medium hover:bg-slate-200 transition-colors text-sm"
-                    >
-                      {btn.replace('(', '')}
-                    </button>
-                  ))}
-                </React.Fragment>
-              ))}
+      {isOpen && (
+        <motion.div
+          initial={{ y: '100%' }}
+          animate={{ y: 0 }}
+          exit={{ y: '100%' }}
+          transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+          className="fixed bottom-0 left-0 right-0 z-[100] bg-white rounded-t-3xl shadow-2xl border-t border-slate-200 p-4 pb-8"
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <CalcIcon size={20} className="text-emerald-500" />
+              <span className="font-bold text-slate-900">Engineering Calculator</span>
             </div>
-          )}
+            <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full">
+              <X size={20} className="text-slate-500" />
+            </button>
+          </div>
 
+          {/* Display */}
+          <div className="bg-slate-50 p-4 rounded-xl mb-4 text-right">
+            <div className="text-slate-500 text-sm h-5 font-mono">{equation}</div>
+            <input 
+              ref={inputRef}
+              type="text"
+              value={display}
+              inputMode="none"
+              className="w-full text-3xl font-light text-slate-900 font-mono bg-transparent text-right outline-none"
+            />
+            {errorText && <div className="text-red-500 text-sm text-right">{errorText}</div>}
+          </div>
+
+          {/* Controls */}
+          <div className="flex gap-2 mb-4">
+            <button 
+              onClick={() => setIsScientific(!isScientific)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${isScientific ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-700'}`}
+            >
+              {isScientific ? 'Standard' : 'Scientific'}
+            </button>
+          </div>
+
+          {/* Keypad */}
           <div className="grid grid-cols-4 gap-2">
-            {basicButtons.map((row, i) => (
-              <React.Fragment key={i}>
-                {row.map(btn => (
+            {isScientific && (
+              <div className="col-span-4 grid grid-cols-4 gap-2 mb-2">
+                {scientificButtons.map((btn, idx) => (
                   <button
-                    key={btn}
-                    onClick={() => {
-                      if (btn === 'C') handleClear();
-                      else if (btn === 'DEL') handleDelete();
-                      else if (btn === '=') calculate();
-                      else handleInput(btn);
-                    }}
-                    className={`w-14 h-14 rounded-xl font-medium text-lg transition-colors ${
-                      btn === '=' ? 'bg-emerald-500 text-white hover:bg-emerald-600 shadow-sm' :
-                      ['C', 'DEL'].includes(btn) ? 'bg-red-50 text-red-600 hover:bg-red-100' :
-                      ['÷', '×', '-', '+'].includes(btn) ? 'bg-slate-100 text-slate-900 hover:bg-slate-200' :
-                      'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 shadow-sm'
+                    key={idx}
+                    onClick={() => btn.isSpecial ? btn.action() : handleInput(btn.input!)}
+                    className={`py-3 rounded-xl font-medium transition-colors text-sm ${
+                      btn.label === 'SHIFT' ? (isShift ? 'bg-amber-200 text-amber-900' : 'bg-slate-200 text-slate-800') :
+                      'bg-slate-100 text-slate-700 hover:bg-slate-200'
                     }`}
                   >
-                    {btn}
+                    {btn.label}
                   </button>
                 ))}
-              </React.Fragment>
+              </div>
+            )}
+            {standardButtons.flat().map(btn => (
+              <button
+                key={btn}
+                onClick={() => {
+                  if (btn === 'C') handleClear();
+                  else if (btn === 'DEL') handleDelete();
+                  else if (btn === '=') calculate();
+                  else handleInput(btn);
+                }}
+                className={`py-4 rounded-xl font-medium text-lg transition-colors ${
+                  btn === '=' ? 'bg-emerald-500 text-white hover:bg-emerald-600' :
+                  ['C', 'DEL'].includes(btn) ? 'bg-red-50 text-red-600 hover:bg-red-100' :
+                  ['÷', '×', '-', '+'].includes(btn) ? 'bg-slate-100 text-slate-900 hover:bg-slate-200' :
+                  'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                {btn}
+              </button>
             ))}
           </div>
-        </div>
-      </motion.div>
+        </motion.div>
+      )}
     </AnimatePresence>
   );
 }

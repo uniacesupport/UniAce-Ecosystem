@@ -7,14 +7,17 @@ WORKDIR /app
 # Copy package.json and package-lock.json (if available)
 COPY package*.json ./
 
-# Install ALL dependencies (including devDependencies needed for Vite and tsx)
-RUN npm install
+# Install ALL dependencies
+RUN npm ci
 
 # Copy the rest of your application's source code
 COPY . .
 
-# Build the React frontend into static files (dist/ folder)
-RUN npm run build && test -d dist || (echo "Build failed: dist directory not found" && exit 1)
+# Build the React frontend into static files (build/ folder)
+RUN npm run build
+
+# Verify build directory
+RUN ls -la build && test -f build/index.html || (echo "Build failed: build/index.html not found" && exit 1)
 
 # Expose the port that the Express server will listen on
 EXPOSE 3000
@@ -23,5 +26,5 @@ EXPOSE 3000
 ENV NODE_ENV=production
 ENV PORT=3000
 
-# Start the Express backend using tsx
+# Start the Express backend
 CMD ["npm", "start"]

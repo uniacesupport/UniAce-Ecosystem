@@ -2758,11 +2758,11 @@ async function startServer() {
       console.error('Failed to load Vite middleware:', e);
     }
   } else {
-    console.log('Serving static assets from dist...');
+    console.log('Serving static assets from build...');
     // Serve built assets in production
-    app.use(express.static(path.join(__dirname, 'dist')));
+    app.use(express.static(path.join(__dirname, 'build')));
     app.get('*', (req, res) => {
-      res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+      res.sendFile(path.join(__dirname, 'build', 'index.html'));
     });
   }
 
