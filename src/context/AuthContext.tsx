@@ -28,6 +28,10 @@ interface UserProfile {
   created_at?: string;
   sessionId?: string;
   admin_pin_verified_until?: any;
+  department?: string;
+  faculty?: string;
+  academic_level?: string;
+  semester?: string;
 }
 
 interface AuthContextType {
@@ -146,6 +150,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         ) : new Date().toISOString(),
         sessionId: currentSessionId,
         admin_pin_verified_until: userDoc.exists() ? userDoc.data().admin_pin_verified_until : undefined,
+        department: userDoc.exists() ? userDoc.data().department : undefined,
+        academic_level: userDoc.exists() ? userDoc.data().academic_level : undefined,
+        semester: userDoc.exists() ? userDoc.data().semester : undefined,
       };
 
       const dataToSave: any = {

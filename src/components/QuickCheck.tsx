@@ -96,9 +96,9 @@ export default function QuickCheck({ subTopic, onCorrect }: QuickCheckProps) {
                 onClick={() => handleAnswer(option)}
                 className={`w-full p-4 rounded-xl text-left font-medium transition-all flex items-center justify-between border-2 ${buttonClass}`}
               >
-                <span className="text-sm sm:text-base">
+                <div className="text-sm sm:text-base flex-1">
                   <MarkdownRenderer content={option} />
-                </span>
+                </div>
                 {showExplanation && isAnswerCorrect && <CheckCircle2 size={18} className="text-emerald-500 shrink-0" />}
                 {showExplanation && isSelected && !isAnswerCorrect && <XCircle size={18} className="text-red-500 shrink-0" />}
               </button>

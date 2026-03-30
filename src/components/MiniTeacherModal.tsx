@@ -135,7 +135,7 @@ export default function MiniTeacherModal({ isOpen, onClose, onAction, module, su
                   </button>
                 </div>
               ) : content ? (
-                <div className="prose prose-slate dark:prose-invert max-w-none">
+                <div className="max-w-none">
                   <MarkdownRenderer content={content} />
                   
                   {activeMode === 'proactive' && !isGenerating && (

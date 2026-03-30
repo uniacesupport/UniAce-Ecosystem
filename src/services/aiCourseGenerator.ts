@@ -5,6 +5,7 @@ export interface GeneratedCourse {
     lessons: {
       title: string;
       content: string;
+      metadata: PipelineMetadata;
     }[];
     quiz: {
       questions: {
@@ -20,6 +21,7 @@ export interface GeneratedCourse {
 }
 
 import { jsonrepair } from 'jsonrepair';
+import { PipelineMetadata } from '../types';
 const getAuthToken = async () => {
   try {
     const { auth } = await import('../firebase');
@@ -99,10 +101,6 @@ async function callGenerateAPI(prompt: string, type: 'skeleton' | 'module' | 'le
       throw new Error("Failed to generate course content");
     }
 
-    if (type === 'lesson') {
-      return content.replace(/^```markdown\s*/i, '').replace(/```\s*$/, '').trim();
-    }
-
     try {
       // Find the first JSON-like character
       const startBracket = content.indexOf('[');
@@ -171,7 +169,7 @@ export async function generateCourseFormulas(
   provider: string = 'mistral'
 ): Promise<any> {
   const formulaPrompt = `
-    You are an expert university professor. Generate a comprehensive list of essential formulas, equations, and theorems for the following course.
+    You are an expert university professor. Generate a comprehensive list of essential formulas, equations, and theorems for the following course, ensuring they meet the NUC (National Universities Commission) curriculum standards, or dynamically adapt to the most relevant global academic benchmarks for this subject.
     
     Course Name: ${courseName}
     Description: ${courseDescription}
@@ -181,6 +179,7 @@ export async function generateCourseFormulas(
     2. Group them into logical categories (e.g., "Kinematics", "Thermodynamics", "Calculus", "Statistics").
     3. Provide the LaTeX representation for each formula.
     4. Provide a brief, clear description of what the formula is used for and what its variables mean.
+    5. Ensure the formulas are academically rigorous and align with the latest NUC or relevant global curriculum standards.
     
     CRITICAL: You must return ONLY valid JSON matching this exact structure:
     {
@@ -211,30 +210,58 @@ export async function generateCourseSkeleton(
   courseDescription: string, 
   outline?: string,
   provider: string = 'mistral',
-  existingModuleTitles: string[] = []
+  existingModuleTitles: string[] = [],
+  level?: string,
+  semester?: string,
+  department?: string,
+  ccmasCore?: any // New parameter for the 70% core
 ): Promise<any> {
+  // Robust regex to detect if the target is a specific course code (e.g., MAT 101, PHY102, GNS 111)
+  const isCourseCode = courseName.trim().match(/^[A-Z]{2,4}\s?\d{3}[A-Z]?$/i);
+  const isCurriculumGen = !isCourseCode;
+  
+  let promptContext = "";
+  if (ccmasCore && isCurriculumGen) {
+    const coreList = ccmasCore.coreCourses.map((c: any) => `${c.code}: ${c.title} (${c.units} units)`).join(', ');
+    promptContext = `
+      This is a CCMAS-compliant curriculum generation for ${ccmasCore.discipline} at ${level} Level.
+      The NUC 70% Core Courses are already defined: ${coreList}.
+      Total Core Units: ${ccmasCore.totalCoreUnits}.
+      
+      Your task is to generate the remaining 30% of university-specific elective courses.
+      Requirements for the 30% Electives:
+      1. Suggest 3-5 elective courses that complement the core curriculum.
+      2. Ensure the total units (Core + Electives) stay between 30 and 48 units per session.
+      3. Tailor these electives to modern industry needs or specific university niches.
+    `;
+  }
+
   const skeletonPrompt = `
-    Generate a comprehensive course skeleton for a university-level course.
-    Course Name: ${courseName}
+    ${promptContext}
+    Generate a comprehensive course skeleton for a university-level course, strictly adhering to the NUC (National Universities Commission) curriculum standards, or dynamically adapting to the most relevant global academic benchmarks for this subject.
+    
+    Target: ${courseName}
     Description: ${courseDescription}
+    ${level ? `Level: ${level}` : ''}
+    ${semester ? `Semester: ${semester}` : ''}
+    ${department ? `Department: ${department}` : ''}
     ${outline ? `Course Outline / Syllabus:\n${outline}` : ''}
     ${existingModuleTitles.length > 0 ? `Current Existing Modules: ${existingModuleTitles.join(', ')}` : ''}
     
     The output must be a detailed JSON object containing:
-    1. A "description" field which is a concise summary of the course content (1-2 sentences).
-    2. An appropriate number of modules (typically 6-12) based on the course complexity and the provided outline. Ensure the curriculum is comprehensive and logically structured.
-    3. Each module should have 4 to 6 lesson titles (no content yet, just titles).
+    1. A "description" field which is a concise summary of the course content (1-2 sentences), ensuring it aligns with NUC or relevant curriculum objectives.
+    2. An appropriate number of modules (typically 6-12) based on the course complexity and the provided outline. 
+    ${ccmasCore && isCurriculumGen ? '3. Since this is a curriculum generation, the "modules" should represent the ELECTIVE COURSES you are suggesting.' : '3. Each module should have 4 to 6 lesson titles (no content yet, just titles).'}
     4. Each module should have a list of topics that will be covered in the quiz.
     
     CRITICAL: You must return ONLY valid JSON.
-    CRITICAL: Do NOT use LaTeX or special characters (like backslashes) in titles or topics. Use plain text only.
-    CRITICAL: All backslashes in your JSON output must be escaped. For example, use '\\\\' instead of '\\'. Ensure all newlines within string values are represented as '\\n'.
-    CRITICAL: If existing modules are provided, do NOT repeat their titles. Focus on expanding the curriculum.
+    CRITICAL: If generating electives for a curriculum, ensure they do not overlap with the core courses: ${ccmasCore?.coreCourses.map((c: any) => c.code).join(', ') || 'None'}.
+    CRITICAL: Ensure the curriculum is robust, academically rigorous, and follows NUC guidelines or relevant global standards.
     {
-      "description": "A concise summary of the course...",
+      "description": "A concise summary...",
       "modules": [
         {
-          "title": "Module Title",
+          "title": "Module/Course Title",
           "lessonTitles": ["Lesson 1 Title", "Lesson 2 Title", "Lesson 3 Title", "Lesson 4 Title"],
           "quizTopics": ["Topic 1", "Topic 2", "Topic 3"]
         }
@@ -308,9 +335,9 @@ export async function generateLessonContent(
   moduleTitle: string,
   lessonTitle: string,
   provider: string = 'mistral'
-): Promise<any> {
+): Promise<{ title: string, content: string, metadata: PipelineMetadata }> {
   const lessonPrompt = `
-    You are an expert university professor. Generate a detailed, exhaustive lecture note for ONE specific lesson.
+    You are an expert university professor. Generate a detailed, exhaustive lecture note for ONE specific lesson, ensuring it strictly follows the NUC (National Universities Commission) curriculum standards, or dynamically adapts to the most relevant global academic benchmarks for this subject.
     
     Course: ${courseName}
     Module: ${moduleTitle}
@@ -320,17 +347,28 @@ export async function generateLessonContent(
     1. Write a CONCISE, high-impact, university-level lecture note in Markdown format.
     2. Target length: 600-900 words. Focus on core concepts, key derivations, and practical examples. Avoid unnecessary filler content.
     3. Use a professional, academic tone suitable for a top-tier university.
-    4. Ensure all concepts are explained clearly and logically.
+    4. Ensure all concepts are explained clearly and logically, meeting the depth required by NUC/relevant curriculum standards.
     5. Use LaTeX for ALL mathematical equations, variables, and scientific notation.
     6. CRITICAL: Use $ ... $ for inline math and $$ ... $$ for block math. Ensure LaTeX commands are properly formatted (e.g., use \\frac{a}{b} not frac{a}{b}).
-    7. CRITICAL: Output ONLY raw Markdown. Do NOT output JSON. Do not wrap in \`\`\`markdown. Just the raw text.
+    7. CRITICAL: Output ONLY valid JSON matching this structure:
+    {
+      "content": "The raw markdown content...",
+      "metadata": {
+        "hasMath": boolean,
+        "hasCode": boolean,
+        "hasMermaid": boolean
+      }
+    }
+    CRITICAL: Do NOT wrap the JSON in markdown blocks. Output raw JSON only.
     8. CRITICAL: Ensure the lesson is COMPLETE and does not cut off abruptly. Provide a clear conclusion or summary at the end.
+    9. CRITICAL: The content must be academically rigorous and align with the latest NUC or relevant global curriculum standards.
   `;
 
-  const rawMarkdown = await callGenerateAPI(lessonPrompt, 'lesson', provider);
+  const result = await callGenerateAPI(lessonPrompt, 'lesson', provider);
   return {
     title: lessonTitle,
-    content: sanitizeLatex(rawMarkdown)
+    content: sanitizeLatex(result.content),
+    metadata: result.metadata
   };
 }
 
@@ -341,7 +379,7 @@ export async function generateModuleQuiz(
   provider: string = 'groq'
 ): Promise<any> {
   const quizPrompt = `
-    Generate a university-level quiz for this module.
+    Generate a university-level quiz for this module, ensuring the questions align with the depth and rigor expected by NUC (National Universities Commission) or dynamically adapt to the most relevant global academic benchmarks for this subject.
     Course: ${courseName}
     Module: ${moduleTitle}
     Topics: ${quizTopics.join(', ')}
@@ -355,7 +393,8 @@ export async function generateModuleQuiz(
     6. CRITICAL: The "explanation" field must provide a detailed academic justification for the correct answer and why other options are incorrect.
     7. CRITICAL: Ensure all double quotes inside strings are properly escaped.
     8. CRITICAL: For LaTeX in JSON strings, use double backslashes (e.g., "\\\\mathbf"). Do NOT use triple backslashes.
-    9. Return ONLY valid JSON:
+    9. CRITICAL: Ensure the quiz meets the academic standards set by NUC or relevant global guidelines.
+    10. Return ONLY valid JSON:
     {
       "questions": [
         {

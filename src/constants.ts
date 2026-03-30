@@ -1,4 +1,4 @@
-import { Module, Formula } from './types';
+import { Module, Formula, Course } from './types';
 
 export const MAT103_FORMULAS: Formula[] = [
   { id: 'f-unit-vec', title: 'Unit Vector', latex: '\\hat{a} = \\frac{\\vec{a}}{|\\vec{a}|}', description: 'A vector with a magnitude of 1 in the direction of $\\vec{a}$.', category: 'Vectors' },
@@ -114,6 +114,18 @@ export const PHY101_FORMULAS: Formula[] = [
   { id: 'f-work', title: 'Work Done', latex: 'W = Fd \\cos \\theta', description: 'The product of force and displacement.', category: 'Mechanics' },
   { id: 'f-kinetic', title: 'Kinetic Energy', latex: 'K.E = \\frac{1}{2}mv^2', description: 'Energy possessed by a body in motion.', category: 'Mechanics' },
   { id: 'f-potential', title: 'Potential Energy', latex: 'P.E = mgh', description: 'Energy possessed by a body due to its position.', category: 'Mechanics' },
+];
+
+export const PHY102_FORMULAS: Formula[] = [
+  { id: 'f-coulomb', title: "Coulomb's Law", latex: 'F = k \\frac{|q_1 q_2|}{r^2}', description: 'Electrostatic force between two point charges.', category: 'Electricity' },
+  { id: 'f-electric-field', title: 'Electric Field', latex: 'E = \\frac{F}{q}', description: 'Electric force per unit charge.', category: 'Electricity' },
+  { id: 'f-ohm', title: "Ohm's Law", latex: 'V = IR', description: 'Voltage across a conductor is proportional to current.', category: 'Electricity' },
+];
+
+export const PHY103_FORMULAS: Formula[] = [
+  { id: 'f-density', title: 'Density', latex: '\\rho = \\frac{m}{V}', description: 'Mass per unit volume.', category: 'Properties of Matter' },
+  { id: 'f-pressure', title: 'Pressure', latex: 'P = \\frac{F}{A}', description: 'Force per unit area.', category: 'Properties of Matter' },
+  { id: 'f-hooke', title: "Hooke's Law", latex: 'F = -kx', description: 'Restoring force is proportional to extension.', category: 'Properties of Matter' },
 ];
 
 export const PHY107_SYLLABUS: Module[] = [];
@@ -1102,7 +1114,6 @@ $E[X] = (1+2+3+4+5+6)/6 = 3.5$.
   }
 ];
 
-import { Course } from './types';
 
 export const BIO101_SYLLABUS: Module[] = [
   {
@@ -1469,6 +1480,76 @@ export const PHY101_SYLLABUS: Module[] = [
         id: '1.2',
         title: '1.2 Linear Motion',
         content: ``
+      }
+    ]
+  }
+];
+
+export const PHY102_SYLLABUS: Module[] = [
+  {
+    id: 'electricity',
+    title: '1. ELECTRICITY',
+    subTopics: [
+      {
+        id: '1.1',
+        title: '1.1 Electrostatics',
+        content: `Coulomb's Law, Electric Field, and Potential.`
+      },
+      {
+        id: '1.2',
+        title: '1.2 Current Electricity',
+        content: `Ohm's Law, Kirchhoff's Laws, and circuits.`
+      }
+    ]
+  },
+  {
+    id: 'magnetism',
+    title: '2. MAGNETISM',
+    subTopics: [
+      {
+        id: '2.1',
+        title: '2.1 Magnetic Fields',
+        content: `Biot-Savart Law, Ampere's Law.`
+      },
+      {
+        id: '2.2',
+        title: '2.2 Electromagnetic Induction',
+        content: `Faraday's Law, Lenz's Law.`
+      }
+    ]
+  }
+];
+
+export const PHY103_SYLLABUS: Module[] = [
+  {
+    id: 'properties-of-matter',
+    title: '1. PROPERTIES OF MATTER',
+    subTopics: [
+      {
+        id: '1.1',
+        title: '1.1 Elasticity',
+        content: `Hooke's Law, Young's Modulus, Bulk Modulus.`
+      },
+      {
+        id: '1.2',
+        title: '1.2 Fluid Mechanics',
+        content: `Density, Pressure, Archimedes' Principle.`
+      }
+    ]
+  },
+  {
+    id: 'thermal-physics',
+    title: '2. THERMAL PHYSICS',
+    subTopics: [
+      {
+        id: '2.1',
+        title: '2.1 Heat and Temperature',
+        content: `Thermometry, Thermal Expansion.`
+      },
+      {
+        id: '2.2',
+        title: '2.2 Thermodynamics',
+        content: `Laws of Thermodynamics, Heat Transfer.`
       }
     ]
   }
@@ -3049,212 +3130,63 @@ How animals obtain and process nutrients.
 ### 1.2 Respiration and Circulation
 Gas exchange and internal transport in animals.
 *   **Respiratory Surfaces**: Gills, lungs, and skin.
-*   **Circulatory Systems**: Open vs. closed circulatory systems.
+*   **Circulatory Systems**: Open vs. closed systems.
         `
       }
     ]
   }
 ];
 
-export const COURSES: Record<string, Course> = {
-  'MAT101': {
-    id: 'MAT101',
-    title: 'MAT 101: General Mathematics I',
-    description: 'Algebra, Trigonometry, and Basic Calculus.',
-    syllabus: MAT101_SYLLABUS,
-    formulas: MAT101_FORMULAS,
-    subject: 'Mathematics',
-    objectives: ['Understand basic algebraic concepts', 'Apply trigonometric functions', 'Solve basic calculus problems']
-  },
-  'MAT102': {
-    id: 'MAT102',
-    title: 'MAT 102: General Mathematics II',
-    description: 'Calculus, Differential Equations, and more.',
-    syllabus: MAT102_SYLLABUS,
-    formulas: MAT102_FORMULAS,
-    subject: 'Mathematics',
-    objectives: ['Master calculus techniques', 'Solve differential equations', 'Apply mathematical models']
-  },
-  'MAT103': {
-    id: 'MAT103',
-    title: 'MAT 103: Vectors & Geometry',
-    description: 'Advanced vectors, coordinate geometry, and mechanics.',
-    syllabus: MAT103_SYLLABUS,
-    formulas: MAT103_FORMULAS,
-    subject: 'Mathematics',
-    objectives: ['Analyze vector operations', 'Apply geometric principles', 'Solve mechanics problems']
-  },
-  'STA112': {
-    id: 'STA112',
-    title: 'STA 112: Probability I',
-    description: 'Foundations of probability, random variables, and distributions.',
-    syllabus: STA112_SYLLABUS,
-    formulas: STA112_FORMULAS,
-    subject: 'Mathematics',
-    objectives: ['Understand probability foundations', 'Analyze random variables', 'Apply probability distributions']
-  },
-  'BIO101': {
-    id: 'BIO101',
-    title: 'BIO 101: General Biology I',
-    description: 'Introduction to cell biology, genetics, and evolution.',
-    syllabus: BIO101_SYLLABUS,
-    formulas: BIO101_FORMULAS,
-    subject: 'Biology',
-    objectives: ['Understand cell structure and function', 'Analyze genetic principles', 'Explain evolutionary processes']
-  },
-  'BIO102': {
-    id: 'BIO102',
-    title: 'BIO 102: General Biology II',
-    description: 'Ecology, plant biology, and animal diversity.',
-    syllabus: BIO102_SYLLABUS,
-    formulas: BIO102_FORMULAS,
-    subject: 'Biology',
-    objectives: ['Understand ecological principles', 'Analyze plant biology', 'Describe animal diversity']
-  },
-  'BIO107': {
-    id: 'BIO107',
-    title: 'BIO 107: Introduction to Microbiology',
-    description: 'Study of bacteria, viruses, and other microorganisms.',
-    syllabus: BIO107_SYLLABUS,
-    formulas: BIO107_FORMULAS,
-    subject: 'Biology',
-    objectives: ['Identify microorganisms', 'Understand microbial structure and function', 'Explain microbial roles in disease and environment']
-  },
-  'BIO108': {
-    id: 'BIO108',
-    title: 'BIO 108: Human Anatomy & Physiology',
-    description: 'Structure and function of the human body systems.',
-    syllabus: BIO108_SYLLABUS,
-    formulas: BIO108_FORMULAS,
-    subject: 'Biology',
-    objectives: ['Describe human body systems', 'Explain physiological processes', 'Understand anatomical structures']
-  },
-  'PHY101': {
-    id: 'PHY101',
-    title: 'PHY 101: General Physics I',
-    description: 'Mechanics, properties of matter, and heat.',
-    syllabus: PHY101_SYLLABUS,
-    formulas: PHY101_FORMULAS,
-    subject: 'Physics'
-  },
-  'PHY107': {
-    id: 'PHY107',
-    title: 'PHY 107: General Physics Laboratory I',
-    description: 'Experimental techniques in mechanics and properties of matter.',
-    syllabus: PHY107_SYLLABUS,
-    formulas: PHY107_FORMULAS,
-    subject: 'Physics'
-  },
-  'PHY108': {
-    id: 'PHY108',
-    title: 'PHY 108: General Physics Laboratory II',
-    description: 'Experimental techniques in electricity, magnetism, and optics.',
-    syllabus: PHY108_SYLLABUS,
-    formulas: PHY108_FORMULAS,
-    subject: 'Physics'
-  },
-  'PHY104': {
-    id: 'PHY104',
-    title: 'PHY 104: Modern Physics',
-    description: 'Relativity, quantum mechanics, atomic and nuclear physics.',
-    syllabus: PHY104_SYLLABUS,
-    formulas: PHY104_FORMULAS,
-    subject: 'Physics'
-  },
-  'CHM101': {
-    id: 'CHM101',
-    title: 'CHM 101: General Chemistry I',
-    description: 'Atomic structure, periodic table, and chemical bonding.',
-    syllabus: CHM101_SYLLABUS,
-    formulas: CHM101_FORMULAS,
-    subject: 'Chemistry'
-  },
-  'CHM102': {
-    id: 'CHM102',
-    title: 'CHM 102: General Chemistry II',
-    description: 'Introduction to organic chemistry and thermodynamics.',
-    syllabus: CHM102_SYLLABUS,
-    formulas: CHM102_FORMULAS,
-    subject: 'Chemistry'
-  },
-  'CHM107': {
-    id: 'CHM107',
-    title: 'CHM 107: General Chemistry Laboratory I',
-    description: 'Basic laboratory techniques and safety.',
-    syllabus: CHM107_SYLLABUS,
-    formulas: CHM107_FORMULAS,
-    subject: 'Chemistry'
-  },
-  'CHM108': {
-    id: 'CHM108',
-    title: 'CHM 108: General Chemistry Laboratory II',
-    description: 'Qualitative and quantitative analysis.',
-    syllabus: CHM108_SYLLABUS,
-    formulas: CHM108_FORMULAS,
-    subject: 'Chemistry'
-  },
-  'COS101': {
-    id: 'COS101',
-    title: 'COS 101: Introduction to Computing',
-    description: 'History of computing, hardware, software, and basic networking.',
-    syllabus: COS101_SYLLABUS,
-    formulas: COS101_FORMULAS,
-    subject: 'Computer Science'
-  },
-  'COS102': {
-    id: 'COS102',
-    title: 'COS 102: Problem Solving & Programming',
-    description: 'Introduction to algorithms, flowcharts, and basic programming concepts.',
-    syllabus: COS102_SYLLABUS,
-    formulas: COS102_FORMULAS,
-    subject: 'Computer Science'
-  },
-  'GST111': {
-    id: 'GST111',
-    title: 'GST 111: Communication in English',
-    description: 'Listening, speaking, reading, and writing skills in English.',
-    syllabus: GST111_SYLLABUS,
-    formulas: GST111_FORMULAS,
-    subject: 'General Studies'
-  },
-  'GST112': {
-    id: 'GST112',
-    title: 'GST 112: Nigerian Peoples and Culture',
-    description: 'A comprehensive study of the history, ethnic composition, and cultural heritage of Nigeria.',
-    syllabus: GST112_SYLLABUS,
-    formulas: GST112_FORMULAS,
-    subject: 'General Studies'
-  },
-  'GET101': {
-    id: 'GET101',
-    title: 'GET 101: Introduction to Engineering',
-    description: 'Engineering profession, ethics, and basic technical drawing.',
-    syllabus: GET101_SYLLABUS,
-    formulas: GET101_FORMULAS,
-    subject: 'General Engineering Training'
-  },
-  'GET102': {
-    id: 'GET102',
-    title: 'GET 102: Applied Mechanics',
-    description: 'Statics, dynamics, and strength of materials.',
-    syllabus: GET102_SYLLABUS,
-    formulas: GET102_FORMULAS,
-    subject: 'General Engineering Training'
-  },
-  'ZOO101': {
-    id: 'ZOO101',
-    title: 'ZOO 101: Lower Invertebrates',
-    description: 'Introduction to animal diversity and evolutionary principles.',
-    syllabus: ZOO101_SYLLABUS,
-    formulas: ZOO101_FORMULAS,
-    subject: 'Zoology'
-  },
-  'ZOO102': {
-    id: 'ZOO102',
-    title: 'ZOO 102: Coelomate Invertebrates',
-    description: 'Comparative animal physiology and anatomy.',
-    syllabus: ZOO102_SYLLABUS,
-    formulas: ZOO102_FORMULAS,
-    subject: 'Zoology'
-  }
+export const DEPARTMENTS = [
+  'Aerospace Engineering', 'Agricultural Engineering', 'Anatomy', 'Biology', 'Biomedical Engineering', 
+  'Chemical Engineering', 'Chemistry', 'Civil Engineering', 'Computer Engineering', 'Computer Science', 
+  'Dentistry', 'Electrical Engineering', 'Material Science and Engineering', 'Mathematics', 
+  'Mechanical Engineering', 'Mechatronics Engineering', 'Medical Laboratory Science', 'Medicine and Surgery', 
+  'Nursing Science', 'Petroleum Engineering', 'Pharmacy', 'Physics', 'Physiology', 'Public Health', 
+  'Software Engineering', 'Statistics', 'Zoology', 'General Studies', 'General Engineering Training'
+];
+
+export const LEVELS = ['100', '200', '300', '400', '500', '600'];
+
+export const SEMESTERS = ['1st Semester', '2nd Semester'];
+
+export const FACULTIES = [
+  'Engineering',
+  'Science',
+  'Medicine & Health Sciences',
+  'General Studies'
+];
+
+export const DEPARTMENT_TO_FACULTY: Record<string, string> = {
+  'Aerospace Engineering': 'Engineering',
+  'Agricultural Engineering': 'Engineering',
+  'Biomedical Engineering': 'Engineering',
+  'Chemical Engineering': 'Engineering',
+  'Civil Engineering': 'Engineering',
+  'Computer Engineering': 'Engineering',
+  'Electrical Engineering': 'Engineering',
+  'Material Science and Engineering': 'Engineering',
+  'Mechanical Engineering': 'Engineering',
+  'Mechatronics Engineering': 'Engineering',
+  'Petroleum Engineering': 'Engineering',
+  'Software Engineering': 'Engineering',
+  'Anatomy': 'Medicine & Health Sciences',
+  'Dentistry': 'Medicine & Health Sciences',
+  'Medical Laboratory Science': 'Medicine & Health Sciences',
+  'Medicine and Surgery': 'Medicine & Health Sciences',
+  'Nursing Science': 'Medicine & Health Sciences',
+  'Pharmacy': 'Medicine & Health Sciences',
+  'Physiology': 'Medicine & Health Sciences',
+  'Public Health': 'Medicine & Health Sciences',
+  'Biology': 'Science',
+  'Chemistry': 'Science',
+  'Computer Science': 'Science',
+  'Mathematics': 'Science',
+  'Physics': 'Science',
+  'Statistics': 'Science',
+  'Zoology': 'Science',
+  'General Studies': 'General Studies',
+  'General Engineering Training': 'Engineering'
 };
+
+

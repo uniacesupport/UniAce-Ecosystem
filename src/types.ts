@@ -1,7 +1,12 @@
 
-export type CourseId = 'MAT101' | 'MAT102' | 'MAT103' | 'STA112' | 'BIO101' | 'BIO102' | 'BIO107' | 'BIO108' | 'PHY101' | 'PHY104' | 'PHY107' | 'PHY108' | 'CHM101' | 'CHM102' | 'CHM107' | 'CHM108' | 'COS101' | 'COS102' | 'GST111' | 'GST112' | 'GET101' | 'GET102' | 'ZOO101' | 'ZOO102';
+export type Department = 'Aerospace Engineering' | 'Agricultural Engineering' | 'Anatomy' | 'Biology' | 'Biomedical Engineering' | 'Chemical Engineering' | 'Chemistry' | 'Civil Engineering' | 'Computer Engineering' | 'Computer Science' | 'Dentistry' | 'Electrical Engineering' | 'Material Science and Engineering' | 'Mathematics' | 'Mechanical Engineering' | 'Mechatronics Engineering' | 'Medical Laboratory Science' | 'Medicine and Surgery' | 'Nursing Science' | 'Petroleum Engineering' | 'Pharmacy' | 'Physics' | 'Physiology' | 'Public Health' | 'Software Engineering' | 'General Studies' | 'General Engineering Training' | 'Zoology';
+export type Subject = 'Mathematics' | 'Statistics' | 'Biology' | 'Physics' | 'Chemistry' | 'Computer Science' | 'General Studies' | 'Engineering' | 'Zoology';
+export type Level = '100' | '200' | '300' | '400' | '500';
+export type Semester = '1st Semester' | '2nd Semester';
 
-export type Subject = 'Mathematics' | 'Physics' | 'Chemistry' | 'General Studies' | 'Computer Science' | 'Biology' | 'General Engineering Training' | 'Zoology';
+export type CourseId = 'MTH101' | 'MTH102' | 'MTH103' | 'STA112' | 'BIO101' | 'BIO102' | 'BIO107' | 'BIO108' | 'PHY101' | 'PHY102' | 'PHY103' | 'PHY104' | 'PHY107' | 'PHY108' | 'CHM101' | 'CHM102' | 'CHM107' | 'CHM108' | 'COS101' | 'COS102' | 'GST111' | 'GST112' | 'GET101' | 'GET102' | 'ZOO101' | 'ZOO102' | 'MAT201' | 'MAT202' | 'STA201' | 'PHY201' | 'CHM201';
+
+export type CourseScope = 'GLOBAL' | 'FACULTY' | 'DEPARTMENT';
 
 export interface Course {
   id: CourseId;
@@ -9,8 +14,15 @@ export interface Course {
   description: string;
   syllabus: Module[];
   formulas?: Formula[];
-  subject: Subject;
+  department: Department;
   objectives?: string[];
+  departments?: Department[];
+  faculties?: string[];
+  scope?: CourseScope;
+  level?: Level;
+  semester?: Semester;
+  deleted?: boolean;
+  deletedAt?: string;
 }
 
 export type View = 'hub' | 'dashboard' | 'study' | 'past-questions' | 'quizzes' | 'module-topics' | 'course-syllabus' | 'mastery' | 'formulas' | 'ai-tutor' | 'notebook' | 'profile' | 'help-support' | 'admin-support' | 'admin-dashboard' | 'pricing' | 'flashcards' | 'arena' | 'concept-map' | 'study-plan';
@@ -92,6 +104,10 @@ export interface UserProfile {
   themeColor?: string;
   rank?: number;
   admin_pin_verified_until?: any;
+  department?: Department;
+  faculty?: string;
+  academic_level?: Level;
+  semester?: Semester;
 }
 
 export interface LearningProfile {
@@ -208,3 +224,5 @@ export interface LeaderboardEntry {
   rank: number;
   streak: number;
 }
+
+export type PipelineMetadata = Record<string, any>;

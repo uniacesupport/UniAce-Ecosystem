@@ -1,409 +1,333 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { BookOpen, GraduationCap, ArrowRight, Sparkles, Atom, FlaskConical, Globe, Code, ChevronDown, Dna, Settings, Bird, Lock } from 'lucide-react';
+import { BookOpen, Sparkles, Globe, Search, Users, Calendar, ArrowRight, Loader2, Edit2 } from 'lucide-react';
 import { useCourses } from '../context/CourseContext';
-import { CourseId, View, Subject } from '../types';
+import { CourseId, View, Course, UserProgress, Department } from '../types';
 import { useAuth } from '../context/AuthContext';
+import { DEPARTMENT_TO_FACULTY } from '../constants';
 import { usePremiumStatus } from '../hooks/usePremiumStatus';
-import { LogService } from '../services/logService';
 import NotificationCenter from './NotificationCenter';
+import AcademicProfileModal from './AcademicProfileModal';
 
 interface CourseHubProps {
-  activeSubject: Subject;
-  onSubjectChange: (subject: Subject) => void;
   onSelectCourse: (id: CourseId) => void;
   onProfileClick: () => void;
   onViewSelect: (view: View) => void;
   enrolledCourses: CourseId[];
+  progress: UserProgress;
 }
 
-const SUBJECTS: Record<Subject, { icon: any, color: string, textClass: string, bgClass: string, borderClass: string, description: string }> = {
-  'Mathematics': { 
-    icon: Sparkles, 
-    color: 'emerald', 
-    textClass: 'text-emerald-600 dark:text-emerald-400',
-    bgClass: 'bg-emerald-600',
-    borderClass: 'border-emerald-500/30',
-    description: 'Calculus, Algebra, and Statistics' 
-  },
-  'Physics': { 
-    icon: Atom, 
-    color: 'purple', 
-    textClass: 'text-purple-600 dark:text-purple-400',
-    bgClass: 'bg-purple-600',
-    borderClass: 'border-purple-500/30',
-    description: 'Mechanics, Optics, and Thermodynamics' 
-  },
-  'Chemistry': { 
-    icon: FlaskConical, 
-    color: 'rose', 
-    textClass: 'text-rose-600 dark:text-rose-400',
-    bgClass: 'bg-rose-600',
-    borderClass: 'border-rose-500/30',
-    description: 'Organic, Inorganic, and Physical' 
-  },
-  'Biology': { 
-    icon: Dna, 
-    color: 'emerald', 
-    textClass: 'text-emerald-600 dark:text-emerald-400',
-    bgClass: 'bg-emerald-600',
-    borderClass: 'border-emerald-500/30',
-    description: 'Cell Biology, Genetics, and Evolution' 
-  },
-  'General Studies': { 
-    icon: Globe, 
-    color: 'blue', 
-    textClass: 'text-blue-600 dark:text-blue-400',
-    bgClass: 'bg-blue-600',
-    borderClass: 'border-blue-500/30',
-    description: 'GNS 101, 102, and Citizenship' 
-  },
-  'Computer Science': { 
-    icon: Code, 
-    color: 'orange', 
-    textClass: 'text-orange-600 dark:text-orange-400',
-    bgClass: 'bg-orange-600',
-    borderClass: 'border-orange-500/30',
-    description: 'Programming, Algorithms, and Data' 
-  },
-  'General Engineering Training': { 
-    icon: Settings, 
-    color: 'slate', 
-    textClass: 'text-slate-600 dark:text-slate-400',
-    bgClass: 'bg-slate-600',
-    borderClass: 'border-slate-500/30',
-    description: 'Statics, Dynamics, and Graphics' 
-  },
-  'Zoology': { 
-    icon: Bird, 
-    color: 'emerald', 
-    textClass: 'text-emerald-600 dark:text-emerald-400',
-    bgClass: 'bg-emerald-600',
-    borderClass: 'border-emerald-500/30',
-    description: 'Animal Diversity and Physiology' 
-  }
-};
+type Tab = 'your-courses' | 'explore';
 
-export default function CourseHub({ activeSubject, onSubjectChange, onSelectCourse, onProfileClick, onViewSelect, enrolledCourses }: CourseHubProps) {
-  const { user, profile, isConfigured, signInWithGoogle } = useAuth();
-  const { courses } = useCourses();
+export default function CourseHub({ onSelectCourse, onProfileClick, onViewSelect, enrolledCourses, progress }: CourseHubProps) {
+  const { user, profile, isConfigured } = useAuth();
+  const { courses, loading: coursesLoading } = useCourses();
   const { isPremium } = usePremiumStatus();
   const isAdmin = profile?.role === 'admin' || user?.email === 'olalekan4565@gmail.com' || user?.email === 'uniace.support@gmail.com';
-  const isLocked = !isPremium && !isAdmin;
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  
+  const [activeTab, setActiveTab] = useState<Tab>('your-courses');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showEditProfile, setShowEditProfile] = useState(false);
 
-  const currentSubject = SUBJECTS[activeSubject];
-  const activeEnrolledCourses = enrolledCourses.filter(id => courses[id]?.subject === activeSubject);
+  const filteredCourses = useMemo(() => {
+    let result = Object.values(courses);
+
+    const normalize = (s: any) => String(s || '').toLowerCase().trim().replace(/\s+/g, ' ');
+
+    // Apply Tab Filter
+    if (activeTab === 'your-courses') {
+      if (profile?.department && profile?.academic_level && profile?.semester) {
+        const userDept = normalize(profile.department);
+        const userLevel = normalize(profile.academic_level).replace('level', '').trim();
+        const userSemester = normalize(profile.semester);
+
+        result = result.filter(c => {
+          const levelMatch = normalize(c.level).replace('level', '').trim() === userLevel;
+          const semesterMatch = normalize(c.semester) === userSemester;
+          const isEnrolled = progress.enrolledCourses.includes(c.id as CourseId);
+
+          if (!levelMatch) return false;
+          if (!semesterMatch || !isEnrolled) return false;
+
+          const scope = c.scope || 'DEPARTMENT';
+          
+          if (scope === 'GLOBAL') return true;
+          
+          if (scope === 'FACULTY') {
+            const userFaculty = DEPARTMENT_TO_FACULTY[profile.department as Department];
+            return c.faculties?.includes(userFaculty);
+          }
+
+          // Default: DEPARTMENT scope
+          const courseDepts = c.departments || ((c as any).department ? [(c as any).department] : []);
+          return courseDepts.some(d => normalize(d) === userDept);
+        });
+      } else {
+        result = result.filter(c => enrolledCourses.includes(c.id as CourseId));
+      }
+    }
+
+    // Apply Search Filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      result = result.filter(c => 
+        c.title.toLowerCase().includes(query) || 
+        c.description.toLowerCase().includes(query) ||
+        c.id.toLowerCase().includes(query) ||
+        c.departments?.some(d => d.toLowerCase().includes(query)) ||
+        c.faculties?.some(f => f.toLowerCase().includes(query)) ||
+        c.scope?.toLowerCase().includes(query)
+      );
+    }
+
+    // Sort: Courses with progress first
+    result.sort((a, b) => {
+      const aHasProgress = a.syllabus?.some(module => 
+        module.subTopics?.some(topic => 
+          (progress.mastery?.[`${module.id}-${topic.id}`] || 0) > 0 || 
+          progress.topicLastStudied?.[`${module.id}-${topic.id}`]
+        )
+      );
+      const bHasProgress = b.syllabus?.some(module => 
+        module.subTopics?.some(topic => 
+          (progress.mastery?.[`${module.id}-${topic.id}`] || 0) > 0 || 
+          progress.topicLastStudied?.[`${module.id}-${topic.id}`]
+        )
+      );
+      
+      if (aHasProgress && !bHasProgress) return -1;
+      if (!aHasProgress && bHasProgress) return 1;
+      return 0;
+    });
+
+    return result;
+  }, [courses, activeTab, searchQuery, profile, enrolledCourses, progress]);
+
+  if (coursesLoading && Object.keys(courses).length === 0) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-zinc-950 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="w-12 h-12 text-slate-900 dark:text-white animate-spin" />
+          <p className="text-slate-500 dark:text-zinc-400 font-medium">Loading your courses...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-zinc-950 flex flex-col p-4 sm:p-6 lg:p-12 pb-4 lg:pb-16 relative overflow-x-hidden transition-colors">
+    <div className="min-h-screen bg-slate-50 dark:bg-zinc-950 flex flex-col lg:flex-row p-4 sm:p-6 lg:p-12 gap-8 lg:gap-16 relative overflow-x-hidden transition-colors">
       {/* Configuration Warning */}
       {!isConfigured && (
         <div className="fixed top-0 left-0 right-0 bg-amber-500 text-white p-2 text-center text-xs font-bold z-50 shadow-lg">
           Firebase is not configured. Please set the VITE_FIREBASE_* environment variables.
         </div>
       )}
-      {/* Header */}
-      <header className="flex items-center justify-between w-full max-w-7xl mx-auto mb-12 sm:mb-16 relative z-30 lg:pl-4 xl:pl-0">
-        <div>
-          <h1 className="text-xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-            🎓 Welcome back, {user?.displayName?.split(' ')[0] || 'Scholar'}
-          </h1>
-          <p className="text-xs sm:text-base text-slate-500 dark:text-zinc-400 font-medium">
-            Ready to continue your journey?
-          </p>
-        </div>
 
-        <div className="flex items-center gap-4 sm:gap-6">
-          {!isAdmin && (
-            <>
-              {isLocked ? (
+      {showEditProfile && (
+        <AcademicProfileModal onClose={() => setShowEditProfile(false)} />
+      )}
+
+      {/* Left Sidebar / Header Area */}
+      <div className="w-full lg:w-72 flex-shrink-0 flex flex-col gap-8 relative z-20">
+        <div className="sticky top-12 space-y-8">
+          <div>
+            <h1 className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white mb-4 tracking-tight">
+              {profile?.displayName ? `Hello, ${profile.displayName.split(' ')[0]}!` : 'Welcome back!'}
+            </h1>
+            
+            {profile?.department && profile?.academic_level && profile?.semester ? (
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2">
+                  <div className="inline-flex items-center gap-2 bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 px-3 py-1.5 rounded-lg text-sm font-bold w-fit">
+                    {profile.department}
+                  </div>
+                  <button 
+                    onClick={() => setShowEditProfile(true)}
+                    className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 rounded-lg transition-colors"
+                    title="Edit Academic Profile"
+                  >
+                    <Edit2 size={14} />
+                  </button>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="inline-flex items-center gap-2 bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300 px-3 py-1.5 rounded-lg text-sm font-bold w-fit">
+                    {profile.academic_level} Level
+                  </div>
+                  <div className="inline-flex items-center gap-2 bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 px-3 py-1.5 rounded-lg text-sm font-bold w-fit">
+                    {profile.semester}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3 items-start">
+                <p className="text-slate-500 dark:text-zinc-400 font-medium">
+                  Set up your academic profile to get personalized courses.
+                </p>
                 <button 
-                  onClick={() => onViewSelect('pricing')}
-                  className="text-emerald-500 font-bold text-[10px] sm:text-sm tracking-widest hover:text-emerald-600 transition-colors"
+                  onClick={() => setShowEditProfile(true)}
+                  className="px-4 py-2 bg-slate-900 text-white dark:bg-white dark:text-slate-900 rounded-xl font-bold text-sm hover:scale-105 transition-transform"
                 >
-                  ACTIVATE
+                  Setup Profile
                 </button>
-              ) : null}
-            </>
-          )}
+              </div>
+            )}
+          </div>
+
+          <nav className="flex lg:flex-col gap-2 overflow-x-auto lg:overflow-visible pb-4 lg:pb-0 no-scrollbar">
+            <button 
+              onClick={() => setActiveTab('your-courses')}
+              className={`flex-shrink-0 flex items-center gap-3 px-5 py-3.5 rounded-2xl font-bold transition-all ${
+                activeTab === 'your-courses' 
+                  ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xl shadow-slate-900/10' 
+                  : 'text-slate-500 hover:bg-slate-200/50 dark:hover:bg-zinc-800/50'
+              }`}
+            >
+              <Sparkles size={20} className={activeTab === 'your-courses' ? 'text-amber-400' : ''} />
+              Your Courses
+            </button>
+          </nav>
+        </div>
+      </div>
+
+      {/* Right Content Area */}
+      <div className="flex-1 relative z-20">
+        <div className="mb-8 flex flex-col sm:flex-row gap-4 items-center justify-between">
+          <div className="relative w-full max-w-md">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+            <input 
+              type="text" 
+              placeholder="Search courses..." 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full bg-white dark:bg-zinc-900/50 border border-slate-200 dark:border-zinc-800 rounded-2xl pl-12 pr-4 py-4 text-slate-900 dark:text-white focus:ring-2 focus:ring-slate-900 dark:focus:ring-white outline-none transition-all shadow-sm"
+            />
+          </div>
           
-          <NotificationCenter />
-          <button 
-            onClick={onProfileClick}
-            className="flex items-center gap-2 sm:gap-3 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md p-1.5 pr-3 sm:p-2 sm:pr-4 rounded-full shadow-sm border border-slate-200 dark:border-zinc-800 hover:scale-105 transition-transform"
-          >
-            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full overflow-hidden border-2 border-white dark:border-zinc-800 shadow-sm bg-blue-100 dark:bg-blue-900/30">
+          <div className="flex items-center gap-4 self-end sm:self-auto">
+            <button
+              onClick={() => setActiveTab('explore')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm transition-colors ${
+                activeTab === 'explore'
+                  ? 'bg-slate-200 text-slate-900 dark:bg-zinc-800 dark:text-white'
+                  : 'text-slate-500 hover:text-slate-900 dark:text-zinc-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-zinc-800/50'
+              }`}
+            >
+              <Globe size={16} />
+              Explore All
+            </button>
+            <NotificationCenter />
+            <button 
+              onClick={onProfileClick}
+              className="w-12 h-12 rounded-full overflow-hidden border-2 border-white dark:border-zinc-800 shadow-sm bg-blue-100 dark:bg-blue-900/30 hover:scale-105 transition-transform"
+            >
               <img 
                 src={profile?.photoURL || user?.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.uid || 'User'}`} 
                 alt="Profile" 
                 className="w-full h-full object-cover"
               />
-            </div>
-            <span className="text-xs sm:text-sm font-bold text-slate-700 dark:text-zinc-200 hidden xs:block">
-              {user?.displayName?.split(' ')[0] || 'Scholar'}
-            </span>
-          </button>
-        </div>
-      </header>
-
-      {/* Dynamic Background Elements */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden">
-        <motion.div 
-          animate={{ 
-            rotate: 360,
-            scale: [1, 1.1, 1],
-          }}
-          transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
-          className="absolute -top-24 -right-24 w-64 h-64 sm:w-96 sm:h-96 bg-emerald-100/50 dark:bg-emerald-900/20 rounded-full blur-3xl"
-        />
-        <motion.div 
-          animate={{ 
-            rotate: -360,
-            scale: [1, 1.2, 1],
-          }}
-          transition={{ duration: 25, repeat: Infinity, ease: "linear" }}
-          className="absolute -bottom-24 -left-24 w-64 h-64 sm:w-96 sm:h-96 bg-blue-100/50 dark:bg-blue-900/20 rounded-full blur-3xl"
-        />
-      </div>
-
-      <motion.div 
-        initial={{ opacity: 0, y: 30 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.8, ease: "easeOut" }}
-        className="text-center mb-10 sm:mb-12 relative z-10 w-full max-w-4xl mx-auto flex flex-col items-center"
-      >
-        <motion.div 
-          initial={{ scale: 0.8, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ delay: 0.2 }}
-          className="inline-flex items-center gap-2 px-4 py-1.5 sm:px-5 sm:py-2 rounded-full bg-slate-900 text-white shadow-lg shadow-slate-900/20 border border-slate-800 text-[10px] sm:text-xs font-black uppercase tracking-[0.2em] mb-6 sm:mb-8 relative z-20"
-        >
-          <Sparkles size={10} className="text-amber-400 animate-pulse" />
-          <span>UniAce Ecosystem</span>
-        </motion.div>
-        
-        <div className="text-2xl sm:text-4xl md:text-5xl font-black text-slate-900 dark:text-white mb-6 sm:mb-8 tracking-tighter leading-tight sm:leading-none flex flex-col items-center gap-2 sm:gap-4">
-          <h1>Master Your</h1>
-          <div className="relative inline-block group z-30">
-            <button 
-              onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-              className={`flex items-center gap-2 sm:gap-3 px-4 py-2 sm:px-6 sm:py-3 rounded-xl sm:rounded-2xl bg-white/50 dark:bg-zinc-900/50 backdrop-blur-sm border-2 border-dashed ${currentSubject.borderClass} hover:border-current transition-all cursor-pointer group-hover:scale-105`}
-              style={{ color: 'inherit' }}
-            >
-              <span className={`text-xl sm:text-4xl md:text-5xl font-black ${currentSubject.textClass}`}>
-                {activeSubject}
-              </span>
-              <ChevronDown size={24} className={`${currentSubject.textClass} transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} />
             </button>
-
-            <AnimatePresence>
-              {isDropdownOpen && (
-                <motion.div
-                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                  className="absolute top-full left-1/2 -translate-x-1/2 mt-4 w-64 sm:w-72 bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-200 dark:border-zinc-800 p-2 sm:p-3 z-40 text-left"
-                >
-                  <p className="px-3 py-2 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 dark:border-slate-800 mb-2">Switch Subject</p>
-                  {Object.keys(SUBJECTS).map((subject) => {
-                    const s = subject as Subject;
-                    const Icon = SUBJECTS[s].icon;
-                    const sub = SUBJECTS[s];
-                    return (
-                      <button
-                        key={s}
-                        onClick={() => {
-                          onSubjectChange(s);
-                          setIsDropdownOpen(false);
-                        }}
-                        className={`w-full flex items-center gap-3 p-2.5 sm:p-3 rounded-xl transition-all ${
-                          activeSubject === s 
-                            ? `bg-slate-100 dark:bg-slate-800 ${sub.textClass} font-bold` 
-                            : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800/50'
-                        }`}
-                      >
-                        <div className={`p-2 rounded-lg ${activeSubject === s ? `bg-white dark:bg-slate-700 shadow-sm` : 'bg-slate-100 dark:bg-slate-800'}`}>
-                          <Icon size={16} className={sub.textClass} />
-                        </div>
-                        <span className="text-sm">{s}</span>
-                      </button>
-                    );
-                  })}
-                </motion.div>
-              )}
-            </AnimatePresence>
           </div>
         </div>
-        
-        <p className="text-slate-500 dark:text-blue-300 max-w-xl mx-auto text-sm sm:text-lg md:text-xl font-medium leading-relaxed px-4">
-          {currentSubject.description}. <br className="hidden sm:block" />
-          Select a course below to begin your journey.
-        </p>
-      </motion.div>
 
-      {/* Subject Quick Bar */}
-      <div className="w-full max-w-4xl px-4 mb-10 sm:mb-14 relative z-20 mx-auto">
-        <div className="flex items-center gap-2 overflow-x-auto pb-4 no-scrollbar">
-          <div className="flex gap-2 mx-auto">
-            {Object.keys(SUBJECTS).map((subject) => {
-              const s = subject as Subject;
-              const isActive = activeSubject === s;
-              const sub = SUBJECTS[s];
-              return (
-                <button
-                  key={s}
-                  onClick={() => onSubjectChange(s)}
-                  className={`whitespace-nowrap px-5 py-2.5 sm:px-6 sm:py-3 rounded-full text-xs sm:text-sm font-bold transition-all border ${
-                    isActive 
-                      ? `${sub.bgClass} border-transparent text-white shadow-lg shadow-slate-200 dark:shadow-none scale-105` 
-                      : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-500 hover:border-slate-400 dark:hover:border-slate-600'
-                  }`}
-                >
-                  {s}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-
-      {activeEnrolledCourses.length > 0 && (
-        <div className="max-w-7xl w-full px-4 mx-auto mb-16">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 flex items-center justify-center">
-              <BookOpen size={18} className="text-emerald-600 dark:text-emerald-400" />
+        {filteredCourses.length === 0 ? (
+          <div className="bg-white dark:bg-zinc-900/50 border border-slate-200 dark:border-zinc-800 rounded-3xl p-12 text-center flex flex-col items-center justify-center min-h-[400px]">
+            <div className="w-20 h-20 bg-slate-100 dark:bg-zinc-800 rounded-full flex items-center justify-center mb-6">
+              <Search size={32} className="text-slate-400" />
             </div>
-            <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">My Enrolled Courses</h2>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {activeEnrolledCourses.map((courseId, index) => {
-              const course = courses[courseId];
-              if (!course) return null;
-              return (
-                <motion.button
-                  key={`enrolled-${course.id}`}
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ delay: index * 0.1 }}
-                  onClick={() => onSelectCourse(course.id as CourseId)}
-                  className="group relative bg-white dark:bg-zinc-900 rounded-3xl p-6 shadow-xl shadow-slate-200/50 dark:shadow-none border-2 border-emerald-500/20 dark:border-emerald-500/10 text-left hover:border-emerald-500 transition-all hover:shadow-2xl hover:shadow-emerald-100/50 dark:hover:shadow-none flex flex-col h-full"
+            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">
+              {activeTab === 'your-courses' ? 'No curriculum courses found' : 'No courses found'}
+            </h3>
+            <p className="text-slate-500 dark:text-zinc-400 max-w-md mx-auto mb-6">
+              {activeTab === 'your-courses' 
+                ? `We couldn't find any courses matching your profile (${profile?.department}, ${profile?.academic_level} Level, ${profile?.semester}). Check your profile or explore the catalog.`
+                : "Try adjusting your search terms to find what you're looking for."}
+            </p>
+
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+              {activeTab === 'your-courses' && (
+                <button 
+                  onClick={() => setShowEditProfile(true)}
+                  className="px-6 py-3 bg-orange-500 text-white rounded-xl font-bold hover:scale-105 transition-transform"
                 >
-                  <h3 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white mb-2 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
-                    {course.title}
-                  </h3>
-                  <p className="text-slate-500 dark:text-zinc-400 mb-6 line-clamp-2 text-sm flex-grow">
-                    {course.description}
-                  </p>
-                  <div className="flex items-center justify-between mt-auto">
-                    <span className="text-xs font-bold uppercase tracking-widest text-emerald-500">
-                      Continue Learning
+                  Edit Academic Profile
+                </button>
+              )}
+              <button 
+                onClick={() => setActiveTab('explore')}
+                className="px-6 py-3 bg-slate-900 text-white dark:bg-white dark:text-slate-900 rounded-xl font-bold hover:scale-105 transition-transform"
+              >
+                Explore All Courses
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-2 gap-6">
+            {filteredCourses.map((course, index) => (
+              <motion.div
+                key={course.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.05 }}
+                className="bg-white dark:bg-zinc-900 rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-zinc-800 flex flex-col h-full hover:shadow-xl hover:border-slate-300 dark:hover:border-zinc-700 transition-all group"
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-zinc-400">
+                      {course.scope === 'GLOBAL' ? 'Global Course' : 
+                       course.scope === 'FACULTY' ? `${course.faculties?.join(', ')} Faculty` :
+                       course.departments?.length === 1 ? course.departments[0] : 
+                       `${course.departments?.length || 0} Departments`}
                     </span>
-                    <div className="w-8 h-8 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-md">
-                      <ArrowRight size={16} />
+                  </div>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-zinc-400 bg-slate-100 dark:bg-zinc-800 px-2.5 py-1 rounded-md">
+                    {course.id}
+                  </span>
+                </div>
+                
+                <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-3 group-hover:text-slate-700 dark:group-hover:text-slate-300 transition-colors">
+                  {course.title}
+                </h3>
+                
+                <p className="text-sm text-slate-500 dark:text-zinc-400 mb-8 flex-grow line-clamp-3">
+                  {course.description}
+                </p>
+                
+                <div className="flex items-center justify-between mt-auto pt-6 border-t border-slate-100 dark:border-zinc-800/50">
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-slate-500 dark:text-zinc-400">
+                      <Users size={14} />
+                      {course.level ? `L ${course.level}` : 'L 100'}
+                    </div>
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-slate-500 dark:text-zinc-400">
+                      <Calendar size={14} />
+                      {course.semester === '2nd Semester' ? 'Sem 2' : 'Sem 1'}
                     </div>
                   </div>
-                </motion.button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      <div className="max-w-7xl w-full px-4 mx-auto mb-6">
-        <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">Explore {activeSubject}</h2>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-7xl w-full px-4 mx-auto">
-        {Object.values(courses).filter(c => c.subject === activeSubject).length > 0 ? (
-          Object.values(courses).filter(c => c.subject === activeSubject).map((course, index) => {
-            const isEnrolled = enrolledCourses.includes(course.id as CourseId);
-            return (
-              <motion.button
-                key={course.id}
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: index * 0.1 }}
-                onClick={() => {
-                  if (isLocked && index > 2) {
-                    LogService.log('info', 'user', 'locked_feature_click', { feature: 'course', courseId: course.id, userId: user?.uid });
-                    onViewSelect('pricing');
-                    return;
-                  }
-                  onSelectCourse(course.id as CourseId);
-                }}
-                className={`group relative bg-white dark:bg-zinc-900 rounded-3xl p-6 sm:p-8 shadow-xl shadow-slate-200/50 dark:shadow-none border border-slate-100 dark:border-zinc-800 text-left hover:border-emerald-500 dark:hover:border-emerald-400 transition-all hover:shadow-2xl hover:shadow-emerald-100/50 dark:hover:shadow-none flex flex-col h-full ${isLocked && index > 2 ? 'opacity-70 grayscale-[0.5] cursor-not-allowed' : ''}`}
-              >
-                <div className={`w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center mb-4 sm:mb-6 transition-colors relative ${
-                  course.id.startsWith('MAT') ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 group-hover:bg-blue-600 group-hover:text-white' : 
-                  course.id.startsWith('STA') ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 group-hover:bg-orange-600 group-hover:text-white' :
-                  course.id.startsWith('BIO') ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 group-hover:bg-emerald-600 group-hover:text-white' :
-                  course.id.startsWith('PHY') ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 group-hover:bg-purple-600 group-hover:text-white' :
-                  course.id.startsWith('CHM') ? 'bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 group-hover:bg-rose-600 group-hover:text-white' :
-                  course.id.startsWith('COS') ? 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-600 dark:text-cyan-400 group-hover:bg-cyan-600 group-hover:text-white' :
-                  course.id.startsWith('GST') ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 group-hover:bg-amber-600 group-hover:text-white' :
-                  course.id.startsWith('GET') ? 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-400 group-hover:bg-slate-600 group-hover:text-white' :
-                  course.id.startsWith('ZOO') ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 group-hover:bg-emerald-600 group-hover:text-white' :
-                  'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-400 group-hover:bg-slate-600 group-hover:text-white'
-                }`}>
-                {isLocked && index > 2 ? <Lock size={24} className="sm:w-7 sm:h-7" /> : (
-                  course.id.startsWith('MAT') ? <BookOpen size={24} className="sm:w-7 sm:h-7" /> : 
-                  course.id.startsWith('STA') ? <Sparkles size={24} className="sm:w-7 sm:h-7" /> :
-                  course.id.startsWith('BIO') ? <Dna size={24} className="sm:w-7 sm:h-7" /> :
-                  course.id.startsWith('PHY') ? <Atom size={24} className="sm:w-7 sm:h-7" /> :
-                  course.id.startsWith('CHM') ? <FlaskConical size={24} className="sm:w-7 sm:h-7" /> :
-                  course.id.startsWith('COS') ? <Code size={24} className="sm:w-7 sm:h-7" /> :
-                  course.id.startsWith('GST') ? <Globe size={24} className="sm:w-7 sm:h-7" /> :
-                  course.id.startsWith('GET') ? <Settings size={24} className="sm:w-7 sm:h-7" /> :
-                  course.id.startsWith('ZOO') ? <Bird size={24} className="sm:w-7 sm:h-7" /> :
-                  <GraduationCap size={24} className="sm:w-7 sm:h-7" />
-                )}
-                
-                {(['STA112', 'BIO101', 'BIO102', 'BIO107', 'BIO108', 'PHY101', 'PHY102', 'PHY107', 'PHY108', 'CHM101', 'CHM102', 'CHM107', 'CHM108', 'COS101', 'COS102', 'GST111', 'GST112', 'GET101', 'GET102', 'ZOO101', 'ZOO102'].includes(course.id)) && (
-                  <div className="absolute -top-2 -right-2 bg-rose-500 text-white text-[8px] font-black px-2 py-0.5 rounded-full shadow-sm animate-bounce">
-                    NEW
-                  </div>
-                )}
-              </div>
-              
-              <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white mb-2 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
-                {course.title}
-              </h2>
-              <p className="text-slate-500 dark:text-blue-300 mb-8 line-clamp-2 flex-grow">
-                {course.description}
-              </p>
-
-              <div className="flex items-center justify-between mt-auto">
-                <span className={`text-sm font-bold uppercase tracking-widest ${isEnrolled ? 'text-emerald-500' : 'text-slate-400 dark:text-zinc-500'}`}>
-                  {isLocked && index > 2 ? 'Locked' : (isEnrolled ? 'Continue Learning' : 'Enroll Now')}
-                </span>
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${isEnrolled ? 'bg-emerald-500 text-white shadow-md' : 'bg-slate-50 dark:bg-zinc-800 group-hover:bg-emerald-500 group-hover:text-white'}`}>
-                  {isLocked && index > 2 ? <Lock size={20} /> : <ArrowRight size={20} />}
+                  
+                  <button 
+                    onClick={() => onSelectCourse(course.id as CourseId)}
+                    className="bg-slate-900 text-white dark:bg-white dark:text-slate-900 px-6 py-2.5 rounded-xl font-bold text-sm hover:scale-105 active:scale-95 transition-transform flex items-center gap-2"
+                  >
+                    {(() => {
+                      const isEnrolled = activeTab === 'your-courses' || enrolledCourses.includes(course.id as CourseId);
+                      if (!isEnrolled) return 'Enroll Now';
+                      
+                      const hasProgress = course.syllabus?.some(module => 
+                        module.subTopics?.some(topic => 
+                          (progress.mastery?.[`${module.id}-${topic.id}`] || 0) > 0 || 
+                          progress.topicLastStudied?.[`${module.id}-${topic.id}`]
+                        )
+                      );
+                      
+                      return hasProgress ? 'Continue Learning' : 'Start Learning';
+                    })()}
+                  </button>
                 </div>
-              </div>
-            </motion.button>
-          )})
-        ) : (
-          <div className="col-span-full text-center py-20">
-            <div className="bg-slate-100 dark:bg-slate-800 rounded-3xl p-12 inline-block">
-              <div className={`w-20 h-20 mx-auto ${SUBJECTS[activeSubject].bgClass} bg-opacity-10 rounded-full flex items-center justify-center mb-6 ${SUBJECTS[activeSubject].textClass}`}>
-                {React.createElement(SUBJECTS[activeSubject].icon, { size: 40 })}
-              </div>
-              <h3 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">
-                {activeSubject} Module Coming Soon
-              </h3>
-              <p className="text-slate-500 max-w-md mx-auto">
-                We are currently crafting the ultimate learning experience for {activeSubject}. 
-                Check back later for updates!
-              </p>
-            </div>
+              </motion.div>
+            ))}
           </div>
         )}
       </div>
-
-      <footer className="mt-16 text-slate-400 dark:text-zinc-500 text-sm font-medium text-center w-full">
-        Powered by UniAce Ecosystem 2.0
-      </footer>
     </div>
   );
 }

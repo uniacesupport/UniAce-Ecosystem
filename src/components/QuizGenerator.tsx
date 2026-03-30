@@ -591,7 +591,7 @@ export default function QuizGenerator({
 
                   <div className="space-y-6">
                     <div className="flex justify-between items-start gap-4">
-                      <div className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white leading-relaxed markdown-body flex-1">
+                      <div className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white leading-relaxed flex-1">
                         <MarkdownRenderer content={questions[currentQuestionIndex].question} />
                       </div>
                       {onBookmark && (
@@ -674,9 +674,9 @@ export default function QuizGenerator({
                               onClick={() => handleAnswer(opt)}
                               className={`w-full p-4 sm:p-5 rounded-xl sm:rounded-2xl text-left font-medium transition-all flex items-center justify-between ${btnClass}`}
                             >
-                              <span className="markdown-body">
+                              <div className="flex-1">
                                 <MarkdownRenderer content={opt} />
-                              </span>
+                              </div>
                               {(mode === 'practice' || mode === 'adaptive') && showExplanation && isCorrect && <CheckCircle2 size={20} className="text-emerald-500 shrink-0" />}
                               {(mode === 'practice' || mode === 'adaptive') && showExplanation && isSelected && !isCorrect && <XCircle size={20} className="text-red-500 shrink-0" />}
                               {mode === 'exam' && isSelected && <div className="w-4 h-4 bg-white rounded-full" />}
@@ -728,7 +728,7 @@ export default function QuizGenerator({
                     >
                       <div className="bg-slate-50 dark:bg-zinc-800 p-6 rounded-2xl border border-slate-100 dark:border-zinc-700">
                         <h4 className="text-xs font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-widest mb-2">Explanation</h4>
-                        <div className="text-sm text-slate-600 dark:text-zinc-300 leading-relaxed markdown-body">
+                        <div className="text-sm text-slate-600 dark:text-zinc-300 leading-relaxed">
                           <MarkdownRenderer content={questions[currentQuestionIndex].explanation} />
                         </div>
                       </div>

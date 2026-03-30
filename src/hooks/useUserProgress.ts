@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { UserProgress, Achievement, Bookmark, CourseId, AIPersonality } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../firebase';
 import { doc, setDoc, onSnapshot, getDoc, updateDoc, arrayUnion, arrayRemove, increment } from 'firebase/firestore';
 import { GamificationService, BADGES } from '../services/gamification';
+import { useCourses } from '../context/CourseContext';
 
 const INITIAL_ACHIEVEMENTS: Achievement[] = BADGES.map(b => ({
   id: b.id,
@@ -23,16 +24,16 @@ const INITIAL_PROGRESS: UserProgress = {
   studyTime: {},
   topicLastStudied: {},
   bookmarks: [],
-  enrolledCourses: ['MAT103'], // Default enrollment
+  enrolledCourses: [], // Default enrollment
   assignments: [
-    { id: 'a1', courseId: 'MAT103', title: 'Vector Calculus Problem Set', dueDate: new Date(Date.now() + 86400000 * 3).toISOString(), status: 'pending' },
-    { id: 'a2', courseId: 'MAT103', title: 'Coordinate Geometry Quiz', dueDate: new Date(Date.now() + 86400000 * 5).toISOString(), status: 'pending' },
+    { id: 'a1', courseId: 'MTH103', title: 'Vector Calculus Problem Set', dueDate: new Date(Date.now() + 86400000 * 3).toISOString(), status: 'pending' },
+    { id: 'a2', courseId: 'MTH103', title: 'Coordinate Geometry Quiz', dueDate: new Date(Date.now() + 86400000 * 5).toISOString(), status: 'pending' },
     { id: 'a3', courseId: 'STA112', title: 'Probability Distributions', dueDate: new Date(Date.now() - 86400000 * 2).toISOString(), status: 'graded', grade: 85 },
   ],
 };
 
 export function useUserProgress() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [progress, setProgress] = useState<UserProgress>(() => {
     let parsed = INITIAL_PROGRESS;
@@ -469,5 +470,50 @@ export function useUserProgress() {
     }));
   };
 
-  return { progress, addXp, updateMastery, recordStudyTime, unlockAchievement, markTopicAsStudied, addBookmark, removeBookmark, enrollCourse, unenrollCourse, updateSRSData, updateAIPersonality, isOnline, checkAndUpdateStreak };
+  const { courses } = useCourses();
+
+  const effectiveEnrolledCourses = useMemo(() => {
+    const explicit = progress.enrolledCourses || [];
+    if (!profile?.department || !profile?.academic_level || !profile?.semester) {
+      return explicit;
+    }
+
+    const normalize = (s: any) => String(s || '').toLowerCase().trim().replace(/\s+/g, ' ');
+    const userDept = normalize(profile.department);
+    const userFaculty = normalize(profile.faculty || '');
+    const userLevel = normalize(profile.academic_level).replace(/level|lvl/g, '').trim();
+    const userSemester = normalize(profile.semester);
+
+    const autoEnrolled = Object.values(courses)
+      .filter(c => {
+        // 1. Check Level and Semester (Mandatory for all scopes)
+        const levelMatch = normalize(c.level).replace(/level|lvl/g, '').trim() === userLevel;
+        const semesterMatch = normalize(c.semester) === userSemester;
+        
+        if (!levelMatch || !semesterMatch) return false;
+
+        // 2. Check Scope
+        const scope = c.scope || 'DEPARTMENT';
+        
+        if (scope === 'GLOBAL') return true;
+        
+        if (scope === 'FACULTY') {
+          const courseFaculties = c.faculties || [];
+          return courseFaculties.some(f => normalize(f) === userFaculty);
+        }
+        
+        // Default: DEPARTMENT scope
+        const courseDepts = c.departments || ((c as any).department ? [(c as any).department] : []);
+        return courseDepts.some(d => normalize(d) === userDept);
+      })
+      .map(c => c.id as CourseId);
+    return Array.from(new Set([...explicit, ...autoEnrolled]));
+  }, [progress.enrolledCourses, profile, courses]);
+
+  const effectiveProgress = useMemo(() => ({
+    ...progress,
+    enrolledCourses: effectiveEnrolledCourses
+  }), [progress, effectiveEnrolledCourses]);
+
+  return { progress: effectiveProgress, addXp, updateMastery, recordStudyTime, unlockAchievement, markTopicAsStudied, addBookmark, removeBookmark, enrollCourse, unenrollCourse, updateSRSData, updateAIPersonality, isOnline, checkAndUpdateStreak };
 }

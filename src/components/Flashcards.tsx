@@ -149,9 +149,9 @@ export default function Flashcards({ module, subTopic, onClose }: FlashcardsProp
                 >
                   {/* Front */}
                   <div className="absolute inset-0 backface-hidden bg-white dark:bg-zinc-900 border-2 border-slate-100 dark:border-zinc-800 rounded-3xl p-8 flex flex-col items-center justify-center text-center shadow-lg">
-                    <h3 className="text-xl font-bold text-slate-950 dark:text-white markdown-body">
+                    <div className="text-xl font-bold text-slate-950 dark:text-white markdown-body">
                       <MarkdownRenderer content={cards[currentIndex]?.front || ''} />
-                    </h3>
+                    </div>
                     <p className="absolute bottom-6 text-slate-500 dark:text-zinc-400 text-sm font-medium">Click to flip</p>
                   </div>
 

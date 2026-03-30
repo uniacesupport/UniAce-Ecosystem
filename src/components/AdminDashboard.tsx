@@ -15,7 +15,8 @@ import CourseEditModal from './CourseEditModal';
 import { AIService } from '../services/ai';
 import { generateCourseContent, generateCourseSkeleton, generateModuleContent, generateCourseFormulas } from '../services/aiCourseGenerator';
 import { CourseService } from '../services/courseService';
-import { Course, UserProgress, Subject, CourseId } from '../types';
+import { Course, UserProgress, CourseId, Department, Level, Semester, Subject, CourseScope } from '../types';
+import { FACULTIES, DEPARTMENT_TO_FACULTY } from '../constants';
 import { LogService, SystemLog } from '../services/logService';
 
 import { jsonrepair } from 'jsonrepair';
@@ -48,7 +49,8 @@ export default function AdminDashboard() {
       fetchArchivedCourses();
     }
   }, [showArchived]);
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
+  const isAdmin = profile?.role === 'admin';
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadSuccess, setUploadSuccess] = useState(false);
@@ -120,7 +122,6 @@ export default function AdminDashboard() {
   const [courseCode, setCourseCode] = useState('');
   const [courseTitle, setCourseTitle] = useState('');
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
-  const [subjectArea, setSubjectArea] = useState('');
   const [extractedCourse, setExtractedCourse] = useState<Course | null>(null);
   const [rawJsonText, setRawJsonText] = useState('');
   const [isReviewing, setIsReviewing] = useState(false);
@@ -134,6 +135,12 @@ export default function AdminDashboard() {
   const [quickCourseName, setQuickCourseName] = useState('');
   const [quickCourseCode, setQuickCourseCode] = useState('');
   const [quickSubject, setQuickSubject] = useState<Subject>('Mathematics');
+  const [quickLevel, setQuickLevel] = useState<Level>('100');
+  const [quickSemester, setQuickSemester] = useState<Semester>('1st Semester');
+  const [quickDepartment, setQuickDepartment] = useState<Department>('Mathematics');
+  const [courseScope, setCourseScope] = useState<CourseScope>('DEPARTMENT');
+  const [selectedFaculties, setSelectedFaculties] = useState<string[]>([]);
+  const [selectedDepartments, setSelectedDepartments] = useState<Department[]>(['Mathematics']);
   const [quickCourseOutline, setQuickCourseOutline] = useState('');
   const [generationProgress, setGenerationProgress] = useState(0);
   const [aiProvider, setAiProvider] = useState<'gemini' | 'groq' | 'mistral'>('mistral');
@@ -308,7 +315,11 @@ export default function AdminDashboard() {
             quickCourseName, 
             `A comprehensive course on ${quickCourseName} for university students.`,
             quickCourseOutline,
-            aiProvider
+            aiProvider,
+            [],
+            quickLevel,
+            quickSemester,
+            quickDepartment
           );
         } catch (err) {
           retries--;
@@ -370,6 +381,11 @@ export default function AdminDashboard() {
         title: quickCourseName,
         description: courseSkeleton.description || `A comprehensive course on ${quickCourseName}.`,
         subject: quickSubject,
+        level: quickLevel,
+        semester: quickSemester,
+        scope: courseScope,
+        faculties: courseScope === 'FACULTY' ? selectedFaculties : [],
+        departments: courseScope === 'DEPARTMENT' ? selectedDepartments : [],
         isAIGenerated: true,
         createdAt: new Date().toISOString()
       }, { merge: true });
@@ -922,45 +938,6 @@ export default function AdminDashboard() {
     setSelectedCourse(course);
   };
 
-  const handleSyncWithConstants = async (courseId: string) => {
-    const { COURSES } = await import('../constants');
-    const defaultCourse = COURSES[courseId as CourseId];
-    
-    if (!defaultCourse) {
-      showToast(`Course ${courseId} not found in default constants.`, "error");
-      return;
-    }
-
-    setConfirmModal({
-      title: "Sync with Constants",
-      message: `Are you sure you want to overwrite ${courseId} in Firestore with the default version from constants.ts?`,
-      onConfirm: async () => {
-        setIsUploading(true);
-        setStatusMessage(`Syncing ${courseId} with defaults...`);
-        
-        try {
-          if (!db) throw new Error("Firestore not initialized");
-          
-          await setDoc(doc(db, 'courses', courseId), {
-            ...defaultCourse,
-            isAIGenerated: false,
-            lastSynced: new Date().toISOString()
-          });
-
-          await refreshCourses();
-          showToast(`Course ${courseId} synced successfully.`, "success");
-        } catch (error: any) {
-          console.error("Sync error:", error);
-          showToast("Failed to sync course: " + error.message, "error");
-        } finally {
-          setIsUploading(false);
-          setStatusMessage('');
-          setConfirmModal(null);
-        }
-      }
-    });
-  };
-
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && file.type === 'application/pdf') {
@@ -993,8 +970,8 @@ export default function AdminDashboard() {
 
   const handleUpload = async () => {
     if (!selectedFile) return;
-    if (!subjectArea) {
-      showToast('Please select a Subject Area before extracting.', 'error');
+    if (!quickDepartment) {
+      showToast('Please select a Department before extracting.', 'error');
       return;
     }
 
@@ -1025,7 +1002,7 @@ export default function AdminDashboard() {
           "id": "${courseCode || 'COURSE_CODE'}",
           "title": "${courseTitle || 'Course Title'}",
           "description": "A brief summary of the course",
-          "subject": "${subjectArea || 'Subject Area'}",
+          "department": "${quickDepartment || 'Department'}",
           "syllabus": [
             {
               "id": "module_id",
@@ -1052,7 +1029,10 @@ export default function AdminDashboard() {
         prompt,
         courseCode,
         courseTitle,
-        subjectArea
+        quickDepartment,
+        quickLevel,
+        quickSemester,
+        quickSubject
       );
 
       setUploadProgress(70);
@@ -1080,7 +1060,11 @@ export default function AdminDashboard() {
       // 4. Enter Review Mode
       const finalCourse = {
         ...courseData,
-        id: (courseData.id || `COURSE_${Date.now()}`) as any
+        id: (courseCode || courseData.id || `COURSE_${Date.now()}`) as any,
+        level: quickLevel,
+        semester: quickSemester,
+        subject: quickSubject,
+        department: quickDepartment
       } as Course;
       setExtractedCourse(finalCourse);
       setRawJsonText(JSON.stringify(finalCourse, null, 2));
@@ -1116,6 +1100,9 @@ export default function AdminDashboard() {
 
       await setDoc(doc(db, 'courses', finalCourseData.id), {
         ...finalCourseData,
+        scope: courseScope,
+        faculties: courseScope === 'FACULTY' ? selectedFaculties : [],
+        departments: courseScope === 'DEPARTMENT' ? selectedDepartments : [],
         createdAt: new Date().toISOString(),
         sourcePdf: selectedFile.name
       });
@@ -1134,7 +1121,6 @@ export default function AdminDashboard() {
       setIsReviewing(false);
       setCourseCode('');
       setCourseTitle('');
-      setSubjectArea('');
       
       await refreshCourses();
     } catch (error: any) {
@@ -1467,6 +1453,54 @@ export default function AdminDashboard() {
                   )}
                 </div>
               </div>
+
+              {/* Admin Debug Info */}
+              <div className="bg-white dark:bg-slate-800 p-8 rounded-[2.5rem] shadow-sm border border-slate-200 dark:border-slate-700">
+                <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
+                  <Shield className="text-blue-500" size={24} />
+                  Curriculum Debugging
+                </h3>
+                <div className="p-6 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-100 dark:border-slate-700/50 font-mono text-xs">
+                  <div className="space-y-2">
+                    <div className="flex justify-between border-b border-slate-200 dark:border-slate-700 pb-2 mb-2">
+                      <span className="font-bold text-slate-900 dark:text-white uppercase tracking-wider">System State</span>
+                      <span className="text-slate-400">v1.4</span>
+                    </div>
+                    <p><span className="text-slate-400">Total Courses:</span> <span className="text-slate-900 dark:text-white">{Object.keys(courses).length}</span></p>
+                    <p><span className="text-slate-400">Your Profile:</span> <span className="text-slate-900 dark:text-white">{JSON.stringify({
+                      dept: profile?.department,
+                      level: profile?.academic_level,
+                      sem: profile?.semester
+                    })}</span></p>
+                    
+                    <div className="mt-6 pt-4 border-t border-slate-200 dark:border-slate-700">
+                      <p className="font-bold text-slate-900 dark:text-white mb-2 uppercase tracking-wider">MTH102 Alignment Check</p>
+                      {courses['MTH102'] ? (
+                        <div className="space-y-1">
+                          <p><span className="text-slate-400">Depts:</span> {courses['MTH102'].departments?.join(', ') || 'None'}</p>
+                          <p><span className="text-slate-400">Level:</span> "{courses['MTH102'].level}"</p>
+                          <p><span className="text-slate-400">Sem:</span> "{courses['MTH102'].semester}"</p>
+                          <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-xl text-blue-600 dark:text-blue-400 font-bold">
+                            Match Results: {(() => {
+                              const normalize = (s: any) => String(s || '').toLowerCase().trim().replace(/\s+/g, ' ');
+                              const userDept = normalize(profile?.department);
+                              const userLevel = normalize(profile?.academic_level).replace('level', '').trim();
+                              const userSem = normalize(profile?.semester);
+                              const c = courses['MTH102'];
+                              const dMatch = c.departments?.some(d => normalize(d) === userDept);
+                              const lMatch = normalize(c.level).replace('level', '').trim() === userLevel;
+                              const sMatch = normalize(c.semester) === userSem;
+                              return `Dept:${dMatch ? '✅' : '❌'} | Lvl:${lMatch ? '✅' : '❌'} | Sem:${sMatch ? '✅' : '❌'}`;
+                            })()}
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-rose-500 font-bold">⚠️ MTH102 NOT FOUND IN STATE</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -1533,7 +1567,7 @@ export default function AdminDashboard() {
 
               {generationStep === 'input' && (
                 <>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                     <div>
                       <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Course Code</label>
                       <input 
@@ -1545,7 +1579,7 @@ export default function AdminDashboard() {
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Course Name</label>
+                      <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Course Title</label>
                       <input 
                         type="text" 
                         placeholder="e.g., Electricity and Magnetism" 
@@ -1554,24 +1588,117 @@ export default function AdminDashboard() {
                         className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                       />
                     </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
                     <div>
-                      <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Subject</label>
+                      <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Course Scope</label>
                       <select 
-                        value={quickSubject}
-                        onChange={(e) => setQuickSubject(e.target.value as Subject)}
+                        value={courseScope}
+                        onChange={(e) => setCourseScope(e.target.value as CourseScope)}
                         className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                       >
-                        <option value="Mathematics">Mathematics</option>
-                        <option value="Physics">Physics</option>
-                        <option value="Chemistry">Chemistry</option>
-                        <option value="Biology">Biology</option>
-                        <option value="Computer Science">Computer Science</option>
-                        <option value="General Studies">General Studies</option>
-                        <option value="General Engineering Training">General Engineering Training</option>
-                        <option value="Zoology">Zoology</option>
+                        <option value="GLOBAL">Global (All Students)</option>
+                        <option value="FACULTY">Faculty-wide</option>
+                        <option value="DEPARTMENT">Specific Departments</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Level</label>
+                      <select 
+                        value={quickLevel}
+                        onChange={(e) => setQuickLevel(e.target.value as Level)}
+                        className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      >
+                        <option value="100">100</option>
+                        <option value="200">200</option>
+                        <option value="300">300</option>
+                        <option value="400">400</option>
+                        <option value="500">500</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Semester</label>
+                      <select 
+                        value={quickSemester}
+                        onChange={(e) => setQuickSemester(e.target.value as Semester)}
+                        className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      >
+                        <option value="1st Semester">1st Semester</option>
+                        <option value="2nd Semester">2nd Semester</option>
                       </select>
                     </div>
                   </div>
+
+                  {courseScope === 'FACULTY' && (
+                    <div className="mb-6 animate-in fade-in slide-in-from-top-2">
+                      <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Select Target Faculties</label>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        {FACULTIES.map(faculty => (
+                          <button
+                            key={faculty}
+                            onClick={() => {
+                              if (selectedFaculties.includes(faculty)) {
+                                setSelectedFaculties(selectedFaculties.filter(f => f !== faculty));
+                              } else {
+                                setSelectedFaculties([...selectedFaculties, faculty]);
+                              }
+                            }}
+                            className={`px-4 py-2 rounded-xl text-sm font-medium transition-all border ${
+                              selectedFaculties.includes(faculty)
+                                ? 'bg-indigo-100 border-indigo-300 text-indigo-700 dark:bg-indigo-900/30 dark:border-indigo-700 dark:text-indigo-300'
+                                : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400'
+                            }`}
+                          >
+                            {faculty}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {courseScope === 'DEPARTMENT' && (
+                    <div className="mb-6 animate-in fade-in slide-in-from-top-2">
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">Select Target Departments</label>
+                        <div className="flex gap-2">
+                          <button 
+                            onClick={() => setSelectedDepartments(['Aerospace Engineering', 'Agricultural Engineering', 'Anatomy', 'Biology', 'Biomedical Engineering', 'Chemical Engineering', 'Chemistry', 'Civil Engineering', 'Computer Engineering', 'Computer Science', 'Dentistry', 'Electrical Engineering', 'Material Science and Engineering', 'Mathematics', 'Mechanical Engineering', 'Mechatronics Engineering', 'Medical Laboratory Science', 'Medicine and Surgery', 'Nursing Science', 'Petroleum Engineering', 'Pharmacy', 'Physics', 'Physiology', 'Public Health', 'Software Engineering'])}
+                            className="text-xs font-bold text-indigo-600 hover:text-indigo-700"
+                          >
+                            Select All
+                          </button>
+                          <button 
+                            onClick={() => setSelectedDepartments([])}
+                            className="text-xs font-bold text-slate-500 hover:text-slate-600"
+                          >
+                            Clear
+                          </button>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-48 overflow-y-auto p-1">
+                        {['Aerospace Engineering', 'Agricultural Engineering', 'Anatomy', 'Biology', 'Biomedical Engineering', 'Chemical Engineering', 'Chemistry', 'Civil Engineering', 'Computer Engineering', 'Computer Science', 'Dentistry', 'Electrical Engineering', 'Material Science and Engineering', 'Mathematics', 'Mechanical Engineering', 'Mechatronics Engineering', 'Medical Laboratory Science', 'Medicine and Surgery', 'Nursing Science', 'Petroleum Engineering', 'Pharmacy', 'Physics', 'Physiology', 'Public Health', 'Software Engineering'].map(dept => (
+                          <button
+                            key={dept}
+                            onClick={() => {
+                              if (selectedDepartments.includes(dept as Department)) {
+                                setSelectedDepartments(selectedDepartments.filter(d => d !== dept));
+                              } else {
+                                setSelectedDepartments([...selectedDepartments, dept as Department]);
+                              }
+                            }}
+                            className={`px-3 py-2 rounded-lg text-xs font-medium text-left transition-all border ${
+                              selectedDepartments.includes(dept as Department)
+                                ? 'bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-900/20 dark:border-indigo-800 dark:text-indigo-400'
+                                : 'bg-white border-slate-200 text-slate-600 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400'
+                            }`}
+                          >
+                            {dept}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   <div className="mb-6">
                     <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Course Outline / Syllabus (Optional)</label>
@@ -1778,21 +1905,48 @@ export default function AdminDashboard() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Subject Area</label>
+                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Level</label>
                 <select
-                  value={subjectArea}
-                  onChange={(e) => setSubjectArea(e.target.value)}
+                  value={quickLevel}
+                  onChange={(e) => setQuickLevel(e.target.value as any)}
                   className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
                 >
-                  <option value="">Select a subject...</option>
-                  <option value="Mathematics">Mathematics</option>
-                  <option value="Physics">Physics</option>
-                  <option value="Chemistry">Chemistry</option>
-                  <option value="Biology">Biology</option>
-                  <option value="Computer Science">Computer Science</option>
-                  <option value="General Studies">General Studies</option>
-                  <option value="General Engineering Training">General Engineering Training</option>
-                  <option value="Zoology">Zoology</option>
+                  <option value="100">100 Level</option>
+                  <option value="200">200 Level</option>
+                  <option value="300">300 Level</option>
+                  <option value="400">400 Level</option>
+                  <option value="500">500 Level</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Semester</label>
+                <select
+                  value={quickSemester}
+                  onChange={(e) => setQuickSemester(e.target.value as any)}
+                  className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                >
+                  <option value="Harmattan">Harmattan</option>
+                  <option value="Rain">Rain</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Department</label>
+                <select
+                  value={quickDepartment}
+                  onChange={(e) => setQuickDepartment(e.target.value as Department)}
+                  className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                >
+                  <option value="">Select a department...</option>
+                  {[
+                    'Aerospace Engineering', 'Agricultural Engineering', 'Anatomy', 'Biology', 'Biomedical Engineering', 
+                    'Chemical Engineering', 'Chemistry', 'Civil Engineering', 'Computer Engineering', 'Computer Science', 
+                    'Dentistry', 'Electrical Engineering', 'Material Science and Engineering', 'Mathematics', 
+                    'Mechanical Engineering', 'Mechatronics Engineering', 'Medical Laboratory Science', 
+                    'Medicine and Surgery', 'Nursing Science', 'Petroleum Engineering', 'Pharmacy', 'Physics', 
+                    'Physiology', 'Public Health', 'Software Engineering'
+                  ].map((dept) => (
+                    <option key={dept} value={dept}>{dept}</option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -2021,13 +2175,6 @@ export default function AdminDashboard() {
                   <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                     {!showArchived && (
                       <>
-                        <button 
-                          onClick={() => handleSyncWithConstants(course.id)}
-                          className="p-2 text-slate-400 hover:text-indigo-500"
-                          title="Sync with Constants (Force 10 Modules)"
-                        >
-                          <Activity size={18} />
-                        </button>
                         <button 
                           onClick={() => handleEditCourse(course)}
                           className="p-2 text-slate-400 hover:text-emerald-500"

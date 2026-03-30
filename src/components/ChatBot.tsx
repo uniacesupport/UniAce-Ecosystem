@@ -524,7 +524,7 @@ export default function ChatBot({
                     {msg.image && (
                       <img src={msg.image} alt="User upload" className="rounded-xl mb-3 max-w-full h-auto border border-white/10 shadow-sm" />
                     )}
-                    <div className="text-inherit prose prose-sm prose-slate dark:prose-invert max-w-none">
+                    <div className="text-inherit max-w-none">
                       <MarkdownRenderer content={msg.text} />
                     </div>
                     

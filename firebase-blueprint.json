@@ -8,10 +8,10 @@
         "id": { "type": "string", "description": "Course ID (e.g., MAT101)" },
         "title": { "type": "string", "description": "Course title" },
         "description": { "type": "string", "description": "Course description" },
-        "subject": { "type": "string", "description": "Subject area" },
+        "department": { "type": "string", "description": "Department area" },
         "isAIGenerated": { "type": "boolean", "description": "Whether the content was AI generated" }
       },
-      "required": ["id", "title", "subject"]
+      "required": ["id", "title", "department"]
     },
     "Module": {
       "title": "Module",
@@ -131,9 +131,36 @@
         "topicTitle": { "type": "string", "description": "Title of the topic for display purposes" }
       },
       "required": ["userId", "topicId", "courseId", "easinessFactor", "interval", "repetitions", "nextReviewDate", "lastReviewed", "topicTitle"]
+    },
+    "CCMASCore": {
+      "title": "CCMASCore",
+      "description": "The 70% NUC core curriculum for a specific discipline and level",
+      "type": "object",
+      "properties": {
+        "discipline": { "type": "string", "description": "e.g., Computing, Engineering, Sciences" },
+        "level": { "type": "string", "description": "e.g., 100, 200" },
+        "coreCourses": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "code": { "type": "string" },
+              "title": { "type": "string" },
+              "units": { "type": "number" },
+              "description": { "type": "string" }
+            }
+          }
+        },
+        "totalCoreUnits": { "type": "number" }
+      },
+      "required": ["discipline", "level", "coreCourses", "totalCoreUnits"]
     }
   },
   "firestore": {
+    "/ccmas_cores/{coreId}": {
+      "schema": "CCMASCore",
+      "description": "NUC 70% core curriculum data"
+    },
     "/courses/{courseId}": {
       "schema": "Course",
       "description": "Top-level courses"

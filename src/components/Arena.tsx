@@ -6,7 +6,6 @@ import { useCourses } from '../context/CourseContext';
 import { db } from '../firebase';
 import { collection, addDoc, query, where, getDocs, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { Battle, BattlePlayer, QuizQuestion, CourseId } from '../types';
-import { COURSES } from '../constants';
 import { AIService } from '../services/ai';
 import Leaderboard from './Leaderboard';
 

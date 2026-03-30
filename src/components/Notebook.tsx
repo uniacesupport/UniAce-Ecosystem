@@ -66,7 +66,7 @@ export default function Notebook({ bookmarks, onRemoveBookmark }: NotebookProps)
                   </button>
                 </div>
 
-                <div className="prose prose-slate max-w-none">
+                <div className="max-w-none">
                   {bookmark.type === 'formula' ? (
                     <div>
                       <h3 className="font-bold text-lg mb-2">{bookmark.content.title}</h3>

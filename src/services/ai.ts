@@ -158,13 +158,16 @@ CRITICAL SECURITY AND ROLEPLAY INSTRUCTIONS:
     const response = await callAI({ parts }, systemInstruction);
     const modelText = response.text || "I'm sorry, I couldn't process that.";
     
+    // Sanitize LaTeX for better rendering
+    const sanitizedText = sanitizeLatex(modelText);
+    
     // Extract grounding sources (only available if using Gemini directly)
     const sources = (response as any).candidates?.[0]?.groundingMetadata?.groundingChunks?.map((chunk: any) => ({
       title: chunk.web?.title || 'Source',
       uri: chunk.web?.uri || '#'
     })).filter((s: any) => s.uri !== '#') || [];
 
-    return { text: modelText, sources };
+    return { text: sanitizedText, sources };
   },
 
   generateMiniLessonStream: async function* (
@@ -350,7 +353,17 @@ ALWAYS use LaTeX for ALL mathematical formulas and variables (e.g., use $x$ inst
     const response = await callAI(prompt, undefined, 'json', 2500, 'quiz');
     try {
       const data = extractJSON(response.text || "[]");
-      return ensureArray(data);
+      const questions = ensureArray(data);
+      
+      // Sanitize LaTeX in all question fields
+      return questions.map((q: any) => ({
+        ...q,
+        question: sanitizeLatex(q.question),
+        options: q.options?.map((opt: string) => sanitizeLatex(opt)),
+        correctAnswer: sanitizeLatex(q.correctAnswer),
+        explanation: sanitizeLatex(q.explanation),
+        hint: sanitizeLatex(q.hint)
+      }));
     } catch (e) {
       console.error("Quiz generation error:", e);
       throw e;
@@ -380,7 +393,15 @@ ALWAYS use LaTeX for ALL mathematical formulas and variables (e.g., use $x$ inst
 
     const response = await callAI(prompt, undefined, 'json', 1000, 'quiz');
     try {
-      return extractJSON(response.text || "{}");
+      const q = extractJSON(response.text || "{}");
+      return {
+        ...q,
+        question: sanitizeLatex(q.question),
+        options: q.options?.map((opt: string) => sanitizeLatex(opt)),
+        correctAnswer: sanitizeLatex(q.correctAnswer),
+        explanation: sanitizeLatex(q.explanation),
+        hint: sanitizeLatex(q.hint)
+      };
     } catch (e) {
       console.error("Quick check generation error:", e);
       throw e;
@@ -423,7 +444,14 @@ ALWAYS use LaTeX for ALL mathematical formulas and variables (e.g., use $x$ inst
     const response = await callAI(prompt, undefined, 'json', 2000, 'quiz');
     try {
       const data = extractJSON(response.text || "[]");
-      return ensureArray(data);
+      const cards = ensureArray(data);
+      
+      // Sanitize LaTeX in flashcard fields
+      return cards.map((c: any) => ({
+        ...c,
+        front: sanitizeLatex(c.front),
+        back: sanitizeLatex(c.back)
+      }));
     } catch (e) {
       console.error("Flashcard generation error:", e);
       throw e;
@@ -724,7 +752,7 @@ ALWAYS use LaTeX for ALL mathematical formulas and variables (e.g., use $x$ inst
     return await response.json();
   },
   
-  extractCourseFromPDF: async (pdfData: string, mimeType: string, prompt: string, courseCode: string, courseTitle: string, subjectArea: string) => {
+  extractCourseFromPDF: async (pdfData: string, mimeType: string, prompt: string, courseCode: string, courseTitle: string, department: string, level: string, semester: string, subject: string) => {
     const token = await getAuthToken();
     const response = await fetch('/api/admin/extract-course', {
       method: 'POST',
@@ -732,7 +760,7 @@ ALWAYS use LaTeX for ALL mathematical formulas and variables (e.g., use $x$ inst
         'Content-Type': 'application/json',
         ...(token ? { 'Authorization': `Bearer ${token}` } : {})
       },
-      body: JSON.stringify({ pdfData, mimeType, prompt, courseCode, courseTitle, subjectArea })
+      body: JSON.stringify({ pdfData, mimeType, prompt, courseCode, courseTitle, department, level, semester, subject })
     });
     
     if (!response.ok) throw new Error('Failed to extract course from PDF');

@@ -30,13 +30,14 @@ import GlobalNotification from './components/GlobalNotification';
 import PaywallManager from './components/PaywallManager';
 import PWAInstallPrompt from './components/PWAInstallPrompt';
 import Calculator from './components/Calculator';
+import AcademicProfileModal from './components/AcademicProfileModal';
 import { CalculatorProvider, useCalculator } from './context/CalculatorContext';
 import { useUserProgress } from './hooks/useUserProgress';
 import { useAuth } from './context/AuthContext';
 import { useCourses } from './context/CourseContext';
 import { Menu } from 'lucide-react';
 import { Toaster } from 'react-hot-toast';
-import { View, ChatMessage, CourseId, Subject } from './types';
+import { View, ChatMessage, CourseId, Department, Semester } from './types';
 import { generateModuleContent, generateCourseSkeleton } from './services/aiCourseGenerator';
 
 export default function App() {
@@ -54,7 +55,35 @@ function AppContent() {
   const { progress, addXp, updateMastery, recordStudyTime, addBookmark, removeBookmark, enrollCourse, unenrollCourse, updateAIPersonality, isOnline, checkAndUpdateStreak } = useUserProgress();
   const [activeCourseId, setActiveCourseId] = useState<CourseId | null>(null);
   const [activeView, setActiveView] = useState<View>('hub');
-  const [activeSubject, setActiveSubject] = useState<Subject>('Mathematics');
+  const [activeDepartment, setActiveDepartment] = useState<Department>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('activeDepartment');
+      if (saved) return saved as Department;
+    }
+    return 'Mathematics';
+  });
+
+  const [activeSemester, setActiveSemester] = useState<Semester>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('activeSemester');
+      if (saved) return saved as Semester;
+    }
+    return '1st Semester';
+  });
+
+  useEffect(() => {
+    if (profile?.department) {
+      setActiveDepartment(profile.department as Department);
+      localStorage.setItem('activeDepartment', profile.department);
+    }
+  }, [profile?.department]);
+
+  useEffect(() => {
+    if (profile?.semester) {
+      setActiveSemester(profile.semester as Semester);
+      localStorage.setItem('activeSemester', profile.semester);
+    }
+  }, [profile?.semester]);
   
   const activeCourse = activeCourseId ? courses[activeCourseId] : null;
 
@@ -229,8 +258,11 @@ function AppContent() {
     return <AdminDashboard />;
   }
 
+  const needsAcademicProfile = user && profile && (!profile.department || !profile.academic_level || !profile.semester);
+
   return (
     <div className="flex h-screen w-full bg-slate-50 dark:bg-zinc-950 font-sans overflow-hidden relative transition-colors duration-300">
+      {needsAcademicProfile && <AcademicProfileModal />}
       {user && (
         <PaywallManager onUpgrade={() => setActiveView('pricing')} />
       )}
@@ -278,18 +310,19 @@ function AppContent() {
         {/* View Switcher */}
         {activeView === 'hub' && (
           <CourseHub 
-            activeSubject={activeSubject}
-            onSubjectChange={setActiveSubject}
             onSelectCourse={handleCourseSelect} 
             onProfileClick={() => setActiveView('profile')}
             onViewSelect={handleViewSelect}
             enrolledCourses={progress.enrolledCourses || []}
+            progress={progress}
           />
         )}
 
         {activeView === 'dashboard' && (
           <Dashboard 
-            activeSubject={activeSubject}
+            activeDepartment={activeDepartment}
+            activeSemester={activeSemester}
+            setActiveSemester={setActiveSemester}
             onModuleSelect={handleModuleSelect} 
             onSubTopicSelect={handleSubTopicSelect}
             onViewSelect={handleViewSelect}
@@ -298,6 +331,7 @@ function AppContent() {
             progress={progress}
             activeCourseId={activeCourseId}
             syllabus={syllabus}
+            onToggleCalculator={() => setIsCalculatorOpen(!isCalculatorOpen)}
           />
         )}
 
@@ -548,7 +582,9 @@ function AppContent() {
             
             if (!isAdmin) {
               return <Dashboard 
-                activeSubject={activeSubject}
+                activeDepartment={activeDepartment}
+                activeSemester={activeSemester}
+                setActiveSemester={setActiveSemester}
                 onModuleSelect={handleModuleSelect} 
                 onSubTopicSelect={handleSubTopicSelect}
                 onViewSelect={handleViewSelect}
@@ -557,6 +593,7 @@ function AppContent() {
                 progress={progress}
                 activeCourseId={activeCourseId}
                 syllabus={syllabus}
+                onToggleCalculator={() => setIsCalculatorOpen(!isCalculatorOpen)}
               />;
             }
             

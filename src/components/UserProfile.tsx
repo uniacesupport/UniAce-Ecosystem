@@ -3,7 +3,7 @@ import { ArrowLeft, Edit2, BarChart2, ChevronRight, Mail, User, BookMarked, Moon
 import { useAuth } from '../context/AuthContext';
 import { useUserProgress } from '../hooks/useUserProgress';
 import { useTheme } from '../context/ThemeContext';
-import { View } from '../types';
+import { View, Department, Level, Semester } from '../types';
 import { db, storage } from '../firebase';
 import { collection, query, where, orderBy, limit, getDocs, Timestamp } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -24,6 +24,37 @@ interface UserProfileProps {
   onNavigate: (view: View) => void;
 }
 
+const DEPARTMENTS: Department[] = [
+  'Aerospace Engineering',
+  'Agricultural Engineering',
+  'Anatomy',
+  'Biology',
+  'Biomedical Engineering',
+  'Chemical Engineering',
+  'Chemistry',
+  'Civil Engineering',
+  'Computer Engineering',
+  'Computer Science',
+  'Dentistry',
+  'Electrical Engineering',
+  'Material Science and Engineering',
+  'Mathematics',
+  'Mechanical Engineering',
+  'Mechatronics Engineering',
+  'Medical Laboratory Science',
+  'Medicine and Surgery',
+  'Nursing Science',
+  'Petroleum Engineering',
+  'Pharmacy',
+  'Physics',
+  'Physiology',
+  'Public Health',
+  'Software Engineering'
+];
+
+const LEVELS: Level[] = ['100', '200', '300', '400', '500'];
+const SEMESTERS: Semester[] = ['1st Semester', '2nd Semester'];
+
 export default function UserProfile({ onBack, onNavigate }: UserProfileProps) {
   const { user, logout, profile, updateProfileData } = useAuth();
   const { progress } = useUserProgress();
@@ -38,6 +69,9 @@ export default function UserProfile({ onBack, onNavigate }: UserProfileProps) {
   const [selectedTheme, setSelectedTheme] = useState(profile?.themeColor || 'blue');
   const [displayName, setDisplayName] = useState(profile?.displayName || user?.displayName || '');
   const [bio, setBio] = useState(profile?.bio || '');
+  const [department, setDepartment] = useState<Department | ''>((profile?.department as Department) || '');
+  const [academicLevel, setAcademicLevel] = useState<Level | ''>((profile?.academic_level as Level) || '');
+  const [semester, setSemester] = useState<Semester | ''>((profile?.semester as Semester) || '');
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -102,7 +136,10 @@ export default function UserProfile({ onBack, onNavigate }: UserProfileProps) {
         photoURL: selectedAvatar, 
         themeColor: selectedTheme,
         displayName: displayName || 'Scholar',
-        bio: bio
+        bio: bio,
+        department: department as Department,
+        academic_level: academicLevel as Level,
+        semester: semester as Semester
       });
     }
     setIsEditingProfile(false);
@@ -247,11 +284,26 @@ export default function UserProfile({ onBack, onNavigate }: UserProfileProps) {
               <div>
                 <h2 className="text-xl font-bold text-slate-900 dark:text-white">{profile?.displayName || user?.displayName || 'Scholar'}</h2>
                 <p className="text-slate-500 dark:text-slate-400 text-sm">{user?.email || 'No email linked'}</p>
-                <div className="flex items-center gap-2 mt-1">
+                <div className="flex flex-wrap items-center gap-2 mt-2">
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
                     <Zap size={12} />
                     {progress.streak} Day Streak
                   </span>
+                  {profile?.department && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                      {profile.department}
+                    </span>
+                  )}
+                  {profile?.academic_level && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
+                      {profile.academic_level}L
+                    </span>
+                  )}
+                  {profile?.semester && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+                      {profile.semester}
+                    </span>
+                  )}
                 </div>
                 {profile?.bio && (
                   <p className="mt-2 text-sm text-slate-600 dark:text-slate-400 italic line-clamp-2">
@@ -312,6 +364,50 @@ export default function UserProfile({ onBack, onNavigate }: UserProfileProps) {
                   rows={3}
                   className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all resize-none"
                 />
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-1 block">Department</label>
+                <select
+                  value={department}
+                  onChange={(e) => setDepartment(e.target.value as Department)}
+                  className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                >
+                  <option value="" disabled>Select Department</option>
+                  {DEPARTMENTS.map(dept => (
+                    <option key={dept} value={dept}>{dept}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-1 block">Level</label>
+                  <select
+                    value={academicLevel}
+                    onChange={(e) => setAcademicLevel(e.target.value as Level)}
+                    className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                  >
+                    <option value="" disabled>Select Level</option>
+                    {LEVELS.map(level => (
+                      <option key={level} value={level}>{level}L</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-1 block">Semester</label>
+                  <select
+                    value={semester}
+                    onChange={(e) => setSemester(e.target.value as Semester)}
+                    className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                  >
+                    <option value="" disabled>Select Semester</option>
+                    {SEMESTERS.map(sem => (
+                      <option key={sem} value={sem}>{sem}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
             </div>
 

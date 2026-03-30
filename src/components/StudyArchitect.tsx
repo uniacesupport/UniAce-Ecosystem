@@ -215,7 +215,7 @@ export const StudyArchitect: React.FC<StudyArchitectProps> = ({ progress, onClos
                       </div>
                       <input 
                         type="text" 
-                        placeholder="Course ID (e.g. MAT101)"
+                        placeholder="Course ID (e.g. MTH101)"
                         value={entry.courseId}
                         onChange={(e) => updateTimetableEntry(entry.id, { courseId: e.target.value })}
                         className="flex-1 min-w-[150px] bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-medium outline-none focus:border-purple-500"
@@ -267,7 +267,7 @@ export const StudyArchitect: React.FC<StudyArchitectProps> = ({ progress, onClos
                       />
                       <input 
                         type="text" 
-                        placeholder="Course ID (e.g. MAT101)"
+                        placeholder="Course ID (e.g. MTH101)"
                         value={exam.courseId}
                         onChange={(e) => updateExam(exam.id, { courseId: e.target.value })}
                         className="flex-1 min-w-[150px] bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-medium outline-none focus:border-amber-500"

@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { COURSES } from '../constants';
 import { CourseService } from '../services/courseService';
 import { db } from '../firebase';
 import { doc, writeBatch } from 'firebase/firestore';
@@ -15,71 +14,12 @@ export default function AdminSeeder({ onComplete }: { onComplete?: () => void })
   const seedData = async () => {
     setShowConfirm(false);
     setStatus('loading');
-    setMessage('Starting migration...');
-    const courseIds = Object.keys(COURSES);
-    const total = courseIds.length;
-
-    try {
-      for (let i = 0; i < total; i++) {
-        const courseId = courseIds[i];
-        const course = COURSES[courseId];
-        setMessage(`Checking ${course.title}...`);
-        
-        // Safety Check: Don't overwrite if it already exists in Firestore
-        // This prevents deleting your AI-generated courses
-        const courseRef = doc(db, 'courses', courseId);
-        
-        const batch = writeBatch(db);
-        
-        // 1. Course Doc (Merge instead of overwrite)
-        batch.set(courseRef, {
-          id: course.id,
-          title: course.title,
-          description: course.description,
-          subject: course.subject,
-          syllabus: course.syllabus,
-          isAIGenerated: false,
-          updatedAt: new Date().toISOString()
-        }, { merge: true });
-
-        // 2. Modules & Lessons (Merge instead of overwrite)
-        course.syllabus.forEach((module, mIndex) => {
-          const moduleRef = doc(db, `courses/${courseId}/modules`, module.id);
-          batch.set(moduleRef, {
-            title: module.title,
-            order: mIndex + 1
-          }, { merge: true });
-
-          module.subTopics.forEach((subTopic, sIndex) => {
-            const lessonRef = doc(db, `courses/${courseId}/modules/${module.id}/lessons`, subTopic.id);
-            batch.set(lessonRef, {
-              title: subTopic.title,
-              content: subTopic.content,
-              order: sIndex + 1
-            }, { merge: true });
-          });
-        });
-
-        // 3. Formulas
-        if (course.formulas) {
-          course.formulas.forEach((formula) => {
-            const formulaRef = doc(db, `courses/${courseId}/formulas`, formula.id);
-            batch.set(formulaRef, formula, { merge: true });
-          });
-        }
-
-        await batch.commit();
-        setProgress(((i + 1) / total) * 100);
-      }
-
-      setStatus('success');
-      setMessage('Migration completed! Existing courses were preserved.');
-      if (onComplete) onComplete();
-    } catch (error: any) {
-      console.error('Migration error:', error);
+    setMessage('Migration is disabled. Courses should be managed via the Admin Dashboard.');
+    
+    setTimeout(() => {
       setStatus('error');
-      setMessage(`Error: ${error.message}`);
-    }
+      if (onComplete) onComplete();
+    }, 2000);
   };
 
   return (

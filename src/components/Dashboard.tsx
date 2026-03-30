@@ -1,6 +1,6 @@
 import { Book, Layers, Activity, FileText, Brain, ArrowRight, GraduationCap, Award, Calculator, Zap, Flame, Sparkles, RefreshCw, Target, Loader2, Calendar, CheckCircle2, MessageCircle, Bot, Bell, Maximize2, Swords, Lightbulb, ShieldCheck, Camera, Layout, Lock } from 'lucide-react';
 import { motion } from 'motion/react';
-import { UserProgress, View, Module, CourseId, Assignment, Subject } from '../types';
+import { UserProgress, View, Module, CourseId, Assignment, Department, Semester } from '../types';
 import { getRecommendations } from '../utils/learningPath';
 import { LogService } from '../services/logService';
 import { StudyArchitect } from './StudyArchitect';
@@ -32,7 +32,9 @@ interface DashboardProps {
   progress: UserProgress;
   activeCourseId: CourseId | null;
   syllabus: Module[];
-  activeSubject: Subject;
+  activeDepartment: Department;
+  activeSemester: Semester;
+  setActiveSemester: (semester: Semester) => void;
   onToggleCalculator: () => void;
 }
 
@@ -44,7 +46,7 @@ interface SmartMission {
   type: 'review' | 'new' | 'mastery';
 }
 
-export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSelect, onProfileClick, onCourseSelect, progress, activeCourseId, syllabus, activeSubject, onToggleCalculator }: DashboardProps) {
+export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSelect, onProfileClick, onCourseSelect, progress, activeCourseId, syllabus, activeDepartment, activeSemester, setActiveSemester, onToggleCalculator }: DashboardProps) {
   const { user, profile, signInWithGoogle } = useAuth();
   const { courses } = useCourses();
   const { isPremium, isTrialActive, daysRemaining } = usePremiumStatus();
@@ -89,10 +91,10 @@ export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSele
 
   const recommendations = getRecommendations(progress, syllabus);
 
-  // Filter enrolled courses by active subject
+  // All enrolled courses should be visible in the dashboard, filtered by semester
   const enrolledCourses = (progress.enrolledCourses || []).filter(courseId => {
     const course = courses[courseId];
-    return course && course.subject === activeSubject;
+    return course && course.semester === activeSemester;
   });
 
   const upcomingAssignments = (progress.assignments || [])
@@ -140,9 +142,19 @@ export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSele
           <div className="space-y-1">
             <h1 className="text-xl sm:text-3xl lg:text-4xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-3 flex-wrap">
               🎓 Hi {user?.displayName?.split(' ')[0] || 'Scholar'}
-              <span className="text-sm sm:text-lg bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 px-3 py-1 rounded-full border border-emerald-200 dark:border-emerald-800 whitespace-nowrap">
-                Lvl {progress.level}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-sm sm:text-lg bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 px-3 py-1 rounded-full border border-emerald-200 dark:border-emerald-800 whitespace-nowrap">
+                  Lvl {progress.level}
+                </span>
+                <select 
+                  value={activeSemester}
+                  onChange={(e) => setActiveSemester(e.target.value as Semester)}
+                  className="text-xs sm:text-sm bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-3 py-1 rounded-full border border-blue-200 dark:border-blue-800 outline-none cursor-pointer hover:bg-blue-200 dark:hover:bg-blue-800/50 transition-colors"
+                >
+                  <option value="1st Semester">1st Sem</option>
+                  <option value="2nd Semester">2nd Sem</option>
+                </select>
+              </div>
             </h1>
             <p className="text-sm sm:text-base text-slate-500 dark:text-slate-400 font-medium">Ready to master your courses today?</p>
           </div>
@@ -379,7 +391,7 @@ export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSele
               })
             ) : (
               <div className="col-span-full text-center py-12 text-slate-400">
-                <p>No enrolled courses for {activeSubject}. Visit the Course Hub to enroll!</p>
+                <p>No enrolled courses for {activeDepartment}. Visit the Course Hub to enroll!</p>
               </div>
             )}
           </div>
