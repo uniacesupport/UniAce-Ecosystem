@@ -47,32 +47,50 @@ const extractJSON = (text: string) => {
     return JSON.parse(cleaned);
   } catch (e) {
     // 3. If direct parse fails, try to find the JSON structure using regex
-    const match = cleaned.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
-    if (match) {
-      const potentialJson = match[0];
-      try {
-        return JSON.parse(potentialJson);
-      } catch (e2) {
-        // 4. Try jsonrepair
+    // Find all possible start indices
+    const startIndices = [];
+    for (let i = 0; i < cleaned.length; i++) {
+      if (cleaned[i] === '{' || cleaned[i] === '[') {
+        startIndices.push(i);
+      }
+    }
+
+    let lastError = null;
+    for (const startIndex of startIndices) {
+      const isArray = cleaned[startIndex] === '[';
+      const closingChar = isArray ? ']' : '}';
+      const endIndex = cleaned.lastIndexOf(closingChar);
+      
+      if (endIndex > startIndex) {
+        const potentialJson = cleaned.substring(startIndex, endIndex + 1);
         try {
-          const repaired = jsonrepair(potentialJson);
-          return JSON.parse(repaired);
-        } catch (e3) {
-          // 5. Last resort: Repair common LaTeX backslash issues in JSON
-          // AI often fails to escape backslashes correctly for JSON strings.
-          const backslashRepaired = potentialJson.replace(/\\(?![\\\/bfnrtu"]|u[0-9a-fA-F]{4})/g, '\\\\');
+          return JSON.parse(potentialJson);
+        } catch (e2) {
+          // Try jsonrepair
           try {
-            const finalRepair = jsonrepair(backslashRepaired);
-            return JSON.parse(finalRepair);
-          } catch (e4) {
-            console.error("Failed to parse AI JSON response after all attempts.");
-            console.error("Original text:", text);
-            console.error("Extracted segment:", potentialJson);
-            throw new Error("AI returned invalid JSON format.");
+            const repaired = jsonrepair(potentialJson);
+            return JSON.parse(repaired);
+          } catch (e3) {
+            // Last resort: Repair common LaTeX backslash issues in JSON
+            const backslashRepaired = potentialJson.replace(/\\(?![\\\/bfnrtu"]|u[0-9a-fA-F]{4})/g, '\\\\');
+            try {
+              const finalRepair = jsonrepair(backslashRepaired);
+              return JSON.parse(finalRepair);
+            } catch (e4) {
+              lastError = e4;
+              // Continue to next start index
+            }
           }
         }
       }
     }
+    
+    if (lastError) {
+      console.error("Failed to parse AI JSON response after all attempts.");
+      console.error("Original text:", text);
+      throw new Error(`AI returned invalid JSON format: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
+    }
+    
     throw e;
   }
 };

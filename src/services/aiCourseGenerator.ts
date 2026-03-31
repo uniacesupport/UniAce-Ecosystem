@@ -90,16 +90,28 @@ async function callGenerateAPI(prompt: string, type: 'skeleton' | 'module' | 'le
       throw new Error(data.error || 'Failed to generate course content');
     }
 
-    const content = data.text;
+    const rawContent = data.text;
 
     // Log AI success
     import('./logService').then(({ LogService }) => {
       LogService.log('success', 'ai', `AI Generation successful for ${type}`, { provider, type });
     });
 
-    if (!content) {
+    if (!rawContent) {
       throw new Error("Failed to generate course content");
     }
+
+    // Strip markdown code block wrappers if the AI incorrectly wrapped the response
+    let content = rawContent.trim();
+    if (content.startsWith('```json')) {
+      content = content.substring(7);
+    } else if (content.startsWith('```')) {
+      content = content.substring(3);
+    }
+    if (content.endsWith('```')) {
+      content = content.substring(0, content.length - 3);
+    }
+    content = content.trim();
 
     try {
       // Find the first JSON-like character
@@ -121,34 +133,52 @@ async function callGenerateAPI(prompt: string, type: 'skeleton' | 'module' | 'le
         throw new Error("No JSON object or array found in response");
       }
       
-      // Try to find the last closing bracket/brace
-      const closingChar = isArray ? ']' : '}';
-      let endIndex = content.lastIndexOf(closingChar);
+      let parsedData = null;
+      let lastError = null;
+
+      // Try parsing from the first '{' or '['. If it fails, try the next one.
+      let currentIndex = startIndex;
+      let currentIsArray = isArray;
       
-      // If the JSON is truncated, endIndex might be pointing to an internal bracket.
-      // We'll try to use jsonrepair on the substring from startIndex to the end of the content.
-      // jsonrepair is excellent at fixing truncated JSON by adding missing closing characters.
-      let jsonToRepair = content.substring(startIndex).trim();
-      
-      // If we found a closing character, and there's significant non-whitespace text after it,
-      // we might want to truncate at that character to avoid feeding conversational tail to jsonrepair.
-      // However, for truncated responses, we usually want everything to the end.
-      if (endIndex !== -1 && endIndex > startIndex) {
-        const tail = content.substring(endIndex + 1).trim();
-        // If the tail is short or looks like it could be part of the JSON (e.g. just whitespace or a few chars),
-        // we keep it. If it looks like a new sentence, we might have found the actual end.
-        if (tail.length > 0 && /^[a-zA-Z]{2,}/.test(tail)) {
-          jsonToRepair = content.substring(startIndex, endIndex + 1).trim();
+      while (currentIndex !== -1 && parsedData === null) {
+        let jsonToRepair = content.substring(currentIndex).trim();
+        
+        const closingChar = currentIsArray ? ']' : '}';
+        let endIndex = content.lastIndexOf(closingChar);
+        
+        if (endIndex !== -1 && endIndex > currentIndex) {
+          const tail = content.substring(endIndex + 1).trim();
+          if (tail.length > 0 && /^[a-zA-Z]{2,}/.test(tail)) {
+            jsonToRepair = content.substring(currentIndex, endIndex + 1).trim();
+          }
+        }
+        
+        try {
+          const repaired = jsonrepair(jsonToRepair);
+          parsedData = JSON.parse(repaired);
+        } catch (e) {
+          lastError = e;
+          // Find the next possible start character
+          const nextBracket = content.indexOf('[', currentIndex + 1);
+          const nextBrace = content.indexOf('{', currentIndex + 1);
+          
+          if (nextBracket !== -1 && (nextBrace === -1 || nextBracket < nextBrace)) {
+            currentIndex = nextBracket;
+            currentIsArray = true;
+          } else if (nextBrace !== -1) {
+            currentIndex = nextBrace;
+            currentIsArray = false;
+          } else {
+            currentIndex = -1;
+          }
         }
       }
-      
-      try {
-        // JSON Repair
-        const repaired = jsonrepair(jsonToRepair);
-        return JSON.parse(repaired);
-      } catch (e) {
-        console.error("Failed to parse extracted JSON:", jsonToRepair);
-        throw new Error(`AI generated invalid JSON format: ${e instanceof Error ? e.message : String(e)}`);
+
+      if (parsedData !== null) {
+        return parsedData;
+      } else {
+        console.error("Failed to parse extracted JSON. Last error:", lastError);
+        throw new Error(`AI generated invalid JSON format: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
       }
     } catch (e) {
       console.error("Failed to parse AI JSON response. Error:", e, "Content:", content);
@@ -194,6 +224,7 @@ export async function generateCourseFormulas(
     }
     CRITICAL: Do NOT wrap the JSON in markdown blocks. Output raw JSON only.
     CRITICAL: Escape all backslashes in LaTeX strings (e.g., "\\\\frac{a}{b}").
+    CRITICAL: Ensure all double quotes inside strings are properly escaped (e.g., \\"word\\").
   `;
 
   const result = await callGenerateAPI(formulaPrompt, 'skeleton', provider);
@@ -255,6 +286,7 @@ export async function generateCourseSkeleton(
     4. Each module should have a list of topics that will be covered in the quiz.
     
     CRITICAL: You must return ONLY valid JSON.
+    CRITICAL: Ensure all double quotes inside strings are properly escaped (e.g., \\"word\\").
     CRITICAL: If generating electives for a curriculum, ensure they do not overlap with the core courses: ${ccmasCore?.coreCourses.map((c: any) => c.code).join(', ') || 'None'}.
     CRITICAL: Ensure the curriculum is robust, academically rigorous, and follows NUC guidelines or relevant global standards.
     {
@@ -360,6 +392,7 @@ export async function generateLessonContent(
       }
     }
     CRITICAL: Do NOT wrap the JSON in markdown blocks. Output raw JSON only.
+    CRITICAL: Ensure all double quotes inside the "content" string are properly escaped (e.g., \\"word\\").
     8. CRITICAL: Ensure the lesson is COMPLETE and does not cut off abruptly. Provide a clear conclusion or summary at the end.
     9. CRITICAL: The content must be academically rigorous and align with the latest NUC or relevant global curriculum standards.
   `;
@@ -391,7 +424,7 @@ export async function generateModuleQuiz(
     4. CRITICAL: Be concise in explanations and hints to avoid output truncation.
     5. CRITICAL: Do NOT include any conversational text, self-corrections, or "thinking out loud" inside the JSON fields. 
     6. CRITICAL: The "explanation" field must provide a detailed academic justification for the correct answer and why other options are incorrect.
-    7. CRITICAL: Ensure all double quotes inside strings are properly escaped.
+    7. CRITICAL: Ensure all double quotes inside strings are properly escaped (e.g., \\"word\\").
     8. CRITICAL: For LaTeX in JSON strings, use double backslashes (e.g., "\\\\mathbf"). Do NOT use triple backslashes.
     9. CRITICAL: Ensure the quiz meets the academic standards set by NUC or relevant global guidelines.
     10. Return ONLY valid JSON:

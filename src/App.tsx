@@ -315,6 +315,8 @@ function AppContent() {
             onViewSelect={handleViewSelect}
             enrolledCourses={progress.enrolledCourses || []}
             progress={progress}
+            activeSemester={activeSemester}
+            setActiveSemester={setActiveSemester}
           />
         )}
 

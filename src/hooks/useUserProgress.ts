@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { UserProgress, Achievement, Bookmark, CourseId, AIPersonality } from '../types';
+import { UserProgress, Achievement, Bookmark, CourseId, AIPersonality, Department } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../firebase';
 import { doc, setDoc, onSnapshot, getDoc, updateDoc, arrayUnion, arrayRemove, increment } from 'firebase/firestore';
 import { GamificationService, BADGES } from '../services/gamification';
 import { useCourses } from '../context/CourseContext';
+import { DEPARTMENT_TO_FACULTY } from '../constants';
 
 const INITIAL_ACHIEVEMENTS: Achievement[] = BADGES.map(b => ({
   id: b.id,
@@ -479,18 +480,20 @@ export function useUserProgress() {
     }
 
     const normalize = (s: any) => String(s || '').toLowerCase().trim().replace(/\s+/g, ' ');
+    const extractLevel = (lvl: any) => String(lvl || '').match(/\d+/)?.[0] || '';
+    
     const userDept = normalize(profile.department);
-    const userFaculty = normalize(profile.faculty || '');
-    const userLevel = normalize(profile.academic_level).replace(/level|lvl/g, '').trim();
+    const derivedFaculty = profile.faculty || DEPARTMENT_TO_FACULTY[profile.department as Department] || '';
+    const userFaculty = normalize(derivedFaculty);
+    const userLevel = extractLevel(profile.academic_level);
     const userSemester = normalize(profile.semester);
 
     const autoEnrolled = Object.values(courses)
       .filter(c => {
-        // 1. Check Level and Semester (Mandatory for all scopes)
-        const levelMatch = normalize(c.level).replace(/level|lvl/g, '').trim() === userLevel;
-        const semesterMatch = normalize(c.semester) === userSemester;
+        // 1. Check Level (Mandatory for all scopes)
+        const levelMatch = extractLevel(c.level) === userLevel;
         
-        if (!levelMatch || !semesterMatch) return false;
+        if (!levelMatch) return false;
 
         // 2. Check Scope
         const scope = c.scope || 'DEPARTMENT';

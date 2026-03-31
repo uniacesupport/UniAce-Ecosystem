@@ -2,9 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { BookOpen, Sparkles, Globe, Search, Users, Calendar, ArrowRight, Loader2, Edit2 } from 'lucide-react';
 import { useCourses } from '../context/CourseContext';
-import { CourseId, View, Course, UserProgress, Department } from '../types';
+import { CourseId, View, Course, UserProgress, Department, Semester } from '../types';
 import { useAuth } from '../context/AuthContext';
-import { DEPARTMENT_TO_FACULTY } from '../constants';
 import { usePremiumStatus } from '../hooks/usePremiumStatus';
 import NotificationCenter from './NotificationCenter';
 import AcademicProfileModal from './AcademicProfileModal';
@@ -15,11 +14,13 @@ interface CourseHubProps {
   onViewSelect: (view: View) => void;
   enrolledCourses: CourseId[];
   progress: UserProgress;
+  activeSemester: Semester;
+  setActiveSemester: (semester: Semester) => void;
 }
 
 type Tab = 'your-courses' | 'explore';
 
-export default function CourseHub({ onSelectCourse, onProfileClick, onViewSelect, enrolledCourses, progress }: CourseHubProps) {
+export default function CourseHub({ onSelectCourse, onProfileClick, onViewSelect, enrolledCourses, progress, activeSemester, setActiveSemester }: CourseHubProps) {
   const { user, profile, isConfigured } = useAuth();
   const { courses, loading: coursesLoading } = useCourses();
   const { isPremium } = usePremiumStatus();
@@ -33,38 +34,26 @@ export default function CourseHub({ onSelectCourse, onProfileClick, onViewSelect
     let result = Object.values(courses);
 
     const normalize = (s: any) => String(s || '').toLowerCase().trim().replace(/\s+/g, ' ');
+    const extractLevel = (lvl: any) => String(lvl || '').match(/\d+/)?.[0] || '';
 
     // Apply Tab Filter
     if (activeTab === 'your-courses') {
-      if (profile?.department && profile?.academic_level && profile?.semester) {
-        const userDept = normalize(profile.department);
-        const userLevel = normalize(profile.academic_level).replace('level', '').trim();
-        const userSemester = normalize(profile.semester);
-
-        result = result.filter(c => {
-          const levelMatch = normalize(c.level).replace('level', '').trim() === userLevel;
-          const semesterMatch = normalize(c.semester) === userSemester;
-          const isEnrolled = progress.enrolledCourses.includes(c.id as CourseId);
-
-          if (!levelMatch) return false;
-          if (!semesterMatch || !isEnrolled) return false;
-
-          const scope = c.scope || 'DEPARTMENT';
-          
-          if (scope === 'GLOBAL') return true;
-          
-          if (scope === 'FACULTY') {
-            const userFaculty = DEPARTMENT_TO_FACULTY[profile.department as Department];
-            return c.faculties?.includes(userFaculty);
-          }
-
-          // Default: DEPARTMENT scope
-          const courseDepts = c.departments || ((c as any).department ? [(c as any).department] : []);
-          return courseDepts.some(d => normalize(d) === userDept);
-        });
-      } else {
-        result = result.filter(c => enrolledCourses.includes(c.id as CourseId));
+      // Filter by user's active semester
+      if (activeSemester) {
+        const userSemester = normalize(activeSemester);
+        result = result.filter(c => normalize(c.semester) === userSemester);
       }
+      
+      // Filter by user's level
+      if (profile?.academic_level) {
+        const userLevel = extractLevel(profile.academic_level);
+        result = result.filter(c => {
+          const courseLevel = extractLevel(c.level);
+          return courseLevel === userLevel;
+        });
+      }
+
+      result = result.filter(c => enrolledCourses.includes(c.id as CourseId));
     }
 
     // Apply Search Filter
@@ -154,7 +143,7 @@ export default function CourseHub({ onSelectCourse, onProfileClick, onViewSelect
                     {profile.academic_level} Level
                   </div>
                   <div className="inline-flex items-center gap-2 bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 px-3 py-1.5 rounded-lg text-sm font-bold w-fit">
-                    {profile.semester}
+                    {activeSemester}
                   </div>
                 </div>
               </div>
@@ -239,7 +228,7 @@ export default function CourseHub({ onSelectCourse, onProfileClick, onViewSelect
             </h3>
             <p className="text-slate-500 dark:text-zinc-400 max-w-md mx-auto mb-6">
               {activeTab === 'your-courses' 
-                ? `We couldn't find any courses matching your profile (${profile?.department}, ${profile?.academic_level} Level, ${profile?.semester}). Check your profile or explore the catalog.`
+                ? `We couldn't find any courses matching your profile (${profile?.department}, ${profile?.academic_level} Level, ${activeSemester}). Check your profile or explore the catalog.`
                 : "Try adjusting your search terms to find what you're looking for."}
             </p>
 

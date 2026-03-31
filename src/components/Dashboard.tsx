@@ -91,19 +91,50 @@ export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSele
 
   const recommendations = getRecommendations(progress, syllabus);
 
-  // All enrolled courses should be visible in the dashboard, filtered by semester
+  const extractLevel = (lvl: any) => String(lvl || '').match(/\d+/)?.[0] || '';
+  const userLevel = extractLevel(profile?.academic_level);
+
+  // All enrolled courses should be visible in the dashboard, filtered by semester and level
   const enrolledCourses = (progress.enrolledCourses || []).filter(courseId => {
     const course = courses[courseId];
-    return course && course.semester === activeSemester;
+    if (!course) return false;
+    
+    // Filter by semester
+    if (course.semester !== activeSemester) return false;
+    
+    // Filter by level
+    if (userLevel) {
+      const courseLevel = extractLevel(course.level);
+      if (courseLevel !== userLevel) return false;
+    }
+    
+    return true;
   });
 
   const upcomingAssignments = (progress.assignments || [])
-    .filter(a => a.status === 'pending')
+    .filter(a => {
+      const course = courses[a.courseId];
+      if (!course || course.semester !== activeSemester) return false;
+      if (userLevel && extractLevel(course.level) !== userLevel) return false;
+      return a.status === 'pending';
+    })
     .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
 
   const recentGrades = (progress.assignments || [])
-    .filter(a => a.status === 'graded')
+    .filter(a => {
+      const course = courses[a.courseId];
+      if (!course || course.semester !== activeSemester) return false;
+      if (userLevel && extractLevel(course.level) !== userLevel) return false;
+      return a.status === 'graded';
+    })
     .sort((a, b) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime());
+
+  const filteredDueReviews = dueReviews.filter(review => {
+    const course = courses[review.courseId];
+    if (!course || course.semester !== activeSemester) return false;
+    if (userLevel && extractLevel(course.level) !== userLevel) return false;
+    return true;
+  });
 
   useEffect(() => {
     const fetchSmartMission = async () => {
@@ -223,18 +254,18 @@ export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSele
         {/* Quick Access Grid */}
         <div className="flex flex-col gap-6">
           {/* Due Reviews Section */}
-          {dueReviews.length > 0 && (
+          {filteredDueReviews.length > 0 && (
             <section className="w-full">
               <div className="flex items-center gap-3 mb-4">
                 <RefreshCw className="text-emerald-600 dark:text-emerald-400" size={24} />
                 <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">Due for Review</h2>
                 <span className="bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 px-3 py-1 rounded-full text-xs font-bold">
-                  {dueReviews.length} Topics
+                  {filteredDueReviews.length} Topics
                 </span>
               </div>
               
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {dueReviews.slice(0, 3).map((review) => (
+                {filteredDueReviews.slice(0, 3).map((review) => (
                   <motion.div
                     key={review.topicId}
                     whileHover={{ y: -2 }}
