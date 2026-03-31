@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, FileText, Plus, CheckCircle, Loader2, BookOpen, AlertCircle, Settings, Trash2, Users, Activity, Database, Search, Zap, Trophy, Star, Bot, Shield, BarChart3, Globe, Edit2, RefreshCw, Clock, FileQuestion, MessageSquare, ArrowLeft } from 'lucide-react';
+import { Upload, FileText, Plus, CheckCircle, Loader2, BookOpen, AlertCircle, Settings, Trash2, Users, Activity, Database, Search, Zap, Trophy, Star, Bot, Shield, BarChart3, Globe, Edit2, RefreshCw, Clock, FileQuestion, MessageSquare, ArrowLeft, HeartPulse, X, ArrowRight } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   LineChart, Line, AreaChart, Area, PieChart, Pie, Cell
@@ -16,8 +17,9 @@ import { AIService } from '../services/ai';
 import { generateCourseContent, generateCourseSkeleton, generateModuleContent, generateCourseFormulas } from '../services/aiCourseGenerator';
 import { CourseService } from '../services/courseService';
 import { Course, UserProgress, CourseId, Department, Level, Semester, Subject, CourseScope } from '../types';
-import { FACULTIES, DEPARTMENT_TO_FACULTY } from '../constants';
+import { FACULTIES, DEPARTMENT_TO_FACULTY, DEPARTMENTS, LEVELS, SEMESTERS } from '../constants';
 import { LogService, SystemLog } from '../services/logService';
+import { CurriculumIntegrityService } from '../services/curriculumIntegrity';
 
 import { jsonrepair } from 'jsonrepair';
 
@@ -67,7 +69,13 @@ export default function AdminDashboard() {
   const [isIngesting, setIsIngesting] = useState(false);
   const [ingestionStatus, setIngestionStatus] = useState('');
   const [kbStats, setKbStats] = useState({ totalChunks: 0 });
-  const [activeTab, setActiveTab] = useState<'overview' | 'courses' | 'users' | 'rag' | 'communications' | 'settings' | 'logs' | 'question-bank'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'courses' | 'users' | 'rag' | 'communications' | 'settings' | 'logs' | 'question-bank' | 'curriculum-health'>('overview');
+  const [integrityIssues, setIntegrityIssues] = useState<any[]>([]);
+  const [isLoadingIntegrity, setIsLoadingIntegrity] = useState(false);
+  const [allCurriculums, setAllCurriculums] = useState<any[]>([]);
+  const [selectedIssueCell, setSelectedIssueCell] = useState<{ dept: string, level: string } | null>(null);
+  const [selectedIssues, setSelectedIssues] = useState<string[]>([]);
+  const [isRemediating, setIsRemediating] = useState(false);
   const [notificationText, setNotificationText] = useState('');
   const [whatsappLink, setWhatsappLink] = useState('');
   const [isSendingNotification, setIsSendingNotification] = useState(false);
@@ -154,16 +162,79 @@ export default function AdminDashboard() {
   });
 
   useEffect(() => {
-    fetchUsers();
-    fetchKbStats();
-    fetchSystemStats();
-    checkAIStatus();
-    fetchStruggleAnalytics();
-    fetchChatAnalytics();
-    fetchSystemConfig();
-    fetchRoutingConfig();
-    fetchLogs();
-  }, []);
+    if (user) {
+      fetchUsers();
+      fetchKbStats();
+      fetchSystemStats();
+      checkAIStatus();
+      fetchStruggleAnalytics();
+      fetchChatAnalytics();
+      fetchSystemConfig();
+      fetchRoutingConfig();
+      fetchLogs();
+      fetchIntegrityData();
+    }
+  }, [user]);
+
+  const fetchIntegrityData = async () => {
+    if (!db) return;
+    setIsLoadingIntegrity(true);
+    try {
+      console.log("Fetching unresolved integrity issues...");
+      const issues = await CurriculumIntegrityService.getUnresolvedIssues();
+      console.log(`Fetched ${issues.length} issues.`);
+      setIntegrityIssues(issues);
+
+      console.log("Fetching curriculums...");
+      const curriculumSnapshot = await getDocs(collection(db, 'curriculums'));
+      const currs = curriculumSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      console.log(`Fetched ${currs.length} curriculums.`);
+      setAllCurriculums(currs);
+    } catch (error: any) {
+      console.error("Error fetching integrity data:", error);
+      if (error.message?.includes("permissions")) {
+        console.error("Permission denied. Current user:", auth.currentUser?.email, "UID:", auth.currentUser?.uid);
+      }
+      showToast(`Failed to fetch curriculum health data: ${error.message}`, "error");
+    } finally {
+      setIsLoadingIntegrity(false);
+    }
+  };
+
+  const handleRemediate = async (issue: any) => {
+    setIsRemediating(true);
+    try {
+      const success = await CurriculumIntegrityService.remediateIssue(issue);
+      if (success) {
+        showToast(`Successfully remediated issue for ${issue.userEmail}`, "success");
+        await fetchIntegrityData();
+      } else {
+        showToast("Remediation failed", "error");
+      }
+    } catch (error: any) {
+      showToast(`Remediation Error: ${error.message}`, "error");
+    } finally {
+      setIsRemediating(false);
+    }
+  };
+
+  const handleBulkRemediate = async () => {
+    if (selectedIssues.length === 0) return;
+    
+    setIsRemediating(true);
+    try {
+      const issuesToFix = integrityIssues.filter(i => selectedIssues.includes(i.id));
+      const { success, failed } = await CurriculumIntegrityService.bulkRemediate(issuesToFix);
+      
+      showToast(`Bulk remediation complete: ${success} fixed, ${failed} failed`, success > 0 ? "success" : "error");
+      setSelectedIssues([]);
+      await fetchIntegrityData();
+    } catch (error: any) {
+      showToast(`Bulk Remediation Error: ${error.message}`, "error");
+    } finally {
+      setIsRemediating(false);
+    }
+  };
 
   const fetchLogs = async () => {
     setIsLoadingLogs(true);
@@ -1131,6 +1202,247 @@ export default function AdminDashboard() {
     }
   };
 
+  const renderCurriculumHealth = () => {
+    // Group issues by dept and level
+    const heatmapData: Record<string, Record<string, number>> = {};
+    DEPARTMENTS.forEach(dept => {
+      heatmapData[dept] = {};
+      LEVELS.forEach(level => {
+        heatmapData[dept][level] = 0;
+      });
+    });
+
+    integrityIssues.forEach((issue: any) => {
+      if (heatmapData[issue.department] && heatmapData[issue.department][issue.level] !== undefined) {
+        heatmapData[issue.department][issue.level]++;
+      }
+    });
+
+    return (
+      <div className="space-y-6">
+        <div className="flex justify-between items-center">
+          <div>
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Curriculum Health Monitor</h2>
+            <p className="text-slate-500">Real-time alignment heatmap across departments and levels</p>
+          </div>
+          <button 
+            onClick={fetchIntegrityData}
+            disabled={isLoadingIntegrity}
+            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all disabled:opacity-50 shadow-lg shadow-indigo-500/20"
+          >
+            <RefreshCw className={`w-4 h-4 ${isLoadingIntegrity ? 'animate-spin' : ''}`} />
+            Refresh Scan
+          </button>
+        </div>
+
+        {/* Heatmap Grid */}
+        <div className="bg-white dark:bg-slate-800 p-8 rounded-[2.5rem] border border-slate-200 dark:border-slate-700 shadow-sm overflow-x-auto">
+          <div className="min-w-[800px]">
+            <div 
+              className="grid gap-4 mb-6"
+              style={{ gridTemplateColumns: `200px repeat(${LEVELS.length}, 1fr)` }}
+            >
+              <div className="font-bold text-slate-400 text-xs uppercase tracking-widest text-left">Department</div>
+              {LEVELS.map(level => (
+                <div key={level} className="text-center font-bold text-slate-400 text-xs uppercase tracking-widest">
+                  Level {level}
+                </div>
+              ))}
+            </div>
+
+            {DEPARTMENTS.map(dept => (
+              <div 
+                key={dept} 
+                className="grid gap-4 mb-4"
+                style={{ gridTemplateColumns: `200px repeat(${LEVELS.length}, 1fr)` }}
+              >
+                <div className="flex items-center font-bold text-slate-700 dark:text-slate-300 text-sm">{dept}</div>
+                {LEVELS.map(level => {
+                  const count = heatmapData[dept][level];
+                  let bgColor = 'bg-slate-50 dark:bg-slate-900/50';
+                  let textColor = 'text-slate-400';
+                  let borderColor = 'border-slate-100 dark:border-slate-800';
+
+                  if (count > 10) {
+                    bgColor = 'bg-rose-50 dark:bg-rose-900/20';
+                    textColor = 'text-rose-600 dark:text-rose-400';
+                    borderColor = 'border-rose-200 dark:border-rose-800';
+                  } else if (count > 5) {
+                    bgColor = 'bg-amber-50 dark:bg-amber-900/20';
+                    textColor = 'text-amber-600 dark:text-amber-400';
+                    borderColor = 'border-amber-200 dark:border-amber-800';
+                  } else if (count > 0) {
+                    bgColor = 'bg-yellow-50 dark:bg-yellow-900/10';
+                    textColor = 'text-yellow-600 dark:text-yellow-400';
+                    borderColor = 'border-yellow-200 dark:border-yellow-800';
+                  } else {
+                    bgColor = 'bg-emerald-50 dark:bg-emerald-900/10';
+                    textColor = 'text-emerald-600 dark:text-emerald-400';
+                    borderColor = 'border-emerald-100 dark:border-emerald-800';
+                  }
+
+                  return (
+                    <button
+                      key={level}
+                      onClick={() => setSelectedIssueCell({ dept, level })}
+                      className={`h-20 rounded-2xl border ${borderColor} ${bgColor} ${textColor} flex flex-col items-center justify-center transition-all hover:scale-105 hover:shadow-lg relative group`}
+                    >
+                      <span className="text-2xl font-black">{count}</span>
+                      <span className="text-[10px] uppercase font-bold opacity-60">Issues</span>
+                      {count > 0 && (
+                        <div className="absolute -top-1 -right-1 w-4 h-4 bg-rose-500 rounded-full animate-pulse border-2 border-white dark:border-slate-800" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Drill-down Section */}
+        <AnimatePresence>
+          {selectedIssueCell && (
+            <motion.div 
+              initial={{ opacity: 0, y: 20, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 20, scale: 0.95 }}
+              className="bg-white dark:bg-slate-800 rounded-[2.5rem] border border-slate-200 dark:border-slate-700 shadow-2xl overflow-hidden"
+            >
+              <div className="p-6 bg-indigo-50 dark:bg-indigo-900/20 border-b border-indigo-100 dark:border-indigo-800 flex justify-between items-center">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 bg-indigo-100 dark:bg-indigo-800 rounded-2xl text-indigo-600 dark:text-indigo-400">
+                    <Search className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-indigo-900 dark:text-indigo-100 text-lg">
+                      Diagnostics: {selectedIssueCell.dept} - Level {selectedIssueCell.level}
+                    </h3>
+                    <p className="text-xs text-indigo-600 dark:text-indigo-400 font-bold uppercase tracking-widest">
+                      {integrityIssues.filter((i: any) => i.department === selectedIssueCell.dept && i.level === selectedIssueCell.level).length} active issues detected
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  {selectedIssues.length > 0 && (
+                    <button
+                      onClick={handleBulkRemediate}
+                      disabled={isRemediating}
+                      className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-500/20 disabled:opacity-50"
+                    >
+                      {isRemediating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Shield className="w-4 h-4" />}
+                      Fix Selected ({selectedIssues.length})
+                    </button>
+                  )}
+                  <button 
+                    onClick={() => {
+                      setSelectedIssueCell(null);
+                      setSelectedIssues([]);
+                    }}
+                    className="p-2 hover:bg-indigo-100 dark:hover:bg-indigo-800 rounded-full text-indigo-400 transition-colors"
+                  >
+                    <X className="w-6 h-6" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-8">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] border-b border-slate-100 dark:border-slate-700">
+                        <th className="pb-4 px-4">
+                          <input 
+                            type="checkbox"
+                            className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                            checked={selectedIssues.length === integrityIssues.filter((i: any) => i.department === selectedIssueCell.dept && i.level === selectedIssueCell.level).length && selectedIssues.length > 0}
+                            onChange={(e) => {
+                              const cellIssues = integrityIssues.filter((i: any) => i.department === selectedIssueCell.dept && i.level === selectedIssueCell.level);
+                              if (e.target.checked) {
+                                setSelectedIssues(cellIssues.map((i: any) => i.id));
+                              } else {
+                                setSelectedIssues([]);
+                              }
+                            }}
+                          />
+                        </th>
+                        <th className="pb-4 px-4">Student</th>
+                        <th className="pb-4 px-4">Issue Type</th>
+                        <th className="pb-4 px-4">Details</th>
+                        <th className="pb-4 px-4">Detected</th>
+                        <th className="pb-4 px-4 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50 dark:divide-slate-700/50">
+                      {integrityIssues
+                        .filter((i: any) => i.department === selectedIssueCell.dept && i.level === selectedIssueCell.level)
+                        .map((issue: any) => (
+                          <tr key={issue.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors group">
+                            <td className="py-5 px-4">
+                              <input 
+                                type="checkbox"
+                                className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                checked={selectedIssues.includes(issue.id)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedIssues(prev => [...prev, issue.id]);
+                                  } else {
+                                    setSelectedIssues(prev => prev.filter(id => id !== issue.id));
+                                  }
+                                }}
+                              />
+                            </td>
+                            <td className="py-5 px-4">
+                              <div className="flex items-center gap-4">
+                                <div className="w-10 h-10 rounded-2xl bg-indigo-100 dark:bg-indigo-900/50 flex items-center justify-center text-indigo-700 dark:text-indigo-400 font-black text-sm">
+                                  {issue.userName?.charAt(0) || 'U'}
+                                </div>
+                                <div>
+                                  <div className="font-bold text-slate-900 dark:text-white">{issue.userName}</div>
+                                  <div className="text-xs text-slate-500 font-medium">{issue.userEmail}</div>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="py-5 px-4">
+                              <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                                issue.type === 'MISSING_COURSE' ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400' :
+                                issue.type === 'EXTRA_COURSE' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
+                                'bg-slate-100 text-slate-700 dark:bg-slate-900/30 dark:text-slate-400'
+                              }`}>
+                                {issue.type.replace('_', ' ')}
+                              </span>
+                            </td>
+                            <td className="py-5 px-4">
+                              <div className="text-sm text-slate-600 dark:text-slate-300 max-w-xs font-medium">
+                                {issue.details}
+                              </div>
+                            </td>
+                            <td className="py-5 px-4 text-xs text-slate-500 font-mono">
+                              {issue.timestamp?.toDate ? issue.timestamp.toDate().toLocaleString() : new Date(issue.timestamp).toLocaleString()}
+                            </td>
+                            <td className="py-5 px-4 text-right">
+                              <button 
+                                onClick={() => handleRemediate(issue)}
+                                disabled={isRemediating}
+                                className="flex items-center gap-2 px-4 py-2 bg-indigo-50 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 rounded-xl hover:bg-indigo-100 dark:hover:bg-indigo-800 transition-all font-bold text-xs disabled:opacity-50"
+                              >
+                                {isRemediating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Shield className="w-3 h-3" />}
+                                Fix Now
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    );
+  };
+
   return (
     <div className="flex-1 overflow-y-auto bg-slate-50 dark:bg-slate-900 p-4 sm:p-6 lg:p-12 pb-24 lg:pb-12 transition-colors min-h-screen">
       <div className="max-w-5xl mx-auto space-y-8">
@@ -1183,6 +1495,7 @@ export default function AdminDashboard() {
             { id: 'courses', label: 'Courses & AI', icon: BookOpen },
             { id: 'question-bank', label: 'Question Bank', icon: FileQuestion },
             { id: 'rag', label: 'Knowledge Base', icon: Database },
+            { id: 'curriculum-health', label: 'Curriculum Health', icon: HeartPulse },
             { id: 'users', label: 'User Management', icon: Users },
             { id: 'communications', label: 'Communications', icon: Globe },
             { id: 'logs', label: 'System Logs', icon: FileText },
@@ -1347,7 +1660,7 @@ export default function AdminDashboard() {
                 
                 <div className="flex-1 space-y-5 overflow-y-auto pr-2 custom-scrollbar">
                   {struggleAnalytics.length > 0 ? (
-                    struggleAnalytics.slice(0, 6).map((item, idx) => (
+                    struggleAnalytics.map((item, idx) => (
                       <div key={idx} className="group">
                         <div className="flex justify-between text-sm mb-2">
                           <span className="font-bold text-slate-700 dark:text-slate-300 truncate pr-4">{item.subTopicTitle}</span>
@@ -1430,7 +1743,7 @@ export default function AdminDashboard() {
                   </button>
                 </div>
                 <div className="space-y-0 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-slate-200 dark:before:via-slate-700 before:to-transparent">
-                  {logs.slice(0, 4).map((log, idx) => (
+                  {logs.map((log, idx) => (
                     <div key={idx} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active py-3">
                       <div className="flex items-center justify-center w-10 h-10 rounded-full border-4 border-white dark:border-slate-800 bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 z-10">
                         {log.level === 'error' ? <AlertCircle size={16} className="text-rose-500" /> : 
@@ -1610,11 +1923,9 @@ export default function AdminDashboard() {
                         onChange={(e) => setQuickLevel(e.target.value as Level)}
                         className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                       >
-                        <option value="100">100</option>
-                        <option value="200">200</option>
-                        <option value="300">300</option>
-                        <option value="400">400</option>
-                        <option value="500">500</option>
+                        {LEVELS.map(level => (
+                          <option key={level} value={level}>{level}</option>
+                        ))}
                       </select>
                     </div>
                     <div>
@@ -1624,8 +1935,9 @@ export default function AdminDashboard() {
                         onChange={(e) => setQuickSemester(e.target.value as Semester)}
                         className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                       >
-                        <option value="1st Semester">1st Semester</option>
-                        <option value="2nd Semester">2nd Semester</option>
+                        {SEMESTERS.map(sem => (
+                          <option key={sem} value={sem}>{sem}</option>
+                        ))}
                       </select>
                     </div>
                   </div>
@@ -1663,7 +1975,7 @@ export default function AdminDashboard() {
                         <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">Select Target Departments</label>
                         <div className="flex gap-2">
                           <button 
-                            onClick={() => setSelectedDepartments(['Aerospace Engineering', 'Agricultural Engineering', 'Anatomy', 'Biology', 'Biomedical Engineering', 'Chemical Engineering', 'Chemistry', 'Civil Engineering', 'Computer Engineering', 'Computer Science', 'Dentistry', 'Electrical Engineering', 'Material Science and Engineering', 'Mathematics', 'Mechanical Engineering', 'Mechatronics Engineering', 'Medical Laboratory Science', 'Medicine and Surgery', 'Nursing Science', 'Petroleum Engineering', 'Pharmacy', 'Physics', 'Physiology', 'Public Health', 'Software Engineering'])}
+                            onClick={() => setSelectedDepartments([...DEPARTMENTS])}
                             className="text-xs font-bold text-indigo-600 hover:text-indigo-700"
                           >
                             Select All
@@ -1676,8 +1988,8 @@ export default function AdminDashboard() {
                           </button>
                         </div>
                       </div>
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-48 overflow-y-auto p-1">
-                        {['Aerospace Engineering', 'Agricultural Engineering', 'Anatomy', 'Biology', 'Biomedical Engineering', 'Chemical Engineering', 'Chemistry', 'Civil Engineering', 'Computer Engineering', 'Computer Science', 'Dentistry', 'Electrical Engineering', 'Material Science and Engineering', 'Mathematics', 'Mechanical Engineering', 'Mechatronics Engineering', 'Medical Laboratory Science', 'Medicine and Surgery', 'Nursing Science', 'Petroleum Engineering', 'Pharmacy', 'Physics', 'Physiology', 'Public Health', 'Software Engineering'].map(dept => (
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-96 overflow-y-auto p-1">
+                        {DEPARTMENTS.map(dept => (
                           <button
                             key={dept}
                             onClick={() => {
@@ -1922,11 +2234,13 @@ export default function AdminDashboard() {
                 <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Semester</label>
                 <select
                   value={quickSemester}
-                  onChange={(e) => setQuickSemester(e.target.value as any)}
+                  onChange={(e) => setQuickSemester(e.target.value as Semester)}
                   className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
                 >
-                  <option value="Harmattan">Harmattan</option>
-                  <option value="Rain">Rain</option>
+                  <option value="">Select semester...</option>
+                  {SEMESTERS.map(sem => (
+                    <option key={sem} value={sem}>{sem}</option>
+                  ))}
                 </select>
               </div>
               <div>
@@ -1937,14 +2251,7 @@ export default function AdminDashboard() {
                   className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
                 >
                   <option value="">Select a department...</option>
-                  {[
-                    'Aerospace Engineering', 'Agricultural Engineering', 'Anatomy', 'Biology', 'Biomedical Engineering', 
-                    'Chemical Engineering', 'Chemistry', 'Civil Engineering', 'Computer Engineering', 'Computer Science', 
-                    'Dentistry', 'Electrical Engineering', 'Material Science and Engineering', 'Mathematics', 
-                    'Mechanical Engineering', 'Mechatronics Engineering', 'Medical Laboratory Science', 
-                    'Medicine and Surgery', 'Nursing Science', 'Petroleum Engineering', 'Pharmacy', 'Physics', 
-                    'Physiology', 'Public Health', 'Software Engineering'
-                  ].map((dept) => (
+                  {DEPARTMENTS.map((dept) => (
                     <option key={dept} value={dept}>{dept}</option>
                   ))}
                 </select>
@@ -2300,6 +2607,9 @@ export default function AdminDashboard() {
           </div>
         </div>
       )}
+
+      {activeTab === 'curriculum-health' && renderCurriculumHealth()}
+
       {activeTab === 'users' && (
         <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700">
           <div className="flex items-center justify-between mb-6">
@@ -2664,7 +2974,7 @@ export default function AdminDashboard() {
                   Recent Activity
                 </h3>
                 <div className="space-y-4 max-h-[300px] overflow-y-auto pr-2 scrollbar-hide">
-                  {logs.slice(0, 5).map((log) => (
+                  {logs.map((log) => (
                     <div key={log.id} className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700">
                       <div className="flex items-center justify-between mb-1">
                         <span className={`text-[10px] font-black uppercase tracking-widest ${

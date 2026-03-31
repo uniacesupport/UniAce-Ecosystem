@@ -119,5 +119,15 @@ export const CourseService = {
     });
 
     await batch.commit();
+  },
+
+  async updateCourse(courseId: string, data: Partial<Course>) {
+    const courseRef = doc(db, 'courses', courseId);
+    await setDoc(courseRef, sanitizeForFirestore(data), { merge: true });
+  },
+
+  async archiveCourse(courseId: string) {
+    const courseRef = doc(db, 'courses', courseId);
+    await setDoc(courseRef, { status: 'archived' }, { merge: true });
   }
 };

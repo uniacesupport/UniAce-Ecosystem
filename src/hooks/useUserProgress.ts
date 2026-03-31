@@ -6,6 +6,7 @@ import { doc, setDoc, onSnapshot, getDoc, updateDoc, arrayUnion, arrayRemove, in
 import { GamificationService, BADGES } from '../services/gamification';
 import { useCourses } from '../context/CourseContext';
 import { DEPARTMENT_TO_FACULTY } from '../constants';
+import { CurriculumIntegrityService } from '../services/curriculumIntegrity';
 
 const INITIAL_ACHIEVEMENTS: Achievement[] = BADGES.map(b => ({
   id: b.id,
@@ -36,6 +37,7 @@ const INITIAL_PROGRESS: UserProgress = {
 export function useUserProgress() {
   const { user, profile } = useAuth();
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [integrityIssues, setIntegrityIssues] = useState<any[]>([]);
   const [progress, setProgress] = useState<UserProgress>(() => {
     let parsed = INITIAL_PROGRESS;
     try {
@@ -518,5 +520,30 @@ export function useUserProgress() {
     enrolledCourses: effectiveEnrolledCourses
   }), [progress, effectiveEnrolledCourses]);
 
-  return { progress: effectiveProgress, addXp, updateMastery, recordStudyTime, unlockAchievement, markTopicAsStudied, addBookmark, removeBookmark, enrollCourse, unenrollCourse, updateSRSData, updateAIPersonality, isOnline, checkAndUpdateStreak };
+  // Curriculum Integrity Watchdog
+  useEffect(() => {
+    if (!user || !profile || !isOnline) return;
+    
+    // Only validate if profile is complete
+    if (!profile.department || !profile.academic_level || !profile.semester) return;
+
+    const validate = async () => {
+      try {
+        const issues = await CurriculumIntegrityService.validateUserCurriculum(
+          user.uid,
+          profile,
+          effectiveEnrolledCourses
+        );
+        setIntegrityIssues(issues);
+      } catch (error) {
+        console.error("Integrity validation failed:", error);
+      }
+    };
+
+    // Debounce validation to avoid spamming Firestore
+    const timer = setTimeout(validate, 2000);
+    return () => clearTimeout(timer);
+  }, [user, profile, effectiveEnrolledCourses, isOnline]);
+
+  return { progress: effectiveProgress, integrityIssues, addXp, updateMastery, recordStudyTime, unlockAchievement, markTopicAsStudied, addBookmark, removeBookmark, enrollCourse, unenrollCourse, updateSRSData, updateAIPersonality, isOnline, checkAndUpdateStreak };
 }

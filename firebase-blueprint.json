@@ -154,9 +154,50 @@
         "totalCoreUnits": { "type": "number" }
       },
       "required": ["discipline", "level", "coreCourses", "totalCoreUnits"]
+    },
+    "Curriculum": {
+      "title": "Curriculum",
+      "description": "The canonical mapping of courses for a specific department, level, and semester",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Format: DEPT_LEVEL_SEM" },
+        "department": { "type": "string" },
+        "level": { "type": "string" },
+        "semester": { "type": "string" },
+        "courseIds": { "type": "array", "items": { "type": "string" } },
+        "lastUpdated": { "type": "string", "format": "date-time" },
+        "updatedBy": { "type": "string" }
+      },
+      "required": ["id", "department", "level", "semester", "courseIds", "lastUpdated"]
+    },
+    "IntegrityIssue": {
+      "title": "IntegrityIssue",
+      "description": "A system-generated log of a curriculum mismatch or data integrity problem",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "type": { "type": "string", "enum": ["MISSING_COURSE", "EXTRA_COURSE", "LEVEL_MISMATCH", "DEPT_MISMATCH", "EMPTY_CURRICULUM"] },
+        "severity": { "type": "string", "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"] },
+        "details": { "type": "string" },
+        "expectedCourseIds": { "type": "array", "items": { "type": "string" } },
+        "actualCourseIds": { "type": "array", "items": { "type": "string" } },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "resolved": { "type": "boolean" },
+        "metadata": { "type": "object" }
+      },
+      "required": ["userId", "userEmail", "type", "severity", "details", "timestamp", "resolved"]
     }
   },
   "firestore": {
+    "/curriculums/{curriculumId}": {
+      "schema": "Curriculum",
+      "description": "Canonical curriculum mappings"
+    },
+    "/integrity_issues/{issueId}": {
+      "schema": "IntegrityIssue",
+      "description": "System-generated logs of curriculum mismatches"
+    },
     "/ccmas_cores/{coreId}": {
       "schema": "CCMASCore",
       "description": "NUC 70% core curriculum data"

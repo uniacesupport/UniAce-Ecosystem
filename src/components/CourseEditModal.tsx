@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { X, Save, Trash2, Edit2 } from 'lucide-react';
-import { Course, Module } from '../types';
+import { Course, Module, Department, Level, Semester, CourseScope } from '../types';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
+import { DEPARTMENTS, LEVELS, SEMESTERS } from '../constants';
 
 interface CourseEditModalProps {
   course: Course;
@@ -13,6 +14,10 @@ interface CourseEditModalProps {
 export default function CourseEditModal({ course, onClose, onSave }: CourseEditModalProps) {
   const [title, setTitle] = useState(course.title);
   const [description, setDescription] = useState(course.description);
+  const [department, setDepartment] = useState<Department>(course.department);
+  const [level, setLevel] = useState<Level | undefined>(course.level);
+  const [semester, setSemester] = useState<Semester | undefined>(course.semester);
+  const [scope, setScope] = useState<CourseScope | undefined>(course.scope || 'GLOBAL');
   const [modules, setModules] = useState<Module[]>(course.syllabus);
   const [isSaving, setIsSaving] = useState(false);
   const [editingModuleId, setEditingModuleId] = useState<string | null>(null);
@@ -24,6 +29,10 @@ export default function CourseEditModal({ course, onClose, onSave }: CourseEditM
       await updateDoc(courseRef, {
         title,
         description,
+        department,
+        level,
+        semester,
+        scope,
         syllabus: modules
       });
       onSave();
@@ -123,6 +132,53 @@ export default function CourseEditModal({ course, onClose, onSave }: CourseEditM
                 onChange={(e) => setDescription(e.target.value)}
                 className="w-full h-11 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-slate-900 dark:text-white"
               />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div>
+              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Department</label>
+              <select
+                value={department}
+                onChange={(e) => setDepartment(e.target.value as Department)}
+                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-slate-900 dark:text-white"
+              >
+                {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Level</label>
+              <select
+                value={level}
+                onChange={(e) => setLevel(e.target.value as Level)}
+                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-slate-900 dark:text-white"
+              >
+                <option value="">Select Level</option>
+                {LEVELS.map(l => <option key={l} value={l}>{l}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Semester</label>
+              <select
+                value={semester}
+                onChange={(e) => setSemester(e.target.value as Semester)}
+                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-slate-900 dark:text-white"
+              >
+                <option value="">Select Semester</option>
+                {SEMESTERS.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Scope</label>
+              <select
+                value={scope}
+                onChange={(e) => setScope(e.target.value as CourseScope)}
+                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-slate-900 dark:text-white"
+              >
+                <option value="GLOBAL">Global</option>
+                <option value="FACULTY">Faculty</option>
+                <option value="DEPARTMENT">Department</option>
+              </select>
             </div>
           </div>
           

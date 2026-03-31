@@ -16,9 +16,11 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      let isBootstrapAdmin = (request.auth.token.email == 'uniace.support@gmail.com' || request.auth.token.email == 'olalekan4565@gmail.com') && request.auth.token.email_verified;
-      let isRoleAdmin = isAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
-      return isBootstrapAdmin || isRoleAdmin;
+      return isAuthenticated() && 
+        (request.auth.token.email == 'uniace.support@gmail.com' || 
+         request.auth.token.email == 'olalekan4565@gmail.com' ||
+         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', 'student') == 'admin'));
     }
     
     function isEditor() {
@@ -102,9 +104,29 @@ service cloud.firestore {
              (data.lastReviewed is string || data.lastReviewed is timestamp);
     }
 
+    function isValidCurriculum(data) {
+      return data.id is string && data.id.size() < 100 &&
+             data.department is string && data.department.size() < 100 &&
+             data.level is string && data.level.size() < 10 &&
+             data.semester is string && data.semester.size() < 20 &&
+             data.courseIds is list && data.courseIds.size() < 100 &&
+             (data.lastUpdated is string || data.lastUpdated is timestamp);
+    }
+
     // ===============================================================
     // Collection Rules
     // ===============================================================
+
+    match /curriculums/{curriculumId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /integrity_issues/{issueId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow write: if isAdmin();
+      allow create: if isAuthenticated(); // Allow system to log from client side
+    }
 
     match /study_plans/{userId} {
       allow read, write: if isAdmin();

@@ -1,4 +1,4 @@
-import { Module, Formula, Course } from './types';
+import { Module, Formula, Course, Department, Level, Semester } from './types';
 
 export const MAT103_FORMULAS: Formula[] = [
   { id: 'f-unit-vec', title: 'Unit Vector', latex: '\\hat{a} = \\frac{\\vec{a}}{|\\vec{a}|}', description: 'A vector with a magnitude of 1 in the direction of $\\vec{a}$.', category: 'Vectors' },
@@ -3137,7 +3137,7 @@ Gas exchange and internal transport in animals.
   }
 ];
 
-export const DEPARTMENTS = [
+export const DEPARTMENTS: Department[] = [
   'Aerospace Engineering', 'Agricultural Engineering', 'Anatomy', 'Biology', 'Biomedical Engineering', 
   'Chemical Engineering', 'Chemistry', 'Civil Engineering', 'Computer Engineering', 'Computer Science', 
   'Dentistry', 'Electrical Engineering', 'Material Science and Engineering', 'Mathematics', 
@@ -3146,9 +3146,9 @@ export const DEPARTMENTS = [
   'Software Engineering', 'Statistics', 'Zoology', 'General Studies', 'General Engineering Training'
 ];
 
-export const LEVELS = ['100', '200', '300', '400', '500', '600'];
+export const LEVELS: Level[] = ['100', '200', '300', '400', '500', '600'];
 
-export const SEMESTERS = ['1st Semester', '2nd Semester'];
+export const SEMESTERS: Semester[] = ['1st Semester', '2nd Semester'];
 
 export const FACULTIES = [
   'Engineering',

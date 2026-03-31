@@ -1,7 +1,7 @@
 
-export type Department = 'Aerospace Engineering' | 'Agricultural Engineering' | 'Anatomy' | 'Biology' | 'Biomedical Engineering' | 'Chemical Engineering' | 'Chemistry' | 'Civil Engineering' | 'Computer Engineering' | 'Computer Science' | 'Dentistry' | 'Electrical Engineering' | 'Material Science and Engineering' | 'Mathematics' | 'Mechanical Engineering' | 'Mechatronics Engineering' | 'Medical Laboratory Science' | 'Medicine and Surgery' | 'Nursing Science' | 'Petroleum Engineering' | 'Pharmacy' | 'Physics' | 'Physiology' | 'Public Health' | 'Software Engineering' | 'General Studies' | 'General Engineering Training' | 'Zoology';
+export type Department = 'Aerospace Engineering' | 'Agricultural Engineering' | 'Anatomy' | 'Biology' | 'Biomedical Engineering' | 'Chemical Engineering' | 'Chemistry' | 'Civil Engineering' | 'Computer Engineering' | 'Computer Science' | 'Dentistry' | 'Electrical Engineering' | 'Material Science and Engineering' | 'Mathematics' | 'Mechanical Engineering' | 'Mechatronics Engineering' | 'Medical Laboratory Science' | 'Medicine and Surgery' | 'Nursing Science' | 'Petroleum Engineering' | 'Pharmacy' | 'Physics' | 'Physiology' | 'Public Health' | 'Software Engineering' | 'General Studies' | 'General Engineering Training' | 'Zoology' | 'Statistics';
 export type Subject = 'Mathematics' | 'Statistics' | 'Biology' | 'Physics' | 'Chemistry' | 'Computer Science' | 'General Studies' | 'Engineering' | 'Zoology';
-export type Level = '100' | '200' | '300' | '400' | '500';
+export type Level = '100' | '200' | '300' | '400' | '500' | '600';
 export type Semester = '1st Semester' | '2nd Semester';
 
 export type CourseId = 'MTH101' | 'MTH102' | 'MTH103' | 'STA112' | 'BIO101' | 'BIO102' | 'BIO107' | 'BIO108' | 'PHY101' | 'PHY102' | 'PHY103' | 'PHY104' | 'PHY107' | 'PHY108' | 'CHM101' | 'CHM102' | 'CHM107' | 'CHM108' | 'COS101' | 'COS102' | 'GST111' | 'GST112' | 'GET101' | 'GET102' | 'ZOO101' | 'ZOO102' | 'MAT201' | 'MAT202' | 'STA201' | 'PHY201' | 'CHM201';
@@ -97,17 +97,17 @@ export interface UserProfile {
   email: string;
   displayName: string;
   photoURL: string;
-  role: 'student' | 'admin';
+  role: 'student' | 'admin' | 'editor';
   plan_type: PlanType;
   subscription_end_date?: string;
-  created_at: string;
+  created_at?: string;
   themeColor?: string;
   rank?: number;
   admin_pin_verified_until?: any;
-  department?: Department;
+  department?: string;
   faculty?: string;
-  academic_level?: Level;
-  semester?: Semester;
+  academic_level?: string;
+  semester?: string;
 }
 
 export interface LearningProfile {
@@ -223,6 +223,16 @@ export interface LeaderboardEntry {
   xp: number;
   rank: number;
   streak: number;
+}
+
+export interface Curriculum {
+  id: string; // DEPT_LEVEL_SEM
+  department: Department;
+  level: Level;
+  semester: Semester;
+  courseIds: CourseId[];
+  lastUpdated: string;
+  updatedBy: string;
 }
 
 export type PipelineMetadata = Record<string, any>;
