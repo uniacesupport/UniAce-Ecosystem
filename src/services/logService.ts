@@ -1,5 +1,5 @@
 import { db, auth } from '../firebase';
-import { collection, addDoc, serverTimestamp, query, orderBy, limit, getDocs, where } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, query, orderBy, limit, getDocs, where, onSnapshot } from 'firebase/firestore';
 
 export type LogLevel = 'info' | 'warning' | 'error' | 'success';
 export type LogCategory = 'user' | 'admin' | 'system' | 'ai';
@@ -58,11 +58,11 @@ export const LogService = {
     }
   },
 
-  async getLogs(count: number = 100, category?: LogCategory) {
+  async getLogs(count: number = 100, category?: string) {
     try {
       let q = query(collection(db, 'system_logs'), orderBy('timestamp', 'desc'), limit(count));
       
-      if (category) {
+      if (category && category !== 'all') {
         q = query(collection(db, 'system_logs'), where('category', '==', category), orderBy('timestamp', 'desc'), limit(count));
       }
 
@@ -75,5 +75,23 @@ export const LogService = {
       console.error('Failed to fetch system logs:', error);
       return [];
     }
+  },
+
+  subscribeToLogs(callback: (logs: SystemLog[]) => void, count: number = 100, category?: string) {
+    let q = query(collection(db, 'system_logs'), orderBy('timestamp', 'desc'), limit(count));
+    
+    if (category && category !== 'all') {
+      q = query(collection(db, 'system_logs'), where('category', '==', category), orderBy('timestamp', 'desc'), limit(count));
+    }
+
+    return onSnapshot(q, (snapshot) => {
+      const logs = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as SystemLog[];
+      callback(logs);
+    }, (error) => {
+      console.error('Failed to subscribe to logs:', error);
+    });
   }
 };

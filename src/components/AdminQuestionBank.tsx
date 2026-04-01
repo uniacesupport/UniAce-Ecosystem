@@ -28,7 +28,7 @@ export default function AdminQuestionBank() {
   
   // Bulk Tab State
   const [extractedQuestions, setExtractedQuestions] = useState<any[]>([]);
-  const [selectedProvider, setSelectedProvider] = useState<'gemini' | 'mistral' | 'groq'>('gemini');
+  const [selectedProvider, setSelectedProvider] = useState<'gemini_direct' | 'gemini_openrouter' | 'mistral_direct' | 'mistral_openrouter' | 'groq' | 'cohere' | 'huggingface'>('gemini_direct');
 
   // Single Add State
   const [singleQuestion, setSingleQuestion] = useState({
@@ -53,7 +53,11 @@ export default function AdminQuestionBank() {
         if (docSnap.exists()) {
           const config = docSnap.data();
           if (config.past_questions) {
-            setSelectedProvider(config.past_questions as any);
+            // Map old values to new ones if necessary
+            const provider = config.past_questions;
+            if (provider === 'gemini') setSelectedProvider('gemini_direct');
+            else if (provider === 'mistral') setSelectedProvider('mistral_direct');
+            else setSelectedProvider(provider as any);
           }
         }
       } catch (err) {
@@ -593,15 +597,26 @@ export default function AdminQuestionBank() {
             </h3>
             <div className="flex flex-wrap gap-3">
               <button
-                onClick={() => setSelectedProvider('gemini')}
+                onClick={() => setSelectedProvider('gemini_direct')}
                 className={`px-4 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 transition-all ${
-                  selectedProvider === 'gemini'
+                  selectedProvider === 'gemini_direct'
                     ? 'bg-blue-100 text-blue-700 border-2 border-blue-500 dark:bg-blue-900/30 dark:text-blue-400'
                     : 'bg-slate-50 text-slate-600 border-2 border-slate-100 hover:border-blue-300 dark:bg-slate-900 dark:text-slate-400 dark:border-slate-700 dark:hover:border-blue-700'
                 }`}
               >
                 <Shield size={16} />
-                Gemini (Pro)
+                Gemini (Direct)
+              </button>
+              <button
+                onClick={() => setSelectedProvider('gemini_openrouter')}
+                className={`px-4 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 transition-all ${
+                  selectedProvider === 'gemini_openrouter'
+                    ? 'bg-indigo-100 text-indigo-700 border-2 border-indigo-500 dark:bg-indigo-900/30 dark:text-indigo-400'
+                    : 'bg-slate-50 text-slate-600 border-2 border-slate-100 hover:border-indigo-300 dark:bg-slate-900 dark:text-slate-400 dark:border-slate-700 dark:hover:border-indigo-700'
+                }`}
+              >
+                <Shield size={16} />
+                Gemini (OpenRouter)
               </button>
               <button
                 onClick={() => setSelectedProvider('groq')}
@@ -615,15 +630,48 @@ export default function AdminQuestionBank() {
                 Groq (Turbo)
               </button>
               <button
-                onClick={() => setSelectedProvider('mistral')}
+                onClick={() => setSelectedProvider('mistral_direct')}
                 className={`px-4 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 transition-all ${
-                  selectedProvider === 'mistral'
+                  selectedProvider === 'mistral_direct'
                     ? 'bg-purple-100 text-purple-700 border-2 border-purple-500 dark:bg-purple-900/30 dark:text-purple-400'
                     : 'bg-slate-50 text-slate-600 border-2 border-slate-100 hover:border-purple-300 dark:bg-slate-900 dark:text-slate-400 dark:border-slate-700 dark:hover:border-purple-700'
                 }`}
               >
                 <Star size={16} />
-                Mistral (Creative)
+                Mistral (Direct)
+              </button>
+              <button
+                onClick={() => setSelectedProvider('mistral_openrouter')}
+                className={`px-4 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 transition-all ${
+                  selectedProvider === 'mistral_openrouter'
+                    ? 'bg-pink-100 text-pink-700 border-2 border-pink-500 dark:bg-pink-900/30 dark:text-pink-400'
+                    : 'bg-slate-50 text-slate-600 border-2 border-slate-100 hover:border-pink-300 dark:bg-slate-900 dark:text-slate-400 dark:border-slate-700 dark:hover:border-pink-700'
+                }`}
+              >
+                <Star size={16} />
+                Mistral (OpenRouter)
+              </button>
+              <button
+                onClick={() => setSelectedProvider('cohere')}
+                className={`px-4 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 transition-all ${
+                  selectedProvider === 'cohere'
+                    ? 'bg-emerald-100 text-emerald-700 border-2 border-emerald-500 dark:bg-emerald-900/30 dark:text-emerald-400'
+                    : 'bg-slate-50 text-slate-600 border-2 border-slate-100 hover:border-emerald-300 dark:bg-slate-900 dark:text-slate-400 dark:border-slate-700 dark:hover:border-emerald-700'
+                }`}
+              >
+                <Bot size={16} />
+                Cohere
+              </button>
+              <button
+                onClick={() => setSelectedProvider('huggingface')}
+                className={`px-4 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 transition-all ${
+                  selectedProvider === 'huggingface'
+                    ? 'bg-yellow-100 text-yellow-700 border-2 border-yellow-500 dark:bg-yellow-900/30 dark:text-yellow-400'
+                    : 'bg-slate-50 text-slate-600 border-2 border-slate-100 hover:border-yellow-300 dark:bg-slate-900 dark:text-slate-400 dark:border-slate-700 dark:hover:border-yellow-700'
+                }`}
+              >
+                <Bot size={16} />
+                Hugging Face
               </button>
             </div>
             <p className="text-[10px] text-slate-500 mt-3 italic">

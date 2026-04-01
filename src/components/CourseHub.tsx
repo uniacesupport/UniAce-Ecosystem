@@ -59,7 +59,9 @@ export default function CourseHub({ onSelectCourse, onProfileClick, onViewSelect
       result = result.filter(c => {
         if (c.scope === 'GLOBAL') return true;
         if (c.scope === 'FACULTY') {
-          return profile?.faculty && c.faculties?.includes(profile.faculty);
+          if (profile?.faculty && c.faculties?.includes(profile.faculty)) return true;
+          if (profile?.department && c.departments?.includes(profile.department as Department)) return true;
+          return false;
         }
         if (c.scope === 'DEPARTMENT') {
           return profile?.department && c.departments?.includes(profile.department as Department);

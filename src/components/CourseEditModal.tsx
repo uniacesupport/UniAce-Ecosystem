@@ -17,6 +17,8 @@ export default function CourseEditModal({ course, onClose, onSave }: CourseEditM
   const [department, setDepartment] = useState<Department>(course.department || DEPARTMENTS[0]);
   const [level, setLevel] = useState<Level | undefined>(course.level);
   const [semester, setSemester] = useState<Semester | undefined>(course.semester);
+  const [creditUnits, setCreditUnits] = useState<number>(course.creditUnits || 3);
+  const [prerequisites, setPrerequisites] = useState<string>(course.prerequisites?.join(', ') || '');
   const [scope, setScope] = useState<CourseScope | undefined>(course.scope || 'GLOBAL');
   const [modules, setModules] = useState<Module[]>(course.syllabus);
   const [isSaving, setIsSaving] = useState(false);
@@ -32,6 +34,8 @@ export default function CourseEditModal({ course, onClose, onSave }: CourseEditM
         department: department || DEPARTMENTS[0],
         level,
         semester,
+        creditUnits,
+        prerequisites: prerequisites.split(',').map(p => p.trim()).filter(p => p),
         scope,
         syllabus: modules
       });
@@ -179,6 +183,30 @@ export default function CourseEditModal({ course, onClose, onSave }: CourseEditM
                 <option value="FACULTY">Faculty</option>
                 <option value="DEPARTMENT">Department</option>
               </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Credit Units</label>
+              <input
+                type="number"
+                min="1"
+                max="10"
+                value={creditUnits}
+                onChange={(e) => setCreditUnits(parseInt(e.target.value) || 3)}
+                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-slate-900 dark:text-white"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Prerequisites (Comma separated)</label>
+              <input
+                type="text"
+                value={prerequisites}
+                onChange={(e) => setPrerequisites(e.target.value)}
+                placeholder="e.g. MTH101, PHY101"
+                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-slate-900 dark:text-white"
+              />
             </div>
           </div>
           

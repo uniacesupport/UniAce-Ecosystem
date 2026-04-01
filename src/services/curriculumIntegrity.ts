@@ -1,4 +1,4 @@
-import { db } from '../firebase';
+import { db, auth } from '../firebase';
 import { doc, getDoc, collection, addDoc, serverTimestamp, query, where, getDocs, updateDoc, writeBatch } from 'firebase/firestore';
 import { Curriculum, UserProfile, CourseId } from '../types';
 import { LogService } from './logService';

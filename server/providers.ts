@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import admin from 'firebase-admin';
+import { GoogleGenAI } from "@google/genai";
 
 export interface ModelResponse {
   text: string;
@@ -65,9 +67,9 @@ async function retry<T>(fn: () => Promise<T>, providerName: string, retries = 3,
     const isBadRequest = statusCode === 400 && !error.message?.includes('rate_limit');
     const isNotFound = statusCode === 404;
     
-    const isRetryable = !isUnauthorized && !isKeyLimit && !isBadRequest && !isNotFound && retries > 0;
+    const isRetryable = (!isBadRequest && !isNotFound && retries > 0) || isUnauthorized || isKeyLimit;
 
-    if (!isRetryable) {
+    if (!isRetryable || retries <= 0) {
       throw new ModelProviderError(error.message, providerName, statusCode, false);
     }
 
@@ -89,44 +91,184 @@ async function retry<T>(fn: () => Promise<T>, providerName: string, retries = 3,
   }
 }
 
-class KeyRotator {
-  private keys: string[];
+export class DynamicKeyRotator {
+  private providerName: string;
+  private fallbackKeys: string[];
+  private dbKeys: string[] = [];
   private currentIndex: number = 0;
+  private lastFetchTime: number = 0;
+  private exhaustedKeys: Set<string> = new Set();
 
-  constructor(keyString: string) {
-    this.keys = keyString.split(',').map(k => k.trim()).filter(k => k.length > 0);
-    if (this.keys.length === 0) {
-      this.keys = ['']; // Fallback to empty string if no keys provided
+  constructor(providerName: string, fallbackKeyString: string = '') {
+    this.providerName = providerName;
+    this.fallbackKeys = fallbackKeyString.split(',').map(k => k.trim()).filter(k => k.length > 0);
+  }
+
+  async fetchKeys() {
+    // Fetch every 1 minute to stay updated
+    if (Date.now() - this.lastFetchTime < 60000 && this.dbKeys.length > 0) {
+      return;
+    }
+    try {
+      const doc = await admin.firestore().collection('system_settings').doc('api_keys').get();
+      if (doc.exists) {
+        const data = doc.data();
+        if (data && data[this.providerName] && Array.isArray(data[this.providerName].keys)) {
+           this.dbKeys = data[this.providerName].keys
+             .filter((k: any) => k.key && k.key.trim().length > 0)
+             .map((k: any) => k.key.trim());
+        }
+      }
+      this.lastFetchTime = Date.now();
+    } catch (e) {
+      console.error(`Failed to fetch keys for ${this.providerName}`, e);
     }
   }
 
-  getNextKey(): string {
-    const key = this.keys[this.currentIndex];
-    this.currentIndex = (this.currentIndex + 1) % this.keys.length;
+  async getNextKey(): Promise<string> {
+    await this.fetchKeys();
+    const activeKeys = this.dbKeys.length > 0 ? this.dbKeys : this.fallbackKeys;
+    
+    if (activeKeys.length === 0) {
+      throw new Error(`No API keys available for provider: ${this.providerName}`);
+    }
+    
+    // Try to find a non-exhausted key
+    let key = activeKeys[this.currentIndex % activeKeys.length];
+    let attempts = 0;
+    while (this.exhaustedKeys.has(key) && attempts < activeKeys.length) {
+      this.currentIndex = (this.currentIndex + 1) % activeKeys.length;
+      key = activeKeys[this.currentIndex % activeKeys.length];
+      attempts++;
+    }
+
+    // If all keys are exhausted, clear the set and try again (maybe limits reset)
+    if (attempts >= activeKeys.length) {
+      this.exhaustedKeys.clear();
+      key = activeKeys[this.currentIndex % activeKeys.length];
+    }
+
+    this.currentIndex = (this.currentIndex + 1) % activeKeys.length;
     return key;
   }
 
-  get currentKey(): string {
-    return this.keys[this.currentIndex];
-  }
+  async markKeyExhausted(key: string) {
+    this.exhaustedKeys.add(key);
+    
+    // Update Firestore to mark key as exhausted
+    try {
+      const docRef = admin.firestore().collection('system_settings').doc('api_keys');
+      const docSnap = await docRef.get();
+      if (docSnap.exists) {
+        const data = docSnap.data();
+        if (data && data[this.providerName] && Array.isArray(data[this.providerName].keys)) {
+          const updatedKeys = data[this.providerName].keys.map((k: any) => {
+            if (k.key === key) {
+              return { ...k, isExhausted: true, exhaustedAt: Date.now() };
+            }
+            return k;
+          });
+          await docRef.update({
+            [`${this.providerName}.keys`]: updatedKeys
+          });
+        }
+      }
+    } catch (e) {
+      console.error(`Failed to update exhausted state for ${this.providerName}`, e);
+    }
 
-  get hasKeys(): boolean {
-    return this.keys.length > 0 && this.keys[0] !== '';
+    // Remove from exhausted locally after 1 hour
+    setTimeout(() => {
+      this.exhaustedKeys.delete(key);
+    }, 60 * 60 * 1000);
   }
 }
 
-export class GeminiOpenRouterProvider implements ModelProvider {
-  private rotator: KeyRotator;
+export class GeminiDirectProvider implements ModelProvider {
+  private rotator: DynamicKeyRotator;
 
-  constructor(apiKey: string) {
-    this.rotator = new KeyRotator(apiKey);
+  constructor(apiKey: string = '') {
+    this.rotator = new DynamicKeyRotator('gemini_direct', apiKey);
   }
 
   async generate(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean }): Promise<ModelResponse> {
     return retry(async () => {
-      const apiKey = this.rotator.getNextKey();
+      const apiKey = await this.rotator.getNextKey();
+      const ai = new GoogleGenAI({ apiKey });
+      const model = ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: messages.map(m => ({
+          role: m.role === 'assistant' ? 'model' : m.role,
+          parts: [{ text: m.content }]
+        })),
+        config: {
+          responseMimeType: options.jsonMode ? "application/json" : "text/plain",
+          temperature: 0.5,
+          maxOutputTokens: 8192,
+        }
+      });
+
+      const response = await model;
+      if (!response.text) throw new Error('Empty response from Gemini');
+
+      return {
+        text: response.text,
+        usage: {
+          promptTokens: 0, // SDK doesn't provide this easily
+          completionTokens: 0,
+          totalTokens: 0
+        },
+        finishReason: 'stop'
+      };
+    }, 'GeminiDirect');
+  }
+
+  async stream(messages: any[], options: { complexity: 'high' | 'standard' }, onChunk: (chunk: string) => void): Promise<ModelResponse> {
+    return retry(async () => {
+      const apiKey = await this.rotator.getNextKey();
+      const ai = new GoogleGenAI({ apiKey });
+      const result = await ai.models.generateContentStream({
+        model: "gemini-3-flash-preview",
+        contents: messages.map(m => ({
+          role: m.role === 'assistant' ? 'model' : m.role,
+          parts: [{ text: m.content }]
+        })),
+        config: {
+          temperature: 0.5,
+          maxOutputTokens: 8192,
+        }
+      });
+
+      let fullText = '';
+      for await (const chunk of result) {
+        const text = chunk.text;
+        if (text) {
+          fullText += text;
+          onChunk(text);
+        }
+      }
+
+      return {
+        text: fullText,
+        usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+        finishReason: 'stop'
+      };
+    }, 'GeminiDirect');
+  }
+}
+
+export class MistralOpenRouterProvider implements ModelProvider {
+  private rotator: DynamicKeyRotator;
+
+  constructor(apiKey: string = '') {
+    this.rotator = new DynamicKeyRotator('openrouter', apiKey);
+  }
+
+  async generate(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean }): Promise<ModelResponse> {
+    return retry(async () => {
+      const apiKey = await this.rotator.getNextKey();
       const body: any = {
-        model: 'google/gemini-2.5-flash', // Forced Flash as per user request
+        model: 'mistralai/mistral-large',
         max_tokens: 8192,
         temperature: 0.5,
         messages: messages
@@ -148,37 +290,39 @@ export class GeminiOpenRouterProvider implements ModelProvider {
       });
 
       if (!orRes.ok) {
-        const errorBody = await orRes.text();
-        throw new Error(`OpenRouter API Error: ${orRes.statusText} - ${errorBody}`);
+        if (orRes.status === 401 || orRes.status === 403 || orRes.status === 429) {
+          this.rotator.markKeyExhausted(apiKey);
+        }
+        throw new Error(`OpenRouter API Error: ${orRes.status} ${orRes.statusText}`);
       }
 
-      const rawData = await orRes.json();
-      const data = ProviderResponseSchema.parse(rawData);
+      const data = await orRes.json();
+      const parsed = ProviderResponseSchema.parse(data);
       
       return {
-        text: data.choices[0].message.content,
+        text: parsed.choices[0].message.content,
         usage: {
-          promptTokens: data.usage?.prompt_tokens || 0,
-          completionTokens: data.usage?.completion_tokens || 0,
-          totalTokens: data.usage?.total_tokens || 500
+          promptTokens: parsed.usage?.prompt_tokens || 0,
+          completionTokens: parsed.usage?.completion_tokens || 0,
+          totalTokens: parsed.usage?.total_tokens || 0
         },
-        finishReason: data.choices[0].finish_reason || 'stop'
+        finishReason: parsed.choices[0].finish_reason || 'stop'
       };
-    }, 'GeminiOpenRouter');
+    }, 'MistralOpenRouter');
   }
 
   async stream(messages: any[], options: { complexity: 'high' | 'standard' }, onChunk: (chunk: string) => void): Promise<ModelResponse> {
     return retry(async () => {
-      const apiKey = this.rotator.getNextKey();
+      const apiKey = await this.rotator.getNextKey();
       const body: any = {
-        model: 'google/gemini-2.5-flash', // Forced Flash as per user request
+        model: 'mistralai/mistral-large',
         max_tokens: 8192,
         temperature: 0.5,
         messages: messages,
         stream: true
       };
 
-      const response = await fetchWithTimeout('https://openrouter.ai/api/v1/chat/completions', {
+      const orRes = await fetchWithTimeout('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${apiKey}`,
@@ -189,38 +333,158 @@ export class GeminiOpenRouterProvider implements ModelProvider {
         body: JSON.stringify(body)
       });
 
-      if (!response.ok) {
-        const errorBody = await response.text();
-        throw new Error(`OpenRouter API Error: ${response.statusText} - ${errorBody}`);
+      if (!orRes.ok) {
+        if (orRes.status === 401 || orRes.status === 403 || orRes.status === 429) {
+          this.rotator.markKeyExhausted(apiKey);
+        }
+        throw new Error(`OpenRouter API Error: ${orRes.status} ${orRes.statusText}`);
       }
 
-      const reader = response.body?.getReader();
-      if (!reader) throw new Error('Response body is null');
+      if (!orRes.body) throw new Error('No response body');
 
-      let fullText = '';
+      const reader = orRes.body.getReader();
       const decoder = new TextDecoder();
+      let fullText = '';
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-
+        
         const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split('\n').filter(line => line.trim() !== '');
-
+        const lines = chunk.split('\n');
+        
         for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const dataStr = line.slice(6);
-            if (dataStr === '[DONE]') continue;
-
+          if (line.startsWith('data: ') && line !== 'data: [DONE]') {
             try {
-              const data = JSON.parse(dataStr);
-              const content = data.choices[0]?.delta?.content || '';
-              if (content) {
+              const data = JSON.parse(line.slice(6));
+              if (data.choices && data.choices[0].delta && data.choices[0].delta.content) {
+                const content = data.choices[0].delta.content;
                 fullText += content;
                 onChunk(content);
               }
             } catch (e) {
-              console.warn('Error parsing stream chunk:', e);
+              // Ignore parse errors
+            }
+          }
+        }
+      }
+
+      return {
+        text: fullText,
+        usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+        finishReason: 'stop'
+      };
+    }, 'MistralOpenRouter');
+  }
+}
+
+export class GeminiOpenRouterProvider implements ModelProvider {
+  private rotator: DynamicKeyRotator;
+
+  constructor(apiKey: string = '') {
+    this.rotator = new DynamicKeyRotator('openrouter', apiKey);
+  }
+
+  async generate(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean }): Promise<ModelResponse> {
+    return retry(async () => {
+      const apiKey = await this.rotator.getNextKey();
+      const body: any = {
+        model: 'google/gemini-3-flash-preview', // Updated to Gemini 3 Flash Preview as per user request
+        max_tokens: 8192,
+        temperature: 0.5,
+        messages: messages
+      };
+
+      if (options.jsonMode) {
+        body.response_format = { type: "json_object" };
+      }
+
+      const orRes = await fetchWithTimeout('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://uniace.app',
+          'X-Title': 'UniAce Learning App',
+        },
+        body: JSON.stringify(body)
+      });
+
+      if (!orRes.ok) {
+        if (orRes.status === 401 || orRes.status === 403 || orRes.status === 429) {
+          this.rotator.markKeyExhausted(apiKey);
+        }
+        throw new Error(`OpenRouter API Error: ${orRes.status} ${orRes.statusText}`);
+      }
+
+      const data = await orRes.json();
+      const parsed = ProviderResponseSchema.parse(data);
+      
+      return {
+        text: parsed.choices[0].message.content,
+        usage: {
+          promptTokens: parsed.usage?.prompt_tokens || 0,
+          completionTokens: parsed.usage?.completion_tokens || 0,
+          totalTokens: parsed.usage?.total_tokens || 0
+        },
+        finishReason: parsed.choices[0].finish_reason || 'stop'
+      };
+    }, 'GeminiOpenRouter');
+  }
+
+  async stream(messages: any[], options: { complexity: 'high' | 'standard' }, onChunk: (chunk: string) => void): Promise<ModelResponse> {
+    return retry(async () => {
+      const apiKey = await this.rotator.getNextKey();
+      const body: any = {
+        model: 'google/gemini-2.5-flash',
+        max_tokens: 8192,
+        temperature: 0.5,
+        messages: messages,
+        stream: true
+      };
+
+      const orRes = await fetchWithTimeout('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://uniace.app',
+          'X-Title': 'UniAce Learning App',
+        },
+        body: JSON.stringify(body)
+      });
+
+      if (!orRes.ok) {
+        if (orRes.status === 401 || orRes.status === 403 || orRes.status === 429) {
+          this.rotator.markKeyExhausted(apiKey);
+        }
+        throw new Error(`OpenRouter API Error: ${orRes.status} ${orRes.statusText}`);
+      }
+
+      if (!orRes.body) throw new Error('No response body');
+
+      const reader = orRes.body.getReader();
+      const decoder = new TextDecoder();
+      let fullText = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n');
+        
+        for (const line of lines) {
+          if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.choices && data.choices[0].delta && data.choices[0].delta.content) {
+                const content = data.choices[0].delta.content;
+                fullText += content;
+                onChunk(content);
+              }
+            } catch (e) {
+              // Ignore parse errors on incomplete chunks
             }
           }
         }
@@ -236,15 +500,15 @@ export class GeminiOpenRouterProvider implements ModelProvider {
 }
 
 export class MistralProvider implements ModelProvider {
-  private rotator: KeyRotator;
+  private rotator: DynamicKeyRotator;
 
-  constructor(apiKey: string) {
-    this.rotator = new KeyRotator(apiKey);
+  constructor(apiKey: string = '') {
+    this.rotator = new DynamicKeyRotator('mistral_direct', apiKey);
   }
 
   async generate(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean }): Promise<ModelResponse> {
     return retry(async () => {
-      const apiKey = this.rotator.getNextKey();
+      const apiKey = await this.rotator.getNextKey();
       const body: any = {
         model: options.complexity === 'high' ? 'mistral-large-latest' : 'mistral-small-latest',
         temperature: 0.5,
@@ -256,38 +520,40 @@ export class MistralProvider implements ModelProvider {
         body.response_format = { type: "json_object" };
       }
 
-      const response = await fetchWithTimeout('https://api.mistral.ai/v1/chat/completions', {
+      const res = await fetchWithTimeout('https://api.mistral.ai/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify(body)
       });
 
-      if (!response.ok) {
-        const errorBody = await response.text();
-        throw new Error(`Mistral API Error: ${response.statusText} - ${errorBody}`);
+      if (!res.ok) {
+        if (res.status === 401 || res.status === 403 || res.status === 429) {
+          this.rotator.markKeyExhausted(apiKey);
+        }
+        throw new Error(`Mistral API Error: ${res.status} ${res.statusText}`);
       }
 
-      const rawData = await response.json();
-      const data = ProviderResponseSchema.parse(rawData);
+      const data = await res.json();
+      const parsed = ProviderResponseSchema.parse(data);
       
       return {
-        text: data.choices[0].message.content,
+        text: parsed.choices[0].message.content,
         usage: {
-          promptTokens: data.usage?.prompt_tokens || 0,
-          completionTokens: data.usage?.completion_tokens || 0,
-          totalTokens: data.usage?.total_tokens || 500
+          promptTokens: parsed.usage?.prompt_tokens || 0,
+          completionTokens: parsed.usage?.completion_tokens || 0,
+          totalTokens: parsed.usage?.total_tokens || 0
         },
-        finishReason: data.choices[0].finish_reason || 'stop'
+        finishReason: parsed.choices[0].finish_reason || 'stop'
       };
     }, 'Mistral');
   }
 
   async stream(messages: any[], options: { complexity: 'high' | 'standard' }, onChunk: (chunk: string) => void): Promise<ModelResponse> {
     return retry(async () => {
-      const apiKey = this.rotator.getNextKey();
+      const apiKey = await this.rotator.getNextKey();
       const body: any = {
         model: options.complexity === 'high' ? 'mistral-large-latest' : 'mistral-small-latest',
         temperature: 0.5,
@@ -296,47 +562,46 @@ export class MistralProvider implements ModelProvider {
         stream: true
       };
 
-      const response = await fetchWithTimeout('https://api.mistral.ai/v1/chat/completions', {
+      const res = await fetchWithTimeout('https://api.mistral.ai/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify(body)
       });
 
-      if (!response.ok) {
-        const errorBody = await response.text();
-        throw new Error(`Mistral API Error: ${response.statusText} - ${errorBody}`);
+      if (!res.ok) {
+        if (res.status === 401 || res.status === 403 || res.status === 429) {
+          this.rotator.markKeyExhausted(apiKey);
+        }
+        throw new Error(`Mistral API Error: ${res.status} ${res.statusText}`);
       }
 
-      const reader = response.body?.getReader();
-      if (!reader) throw new Error('Response body is null');
+      if (!res.body) throw new Error('No response body');
 
-      let fullText = '';
+      const reader = res.body.getReader();
       const decoder = new TextDecoder();
+      let fullText = '';
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-
+        
         const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split('\n').filter(line => line.trim() !== '');
-
+        const lines = chunk.split('\n');
+        
         for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const dataStr = line.slice(6);
-            if (dataStr === '[DONE]') continue;
-
+          if (line.startsWith('data: ') && line !== 'data: [DONE]') {
             try {
-              const data = JSON.parse(dataStr);
-              const content = data.choices[0]?.delta?.content || '';
-              if (content) {
+              const data = JSON.parse(line.slice(6));
+              if (data.choices && data.choices[0].delta && data.choices[0].delta.content) {
+                const content = data.choices[0].delta.content;
                 fullText += content;
                 onChunk(content);
               }
             } catch (e) {
-              console.warn('Error parsing stream chunk:', e);
+              // Ignore parse errors on incomplete chunks
             }
           }
         }
@@ -352,107 +617,108 @@ export class MistralProvider implements ModelProvider {
 }
 
 export class GroqProvider implements ModelProvider {
-  private rotator: KeyRotator;
+  private rotator: DynamicKeyRotator;
 
-  constructor(apiKey: string) {
-    this.rotator = new KeyRotator(apiKey);
+  constructor(apiKey: string = '') {
+    this.rotator = new DynamicKeyRotator('groq', apiKey);
   }
 
   async generate(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean }): Promise<ModelResponse> {
     return retry(async () => {
-      const apiKey = this.rotator.getNextKey();
+      const apiKey = await this.rotator.getNextKey();
       const body: any = {
         model: options.complexity === 'high' ? 'llama-3.3-70b-versatile' : 'llama-3.1-8b-instant',
-        messages: messages,
+        temperature: 0.5,
         max_tokens: 8192,
-        temperature: 0.5
+        messages: messages
       };
 
       if (options.jsonMode) {
         body.response_format = { type: "json_object" };
       }
 
-      const response = await fetchWithTimeout('https://api.groq.com/openai/v1/chat/completions', {
+      const res = await fetchWithTimeout('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify(body)
       });
 
-      if (!response.ok) {
-        const errorBody = await response.text();
-        throw new Error(`Groq API Error: ${response.statusText} - ${errorBody}`);
+      if (!res.ok) {
+        if (res.status === 401 || res.status === 403 || res.status === 429) {
+          this.rotator.markKeyExhausted(apiKey);
+        }
+        throw new Error(`Groq API Error: ${res.status} ${res.statusText}`);
       }
 
-      const rawData = await response.json();
-      const data = ProviderResponseSchema.parse(rawData);
+      const data = await res.json();
+      const parsed = ProviderResponseSchema.parse(data);
       
       return {
-        text: data.choices[0].message.content,
+        text: parsed.choices[0].message.content,
         usage: {
-          promptTokens: data.usage?.prompt_tokens || 0,
-          completionTokens: data.usage?.completion_tokens || 0,
-          totalTokens: data.usage?.total_tokens || 500
+          promptTokens: parsed.usage?.prompt_tokens || 0,
+          completionTokens: parsed.usage?.completion_tokens || 0,
+          totalTokens: parsed.usage?.total_tokens || 0
         },
-        finishReason: data.choices[0].finish_reason || 'stop'
+        finishReason: parsed.choices[0].finish_reason || 'stop'
       };
     }, 'Groq');
   }
 
   async stream(messages: any[], options: { complexity: 'high' | 'standard' }, onChunk: (chunk: string) => void): Promise<ModelResponse> {
     return retry(async () => {
-      const apiKey = this.rotator.getNextKey();
+      const apiKey = await this.rotator.getNextKey();
       const body: any = {
         model: options.complexity === 'high' ? 'llama-3.3-70b-versatile' : 'llama-3.1-8b-instant',
-        messages: messages,
-        max_tokens: 8192,
         temperature: 0.5,
+        max_tokens: 8192,
+        messages: messages,
         stream: true
       };
 
-      const response = await fetchWithTimeout('https://api.groq.com/openai/v1/chat/completions', {
+      const res = await fetchWithTimeout('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify(body)
       });
 
-      if (!response.ok) {
-        const errorBody = await response.text();
-        throw new Error(`Groq API Error: ${response.statusText} - ${errorBody}`);
+      if (!res.ok) {
+        if (res.status === 401 || res.status === 403 || res.status === 429) {
+          this.rotator.markKeyExhausted(apiKey);
+        }
+        throw new Error(`Groq API Error: ${res.status} ${res.statusText}`);
       }
 
-      const reader = response.body?.getReader();
-      if (!reader) throw new Error('Response body is null');
+      if (!res.body) throw new Error('No response body');
 
-      let fullText = '';
+      const reader = res.body.getReader();
       const decoder = new TextDecoder();
+      let fullText = '';
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-
+        
         const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split('\n').filter(line => line.trim() !== '');
-
+        const lines = chunk.split('\n');
+        
         for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const dataStr = line.slice(6);
-            if (dataStr === '[DONE]') continue;
-
+          if (line.startsWith('data: ') && line !== 'data: [DONE]') {
             try {
-              const data = JSON.parse(dataStr);
-              const content = data.choices[0]?.delta?.content || '';
-              if (content) {
+              const data = JSON.parse(line.slice(6));
+              if (data.choices && data.choices[0].delta && data.choices[0].delta.content) {
+                const content = data.choices[0].delta.content;
                 fullText += content;
                 onChunk(content);
               }
             } catch (e) {
-              console.warn('Error parsing stream chunk:', e);
+              // Ignore parse errors on incomplete chunks
             }
           }
         }
@@ -467,49 +733,303 @@ export class GroqProvider implements ModelProvider {
   }
 }
 
+export class CohereProvider implements ModelProvider {
+  private rotator: DynamicKeyRotator;
+
+  constructor(apiKey: string = '') {
+    this.rotator = new DynamicKeyRotator('cohere', apiKey);
+  }
+
+  async generate(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean }): Promise<ModelResponse> {
+    return retry(async () => {
+      const apiKey = await this.rotator.getNextKey();
+      
+      // Convert OpenAI format to Cohere format
+      const chatHistory = messages.slice(0, -1).map(m => ({
+        role: m.role === 'assistant' ? 'CHATBOT' : (m.role === 'system' ? 'SYSTEM' : 'USER'),
+        message: m.content
+      }));
+      const lastMessage = messages[messages.length - 1].content;
+
+      const body: any = {
+        model: options.complexity === 'high' ? 'command-r-plus' : 'command-r',
+        message: lastMessage,
+        chat_history: chatHistory,
+        temperature: 0.5,
+      };
+
+      const res = await fetchWithTimeout('https://api.cohere.ai/v1/chat', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'accept': 'application/json'
+        },
+        body: JSON.stringify(body)
+      });
+
+      if (!res.ok) {
+        if (res.status === 401 || res.status === 403 || res.status === 429) {
+          this.rotator.markKeyExhausted(apiKey);
+        }
+        throw new Error(`Cohere API Error: ${res.status} ${res.statusText}`);
+      }
+
+      const data = await res.json();
+      
+      return {
+        text: data.text,
+        usage: {
+          promptTokens: data.meta?.billed_units?.input_tokens || 0,
+          completionTokens: data.meta?.billed_units?.output_tokens || 0,
+          totalTokens: (data.meta?.billed_units?.input_tokens || 0) + (data.meta?.billed_units?.output_tokens || 0)
+        },
+        finishReason: data.finish_reason || 'COMPLETE'
+      };
+    }, 'Cohere');
+  }
+
+  async stream(messages: any[], options: { complexity: 'high' | 'standard' }, onChunk: (chunk: string) => void): Promise<ModelResponse> {
+    return retry(async () => {
+      const apiKey = await this.rotator.getNextKey();
+      
+      const chatHistory = messages.slice(0, -1).map(m => ({
+        role: m.role === 'assistant' ? 'CHATBOT' : (m.role === 'system' ? 'SYSTEM' : 'USER'),
+        message: m.content
+      }));
+      const lastMessage = messages[messages.length - 1].content;
+
+      const body: any = {
+        model: options.complexity === 'high' ? 'command-r-plus' : 'command-r',
+        message: lastMessage,
+        chat_history: chatHistory,
+        temperature: 0.5,
+        stream: true
+      };
+
+      const res = await fetchWithTimeout('https://api.cohere.ai/v1/chat', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'accept': 'application/stream+json'
+        },
+        body: JSON.stringify(body)
+      });
+
+      if (!res.ok) {
+        if (res.status === 401 || res.status === 403 || res.status === 429) {
+          this.rotator.markKeyExhausted(apiKey);
+        }
+        throw new Error(`Cohere API Error: ${res.status} ${res.statusText}`);
+      }
+
+      if (!res.body) throw new Error('No response body');
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let fullText = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n');
+        
+        for (const line of lines) {
+          if (line.trim() === '') continue;
+          try {
+            const data = JSON.parse(line);
+            if (data.event_type === 'text-generation') {
+              fullText += data.text;
+              onChunk(data.text);
+            }
+          } catch (e) {
+            // Ignore parse errors
+          }
+        }
+      }
+
+      return {
+        text: fullText,
+        usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+        finishReason: 'COMPLETE'
+      };
+    }, 'Cohere');
+  }
+}
+
+export class HuggingFaceProvider implements ModelProvider {
+  private rotator: DynamicKeyRotator;
+
+  constructor(apiKey: string = '') {
+    this.rotator = new DynamicKeyRotator('huggingface', apiKey);
+  }
+
+  async generate(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean }): Promise<ModelResponse> {
+    return retry(async () => {
+      const apiKey = await this.rotator.getNextKey();
+      const body: any = {
+        model: 'meta-llama/Meta-Llama-3-8B-Instruct',
+        messages: messages,
+        max_tokens: 8192,
+        temperature: 0.5
+      };
+
+      const res = await fetchWithTimeout('https://api-inference.huggingface.co/models/meta-llama/Meta-Llama-3-8B-Instruct/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(body)
+      });
+
+      if (!res.ok) {
+        if (res.status === 401 || res.status === 403 || res.status === 429) {
+          this.rotator.markKeyExhausted(apiKey);
+        }
+        throw new Error(`HuggingFace API Error: ${res.status} ${res.statusText}`);
+      }
+
+      const data = await res.json();
+      const parsed = ProviderResponseSchema.parse(data);
+      
+      return {
+        text: parsed.choices[0].message.content,
+        usage: {
+          promptTokens: parsed.usage?.prompt_tokens || 0,
+          completionTokens: parsed.usage?.completion_tokens || 0,
+          totalTokens: parsed.usage?.total_tokens || 0
+        },
+        finishReason: parsed.choices[0].finish_reason || 'stop'
+      };
+    }, 'HuggingFace');
+  }
+
+  async stream(messages: any[], options: { complexity: 'high' | 'standard' }, onChunk: (chunk: string) => void): Promise<ModelResponse> {
+    return retry(async () => {
+      const apiKey = await this.rotator.getNextKey();
+      const body: any = {
+        model: 'meta-llama/Meta-Llama-3-8B-Instruct',
+        messages: messages,
+        max_tokens: 8192,
+        temperature: 0.5,
+        stream: true
+      };
+
+      const res = await fetchWithTimeout('https://api-inference.huggingface.co/models/meta-llama/Meta-Llama-3-8B-Instruct/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(body)
+      });
+
+      if (!res.ok) {
+        if (res.status === 401 || res.status === 403 || res.status === 429) {
+          this.rotator.markKeyExhausted(apiKey);
+        }
+        throw new Error(`HuggingFace API Error: ${res.status} ${res.statusText}`);
+      }
+
+      if (!res.body) throw new Error('No response body');
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let fullText = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n');
+        
+        for (const line of lines) {
+          if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.choices && data.choices[0].delta && data.choices[0].delta.content) {
+                const content = data.choices[0].delta.content;
+                fullText += content;
+                onChunk(content);
+              }
+            } catch (e) {
+              // Ignore parse errors on incomplete chunks
+            }
+          }
+        }
+      }
+
+      return {
+        text: fullText,
+        usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+        finishReason: 'stop'
+      };
+    }, 'HuggingFace');
+  }
+}
+
 export class CircuitBreaker {
-  private failureCount = 0;
+  private failures = 0;
   private lastFailureTime = 0;
-  private readonly threshold = 3;
-  private readonly resetTimeout = 300000; // 5 minutes
+  private readonly threshold = 5;
+  private readonly resetTimeout = 60000; // 1 minute
 
   constructor(private provider: ModelProvider) {}
 
-  async generate(messages: any[], options: { complexity: 'high' | 'standard' }): Promise<ModelResponse> {
-    if (this.failureCount >= this.threshold) {
-      if (Date.now() - this.lastFailureTime < this.resetTimeout) {
-        throw new Error('Circuit breaker open');
-      }
-      this.failureCount = 0;
+  async generate(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean }): Promise<ModelResponse> {
+    if (this.isOpen()) {
+      throw new Error(`Circuit breaker open for provider`);
     }
 
     try {
       const response = await this.provider.generate(messages, options);
-      this.failureCount = 0;
+      this.onSuccess();
       return response;
     } catch (error) {
-      this.failureCount++;
-      this.lastFailureTime = Date.now();
+      this.onFailure();
       throw error;
     }
   }
 
   async stream(messages: any[], options: { complexity: 'high' | 'standard' }, onChunk: (chunk: string) => void): Promise<ModelResponse> {
-    if (this.failureCount >= this.threshold) {
-      if (Date.now() - this.lastFailureTime < this.resetTimeout) {
-        throw new Error('Circuit breaker open');
-      }
-      this.failureCount = 0;
+    if (this.isOpen()) {
+      throw new Error(`Circuit breaker open for provider`);
     }
 
     try {
       const response = await this.provider.stream(messages, options, onChunk);
-      this.failureCount = 0;
+      this.onSuccess();
       return response;
     } catch (error) {
-      this.failureCount++;
-      this.lastFailureTime = Date.now();
+      this.onFailure();
       throw error;
     }
+  }
+
+  private isOpen(): boolean {
+    if (this.failures >= this.threshold) {
+      const now = Date.now();
+      if (now - this.lastFailureTime > this.resetTimeout) {
+        // Half-open state
+        this.failures = this.threshold - 1;
+        return false;
+      }
+      return true;
+    }
+    return false;
+  }
+
+  private onSuccess() {
+    this.failures = 0;
+  }
+
+  private onFailure() {
+    this.failures++;
+    this.lastFailureTime = Date.now();
   }
 }

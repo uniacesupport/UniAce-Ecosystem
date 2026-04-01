@@ -11,7 +11,7 @@ const getAuthToken = async () => {
   }
 };
 
-const callAI = async (prompt: any, systemInstruction?: string, responseFormat?: 'json', maxTokens?: number, complexity: 'standard' | 'high' | 'quiz' = 'standard') => {
+const callAI = async (prompt: any, systemInstruction?: string, responseFormat?: 'json', maxTokens?: number, complexity: 'standard' | 'high' | 'quiz' = 'standard', taskType: string = 'chat') => {
   const token = await getAuthToken();
   const response = await fetch('/api/openrouter/generate', {
     method: 'POST',
@@ -24,7 +24,8 @@ const callAI = async (prompt: any, systemInstruction?: string, responseFormat?: 
       systemInstruction,
       responseFormat,
       maxTokens,
-      complexity
+      complexity,
+      taskType
     })
   });
   
@@ -283,7 +284,8 @@ ALWAYS use LaTeX for ALL mathematical formulas and variables (e.g., use $x$ inst
       },
       body: JSON.stringify({
         prompt,
-        systemInstruction
+        systemInstruction,
+        taskType: 'lesson'
       })
     });
 

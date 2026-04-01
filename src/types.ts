@@ -21,6 +21,8 @@ export interface Course {
   scope?: CourseScope;
   level?: Level;
   semester?: Semester;
+  creditUnits?: number;
+  prerequisites?: string[];
   deleted?: boolean;
   deletedAt?: string;
 }
