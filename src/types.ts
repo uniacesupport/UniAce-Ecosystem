@@ -99,7 +99,7 @@ export interface UserProfile {
   email: string;
   displayName: string;
   photoURL: string;
-  role: 'student' | 'admin' | 'editor';
+  role: 'student' | 'admin' | 'tutor' | 'moderator';
   plan_type: PlanType;
   subscription_end_date?: string;
   created_at?: string;

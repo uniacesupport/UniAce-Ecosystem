@@ -22,10 +22,21 @@ service cloud.firestore {
          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', 'student') == 'admin'));
     }
+
+    function isTutor() {
+      return isAuthenticated() && 
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', 'student') in ['admin', 'tutor']);
+    }
+
+    function isModerator() {
+      return isAuthenticated() && 
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', 'student') in ['admin', 'moderator']);
+    }
     
     function isEditor() {
-      let isRoleEditor = isAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'editor'];
-      return isAdmin() || isRoleEditor;
+      return isTutor();
     }
 
     function hasRequiredFields(fields) {
@@ -42,7 +53,7 @@ service cloud.firestore {
              (!('displayName' in data) || (data.displayName is string && data.displayName.size() < 100)) &&
              (!('bio' in data) || (data.bio is string && data.bio.size() < 500)) &&
              (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() < 2000)) &&
-             (!('role' in data) || (data.role in ['student', 'admin', 'editor'])) &&
+             (!('role' in data) || (data.role in ['student', 'admin', 'tutor', 'moderator'])) &&
              (!('plan_type' in data) || (data.plan_type in ['free', 'pro', 'scholar', 'exam_cram', 'semester'])) &&
              (!('xp' in data) || (data.xp is number && data.xp >= 0)) &&
              (!('level' in data) || (data.level is number && data.level >= 0)) &&
@@ -123,21 +134,25 @@ service cloud.firestore {
     }
 
     match /integrity_issues/{issueId} {
-      allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow read: if isAdmin() || isModerator() || (isAuthenticated() && resource.data.userId == request.auth.uid);
       allow write: if isAdmin();
       allow create: if isAuthenticated(); // Allow system to log from client side
     }
 
     match /study_plans/{userId} {
-      allow read, write: if isAdmin();
+      allow read, write: if isAdmin() || isTutor();
       allow get: if isOwner(userId);
       allow create: if isOwner(userId) && isValidStudyPlan(request.resource.data) && hasRequiredFields(['id', 'userId', 'timetable', 'exams', 'sessions', 'lastGenerated']);
       allow update: if isOwner(userId) && isValidStudyPlan(request.resource.data) && request.resource.data.userId == resource.data.userId;
     }
 
     match /users/{userId} {
-      allow get, list, write: if isAdmin();
+      allow get, list: if isAdmin() || isModerator();
       allow get: if isOwner(userId);
+      
+      allow update: if (isAdmin() || isModerator()) && 
+                      isValidUser(request.resource.data) &&
+                      (isAdmin() || !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'plan_type', 'subscription_expiry', 'subscription_status', 'subscription_start_date', 'last_spark_reset', 'last_payment_ref']));
       
       allow update: if isOwner(userId) && 
                       isValidUser(request.resource.data) &&
@@ -160,20 +175,20 @@ service cloud.firestore {
     }
 
     match /notifications/{notificationId} {
-      allow read, write: if isAdmin();
+      allow read, write: if isAdmin() || isModerator();
       allow read: if isAuthenticated() && 
                     (notificationId == 'global_alert' || resource == null || resource.data.userId == request.auth.uid || resource.data.userId == 'global');
       allow update: if isAuthenticated() && resource.data.userId == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'readAt']);
     }
 
     match /support_tickets/{ticketId} {
-      allow read, write: if isAdmin();
+      allow read, write: if isAdmin() || isModerator();
       allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
       allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
     }
 
     match /support_chats/{chatId} {
-      allow read, write: if isAdmin();
+      allow read, write: if isAdmin() || isModerator();
       allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid && isValidSupportChat(request.resource.data);
       allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
       allow update: if isAuthenticated() && resource.data.userId == request.auth.uid && 
@@ -181,7 +196,7 @@ service cloud.firestore {
                     request.resource.data.userId == resource.data.userId;
       
       match /messages/{messageId} {
-        allow read, write: if isAdmin();
+        allow read, write: if isAdmin() || isModerator();
         allow read: if isAuthenticated() && get(/databases/$(database)/documents/support_chats/$(chatId)).data.userId == request.auth.uid;
         allow create: if isAuthenticated() && 
                       get(/databases/$(database)/documents/support_chats/$(chatId)).data.userId == request.auth.uid &&
@@ -237,7 +252,7 @@ service cloud.firestore {
     }
 
     match /analytics/{docId} {
-      allow read, write: if isAdmin();
+      allow read, write: if isAdmin() || isTutor();
     }
 
     match /system_config/{configId} {

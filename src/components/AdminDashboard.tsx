@@ -22,6 +22,7 @@ import { Course, UserProgress, CourseId, Department, Level, Semester, Subject, C
 import { FACULTIES, DEPARTMENT_TO_FACULTY, DEPARTMENTS, LEVELS, SEMESTERS } from '../constants';
 import { LogService, SystemLog } from '../services/logService';
 import { CurriculumIntegrityService } from '../services/curriculumIntegrity';
+import { usePermissions } from '../hooks/usePermissions';
 
 import { jsonrepair } from 'jsonrepair';
 
@@ -54,7 +55,26 @@ export default function AdminDashboard() {
     }
   }, [showArchived]);
   const { user, profile } = useAuth();
-  const isAdmin = profile?.role === 'admin';
+  const permissions = usePermissions(profile);
+  const { 
+    isAdmin, 
+    isTutor, 
+    isModerator, 
+    canManageCourses, 
+    canUseAI, 
+    canManageUsers, 
+    canViewLogs, 
+    canManageSystem, 
+    canCommunicate, 
+    canManageCurriculum,
+    role: userRole
+  } = permissions;
+
+  // Add aliases for backward compatibility or specific checks if needed
+  const canManageRAG = canManageCourses;
+  const canManageCommunications = canCommunicate;
+  const canManageAI = canUseAI;
+
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadSuccess, setUploadSuccess] = useState(false);
@@ -72,6 +92,20 @@ export default function AdminDashboard() {
   const [ingestionStatus, setIngestionStatus] = useState('');
   const [kbStats, setKbStats] = useState({ totalChunks: 0 });
   const [activeTab, setActiveTab] = useState<'overview' | 'courses' | 'users' | 'rag' | 'communications' | 'settings' | 'logs' | 'question-bank' | 'curriculum-health' | 'curriculum-manager'>('overview');
+
+  useEffect(() => {
+    // Redirect if current tab is not allowed for the role
+    if (activeTab === 'logs' && !canViewLogs) setActiveTab('overview');
+    if (activeTab === 'settings' && !canManageAI) setActiveTab('overview');
+    if (activeTab === 'users' && !canManageUsers) setActiveTab('overview');
+    if (activeTab === 'courses' && !canManageCourses) setActiveTab('overview');
+    if (activeTab === 'rag' && !canManageRAG) setActiveTab('overview');
+    if (activeTab === 'communications' && !canManageCommunications) setActiveTab('overview');
+    if (activeTab === 'question-bank' && !canManageCourses) setActiveTab('overview');
+    if (activeTab === 'curriculum-health' && !canManageCurriculum) setActiveTab('overview');
+    if (activeTab === 'curriculum-manager' && !canManageCurriculum) setActiveTab('overview');
+  }, [userRole, activeTab]);
+
   const [integrityIssues, setIntegrityIssues] = useState<any[]>([]);
   const [isLoadingIntegrity, setIsLoadingIntegrity] = useState(false);
   const [allCurriculums, setAllCurriculums] = useState<any[]>([]);
@@ -137,6 +171,8 @@ export default function AdminDashboard() {
   const [isLiveLogs, setIsLiveLogs] = useState(true);
   const [selectedLogDetails, setSelectedLogDetails] = useState<any>(null);
   const [logLimit, setLogLimit] = useState(100);
+  const [logStats, setLogStats] = useState<{ date: string; count: number }[]>([]);
+  const [logCounts, setLogCounts] = useState({ error: 0, warning: 0, info: 0, success: 0 });
   const [isCheckingAI, setIsCheckingAI] = useState(false);
   const [selectedProviderForKeyManager, setSelectedProviderForKeyManager] = useState<string | null>(null);
 
@@ -301,6 +337,28 @@ export default function AdminDashboard() {
     try {
       const fetchedLogs = await LogService.getLogs(logLimit, logFilter);
       setLogs(fetchedLogs);
+      
+      // Calculate stats for the chart
+      const statsMap: Record<string, number> = {};
+      fetchedLogs.forEach(log => {
+        const date = log.timestamp?.toDate ? log.timestamp.toDate().toLocaleDateString() : new Date().toLocaleDateString();
+        statsMap[date] = (statsMap[date] || 0) + 1;
+      });
+      
+      const stats = Object.entries(statsMap)
+        .map(([date, count]) => ({ date, count }))
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+        .slice(-7); // Last 7 days
+        
+      setLogStats(stats);
+
+      // Calculate counts
+      const counts = fetchedLogs.reduce((acc, log) => {
+        const level = log.level as keyof typeof acc;
+        if (acc[level] !== undefined) acc[level]++;
+        return acc;
+      }, { error: 0, warning: 0, info: 0, success: 0 });
+      setLogCounts(counts);
     } catch (error) {
       console.error("Error fetching logs:", error);
     } finally {
@@ -1523,6 +1581,14 @@ export default function AdminDashboard() {
             </button>
             <h1 className="text-4xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-3">
               🎓 Admin Dashboard
+              <span className={`text-[10px] px-2 py-1 rounded-lg border uppercase tracking-widest ${
+                isAdmin ? 'bg-rose-50 text-rose-600 border-rose-200 dark:bg-rose-900/20 dark:text-rose-400 dark:border-rose-800' :
+                isTutor ? 'bg-indigo-50 text-indigo-600 border-indigo-200 dark:bg-indigo-900/20 dark:text-indigo-400 dark:border-indigo-800' :
+                isModerator ? 'bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800' :
+                'bg-slate-50 text-slate-600 border-slate-200 dark:bg-slate-900/20 dark:text-slate-400 dark:border-slate-800'
+              }`}>
+                {userRole}
+              </span>
             </h1>
             <p className="text-slate-500 dark:text-slate-400 mt-2">
               Phase 3: The Command Center — Global Analytics & Content Control.
@@ -1555,17 +1621,17 @@ export default function AdminDashboard() {
         {/* Phase 3 Tabs */}
         <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-hide">
           {[
-            { id: 'overview', label: 'Overview', icon: Activity },
-            { id: 'courses', label: 'Courses & AI', icon: BookOpen },
-            { id: 'question-bank', label: 'Question Bank', icon: FileQuestion },
-            { id: 'rag', label: 'Knowledge Base', icon: Database },
-            { id: 'curriculum-manager', label: 'Curriculum Manager', icon: Layers },
-            { id: 'curriculum-health', label: 'Curriculum Health', icon: HeartPulse },
-            { id: 'users', label: 'User Management', icon: Users },
-            { id: 'communications', label: 'Communications', icon: Globe },
-            { id: 'logs', label: 'System Logs', icon: FileText },
-            { id: 'settings', label: 'Command Center', icon: Shield }
-          ].map((tab) => (
+            { id: 'overview', label: 'Overview', icon: Activity, show: true },
+            { id: 'courses', label: 'Courses & AI', icon: BookOpen, show: permissions.canManageCourses },
+            { id: 'question-bank', label: 'Question Bank', icon: FileQuestion, show: permissions.canManageCourses },
+            { id: 'rag', label: 'Knowledge Base', icon: Database, show: permissions.canManageCourses },
+            { id: 'curriculum-manager', label: 'Curriculum Manager', icon: Layers, show: permissions.canManageCurriculum },
+            { id: 'curriculum-health', label: 'Curriculum Health', icon: HeartPulse, show: permissions.canManageCurriculum },
+            { id: 'users', label: 'User Management', icon: Users, show: permissions.canManageUsers },
+            { id: 'communications', label: 'Communications', icon: Globe, show: permissions.canCommunicate },
+            { id: 'logs', label: 'System Logs', icon: FileText, show: permissions.canViewLogs },
+            { id: 'settings', label: 'Command Center', icon: Shield, show: permissions.canManageSystem }
+          ].filter(tab => tab.show).map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id as any)}
@@ -2769,9 +2835,12 @@ export default function AdminDashboard() {
                         <select 
                           value={user.role || 'student'} 
                           onChange={(e) => handleUpdateRole(user.id, e.target.value)}
-                          className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-xs font-bold text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          disabled={!isAdmin}
+                          className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-xs font-bold text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           <option value="student">Student</option>
+                          <option value="tutor">Tutor</option>
+                          <option value="moderator">Moderator</option>
                           <option value="admin">Admin</option>
                         </select>
                       </td>
@@ -2892,6 +2961,79 @@ export default function AdminDashboard() {
               >
                 <Trash2 size={20} />
               </button>
+            </div>
+          </div>
+
+          {/* Log Stats Chart & Summary */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+            <div className="lg:col-span-2 p-6 bg-slate-50 dark:bg-slate-900/50 rounded-3xl border border-slate-100 dark:border-slate-700">
+              <h3 className="text-sm font-bold text-slate-500 uppercase tracking-widest mb-4">Log Activity (Last 7 Days)</h3>
+              <div className="h-48">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={logStats}>
+                    <defs>
+                      <linearGradient id="logGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                    <XAxis 
+                      dataKey="date" 
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{ fontSize: 10, fontWeight: 700, fill: '#94a3b8' }}
+                    />
+                    <YAxis 
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{ fontSize: 10, fontWeight: 700, fill: '#94a3b8' }}
+                    />
+                    <Tooltip 
+                      contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                    />
+                    <Area 
+                      type="monotone" 
+                      dataKey="count" 
+                      stroke="#6366f1" 
+                      strokeWidth={3}
+                      fillOpacity={1} 
+                      fill="url(#logGradient)" 
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="p-4 bg-rose-50 dark:bg-rose-900/20 rounded-2xl border border-rose-100 dark:border-rose-800/50 flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-black text-rose-600 dark:text-rose-400 uppercase tracking-widest">Errors</div>
+                  <div className="text-2xl font-black text-rose-700 dark:text-rose-300">{logCounts.error}</div>
+                </div>
+                <AlertCircle className="text-rose-500" size={24} />
+              </div>
+              <div className="p-4 bg-amber-50 dark:bg-amber-900/20 rounded-2xl border border-amber-100 dark:border-amber-800/50 flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-black text-amber-600 dark:text-amber-400 uppercase tracking-widest">Warnings</div>
+                  <div className="text-2xl font-black text-amber-700 dark:text-amber-300">{logCounts.warning}</div>
+                </div>
+                <AlertCircle className="text-amber-500" size={24} />
+              </div>
+              <div className="p-4 bg-emerald-50 dark:bg-emerald-900/20 rounded-2xl border border-emerald-100 dark:border-emerald-800/50 flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">Success</div>
+                  <div className="text-2xl font-black text-emerald-700 dark:text-emerald-300">{logCounts.success}</div>
+                </div>
+                <CheckCircle className="text-emerald-500" size={24} />
+              </div>
+              <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-2xl border border-blue-100 dark:border-blue-800/50 flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-black text-blue-600 dark:text-blue-400 uppercase tracking-widest">Info</div>
+                  <div className="text-2xl font-black text-blue-700 dark:text-blue-300">{logCounts.info}</div>
+                </div>
+                <Activity className="text-blue-500" size={24} />
+              </div>
             </div>
           </div>
 

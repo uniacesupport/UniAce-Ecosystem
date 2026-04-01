@@ -13,7 +13,7 @@ interface UserProfile {
   displayName: string;
   bio?: string;
   photoURL: string;
-  role: 'student' | 'admin' | 'editor';
+  role: 'student' | 'admin' | 'tutor' | 'moderator';
   fcmToken?: string;
   plan_type: PlanType;
   subscription_expiry?: string;
