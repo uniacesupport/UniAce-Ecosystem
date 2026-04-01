@@ -13,11 +13,11 @@ RUN npm ci
 # Copy the rest of your application's source code
 COPY . .
 
-# Build the React frontend into static files (dist/ folder)
+# Build the React frontend into static files (build/ folder)
 RUN npm run build
 
 # Verify build directory
-RUN ls -la dist && test -f dist/index.html || (echo "Build failed: dist/index.html not found" && exit 1)
+RUN ls -la build && test -f build/index.html || (echo "Build failed: build/index.html not found" && exit 1)
 
 # Expose the port that the Express server will listen on
 EXPOSE 3000

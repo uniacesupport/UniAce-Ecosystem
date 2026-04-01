@@ -1767,53 +1767,6 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
-              {/* Admin Debug Info */}
-              <div className="bg-white dark:bg-slate-800 p-8 rounded-[2.5rem] shadow-sm border border-slate-200 dark:border-slate-700">
-                <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
-                  <Shield className="text-blue-500" size={24} />
-                  Curriculum Debugging
-                </h3>
-                <div className="p-6 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-100 dark:border-slate-700/50 font-mono text-xs">
-                  <div className="space-y-2">
-                    <div className="flex justify-between border-b border-slate-200 dark:border-slate-700 pb-2 mb-2">
-                      <span className="font-bold text-slate-900 dark:text-white uppercase tracking-wider">System State</span>
-                      <span className="text-slate-400">v1.4</span>
-                    </div>
-                    <p><span className="text-slate-400">Total Courses:</span> <span className="text-slate-900 dark:text-white">{Object.keys(courses).length}</span></p>
-                    <p><span className="text-slate-400">Your Profile:</span> <span className="text-slate-900 dark:text-white">{JSON.stringify({
-                      dept: profile?.department,
-                      level: profile?.academic_level,
-                      sem: profile?.semester
-                    })}</span></p>
-                    
-                    <div className="mt-6 pt-4 border-t border-slate-200 dark:border-slate-700">
-                      <p className="font-bold text-slate-900 dark:text-white mb-2 uppercase tracking-wider">MTH102 Alignment Check</p>
-                      {courses['MTH102'] ? (
-                        <div className="space-y-1">
-                          <p><span className="text-slate-400">Depts:</span> {courses['MTH102'].departments?.join(', ') || 'None'}</p>
-                          <p><span className="text-slate-400">Level:</span> "{courses['MTH102'].level}"</p>
-                          <p><span className="text-slate-400">Sem:</span> "{courses['MTH102'].semester}"</p>
-                          <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-xl text-blue-600 dark:text-blue-400 font-bold">
-                            Match Results: {(() => {
-                              const normalize = (s: any) => String(s || '').toLowerCase().trim().replace(/\s+/g, ' ');
-                              const userDept = normalize(profile?.department);
-                              const userLevel = normalize(profile?.academic_level).replace('level', '').trim();
-                              const userSem = normalize(profile?.semester);
-                              const c = courses['MTH102'];
-                              const dMatch = c.departments?.some(d => normalize(d) === userDept);
-                              const lMatch = normalize(c.level).replace('level', '').trim() === userLevel;
-                              const sMatch = normalize(c.semester) === userSem;
-                              return `Dept:${dMatch ? '✅' : '❌'} | Lvl:${lMatch ? '✅' : '❌'} | Sem:${sMatch ? '✅' : '❌'}`;
-                            })()}
-                          </div>
-                        </div>
-                      ) : (
-                        <p className="text-rose-500 font-bold">⚠️ MTH102 NOT FOUND IN STATE</p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
             </div>
           </div>
         )}

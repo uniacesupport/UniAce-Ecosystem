@@ -14,7 +14,7 @@ interface CourseEditModalProps {
 export default function CourseEditModal({ course, onClose, onSave }: CourseEditModalProps) {
   const [title, setTitle] = useState(course.title);
   const [description, setDescription] = useState(course.description);
-  const [department, setDepartment] = useState<Department>(course.department);
+  const [department, setDepartment] = useState<Department>(course.department || DEPARTMENTS[0]);
   const [level, setLevel] = useState<Level | undefined>(course.level);
   const [semester, setSemester] = useState<Semester | undefined>(course.semester);
   const [scope, setScope] = useState<CourseScope | undefined>(course.scope || 'GLOBAL');
@@ -29,7 +29,7 @@ export default function CourseEditModal({ course, onClose, onSave }: CourseEditM
       await updateDoc(courseRef, {
         title,
         description,
-        department,
+        department: department || DEPARTMENTS[0],
         level,
         semester,
         scope,

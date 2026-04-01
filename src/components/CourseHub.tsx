@@ -54,6 +54,18 @@ export default function CourseHub({ onSelectCourse, onProfileClick, onViewSelect
       }
 
       result = result.filter(c => enrolledCourses.includes(c.id as CourseId));
+    } else if (activeTab === 'explore' && !isAdmin) {
+      // Filter by user's department/faculty
+      result = result.filter(c => {
+        if (c.scope === 'GLOBAL') return true;
+        if (c.scope === 'FACULTY') {
+          return profile?.faculty && c.faculties?.includes(profile.faculty);
+        }
+        if (c.scope === 'DEPARTMENT') {
+          return profile?.department && c.departments?.includes(profile.department as Department);
+        }
+        return true;
+      });
     }
 
     // Apply Search Filter
