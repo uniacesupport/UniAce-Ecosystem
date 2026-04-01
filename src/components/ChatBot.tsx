@@ -384,7 +384,7 @@ export default function ChatBot({
             <div>
               <span className="font-bold text-lg block">AI Study Companion</span>
               <div className="flex items-center gap-2">
-                {profile?.plan_type !== 'free' || isAdmin ? (
+                {profile?.plan_type !== 'free' || ['tutor', 'moderator'].includes(profile?.role) || isAdmin ? (
                   <div className="flex items-center gap-1 text-[10px] text-emerald-400 font-bold uppercase tracking-wider">
                     <Zap size={10} fill="currentColor" />
                     <span>Unlimited Sparks</span>
@@ -759,7 +759,7 @@ export default function ChatBot({
                       <div>
                         <span className="font-bold text-sm block">AI Study Companion</span>
                 <div className="flex items-center gap-2">
-                  {profile?.plan_type !== 'free' || isAdmin ? (
+                  {profile?.plan_type !== 'free' || ['tutor', 'moderator'].includes(profile?.role) || isAdmin ? (
                     <div className="flex items-center gap-1 text-[10px] text-emerald-400 font-bold uppercase tracking-wider">
                       <Zap size={10} fill="currentColor" />
                       <span>Unlimited Sparks</span>

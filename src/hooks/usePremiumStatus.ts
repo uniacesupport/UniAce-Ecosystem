@@ -7,7 +7,7 @@ export const usePremiumStatus = () => {
     return { isPremium: false, isTrialActive: false, daysRemaining: 0 };
   }
 
-  const isPremium = profile.plan_type !== 'free';
+  const isPremium = profile.plan_type !== 'free' || ['tutor', 'moderator', 'admin'].includes(profile.role);
   
   // System-wide trial start date (March 19, 2026) to ensure all existing users get a trial
   const TRIAL_SYSTEM_START_DATE = new Date('2026-03-19T00:00:00Z');
