@@ -13,6 +13,7 @@ import { doc, setDoc, getDoc, collection, getDocs, deleteDoc, query, where, limi
 import AdminSeeder from './AdminSeeder';
 import AdminQuestionBank from './AdminQuestionBank';
 import CourseEditModal from './CourseEditModal';
+import CourseCreateModal from './CourseCreateModal';
 import ApiKeyManagerModal from './ApiKeyManagerModal';
 import { CurriculumManager } from './CurriculumManager';
 import { AIService } from '../services/ai';
@@ -178,6 +179,7 @@ export default function AdminDashboard() {
   const [logCounts, setLogCounts] = useState({ error: 0, warning: 0, info: 0, success: 0 });
   const [isCheckingAI, setIsCheckingAI] = useState(false);
   const [isRoleGuideOpen, setIsRoleGuideOpen] = useState(false);
+  const [isCreateCourseModalOpen, setIsCreateCourseModalOpen] = useState(false);
   const [selectedProviderForKeyManager, setSelectedProviderForKeyManager] = useState<string | null>(null);
 
   // New state for manual input and review
@@ -2651,7 +2653,23 @@ export default function AdminDashboard() {
             >
               {showArchived ? 'View Active' : 'View Archived'}
             </button>
+            <button 
+              onClick={() => setIsCreateCourseModalOpen(true)}
+              className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 flex items-center gap-2"
+            >
+              <Plus size={16} /> Add New Course
+            </button>
           </div>
+
+          {isCreateCourseModalOpen && (
+            <CourseCreateModal 
+              onClose={() => setIsCreateCourseModalOpen(false)} 
+              onSave={() => {
+                refreshCourses();
+                setIsCreateCourseModalOpen(false);
+              }} 
+            />
+          )}
 
           {selectedCourse && (
             <CourseEditModal 
