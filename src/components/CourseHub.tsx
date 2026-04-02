@@ -1,12 +1,15 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { BookOpen, Sparkles, Globe, Search, Users, Calendar, ArrowRight, Loader2, Edit2 } from 'lucide-react';
+import { BookOpen, Sparkles, Globe, Search, Users, Calendar, ArrowRight, Loader2, Edit2, Clock } from 'lucide-react';
 import { useCourses } from '../context/CourseContext';
 import { CourseId, View, Course, UserProgress, Department, Semester } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { usePremiumStatus } from '../hooks/usePremiumStatus';
 import NotificationCenter from './NotificationCenter';
 import AcademicProfileModal from './AcademicProfileModal';
+import { useDebounce } from 'use-debounce';
+import { formatDistanceToNow } from 'date-fns';
+import { useAppStore } from '../lib/store';
 
 interface CourseHubProps {
   onSelectCourse: (id: CourseId) => void;
@@ -28,7 +31,9 @@ export default function CourseHub({ onSelectCourse, onProfileClick, onViewSelect
   
   const [activeTab, setActiveTab] = useState<Tab>('your-courses');
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery] = useDebounce(searchQuery, 300);
   const [showEditProfile, setShowEditProfile] = useState(false);
+  const { addLastAccessedCourse } = useAppStore();
 
   const filteredCourses = useMemo(() => {
     let result = Object.values(courses);
@@ -71,8 +76,8 @@ export default function CourseHub({ onSelectCourse, onProfileClick, onViewSelect
     }
 
     // Apply Search Filter
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
+    if (debouncedSearchQuery.trim()) {
+      const query = debouncedSearchQuery.toLowerCase();
       result = result.filter(c => 
         c.title.toLowerCase().includes(query) || 
         c.description.toLowerCase().includes(query) ||
@@ -104,7 +109,7 @@ export default function CourseHub({ onSelectCourse, onProfileClick, onViewSelect
     });
 
     return result;
-  }, [courses, activeTab, searchQuery, profile, enrolledCourses, progress]);
+  }, [courses, activeTab, debouncedSearchQuery, profile, enrolledCourses, progress]);
 
   if (coursesLoading && Object.keys(courses).length === 0) {
     return (
@@ -296,19 +301,39 @@ export default function CourseHub({ onSelectCourse, onProfileClick, onViewSelect
                 </p>
                 
                 <div className="flex items-center justify-between mt-auto pt-6 border-t border-slate-100 dark:border-zinc-800/50">
-                  <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-1.5 text-xs font-bold text-slate-500 dark:text-zinc-400">
-                      <Users size={14} />
-                      {course.level ? `L ${course.level}` : 'L 100'}
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-slate-500 dark:text-zinc-400">
+                        <Users size={14} />
+                        {course.level ? `L ${course.level}` : 'L 100'}
+                      </div>
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-slate-500 dark:text-zinc-400">
+                        <Calendar size={14} />
+                        {course.semester === '2nd Semester' ? 'Sem 2' : 'Sem 1'}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1.5 text-xs font-bold text-slate-500 dark:text-zinc-400">
-                      <Calendar size={14} />
-                      {course.semester === '2nd Semester' ? 'Sem 2' : 'Sem 1'}
-                    </div>
+                    {(() => {
+                      const lastStudied = Object.entries(progress.topicLastStudied || {})
+                        .filter(([key]) => key.startsWith(course.id))
+                        .map(([, date]) => new Date(date))
+                        .sort((a, b) => b.getTime() - a.getTime())[0];
+                      
+                      if (!lastStudied) return null;
+                      
+                      return (
+                        <div className="flex items-center gap-1.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
+                          <Clock size={10} />
+                          Last studied {formatDistanceToNow(lastStudied)} ago
+                        </div>
+                      );
+                    })()}
                   </div>
                   
                   <button 
-                    onClick={() => onSelectCourse(course.id as CourseId)}
+                    onClick={() => {
+                      addLastAccessedCourse(course.id);
+                      onSelectCourse(course.id as CourseId);
+                    }}
                     className="bg-slate-900 text-white dark:bg-white dark:text-slate-900 px-6 py-2.5 rounded-xl font-bold text-sm hover:scale-105 active:scale-95 transition-transform flex items-center gap-2"
                   >
                     {(() => {

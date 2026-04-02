@@ -116,6 +116,7 @@ export interface LearningProfile {
   strengths: string[];
   weaknesses: string[];
   lastUpdated: string;
+  fastMode?: boolean;
 }
 
 export interface UserProgress {
@@ -177,6 +178,8 @@ export interface ChatMessage {
   text: string;
   image?: string;
   sources?: { title: string; uri: string }[];
+  pdfContent?: string;
+  isDiagram?: boolean;
 }
 
 export type QuestionType = 'multiple-choice' | 'fill-in-the-blank';

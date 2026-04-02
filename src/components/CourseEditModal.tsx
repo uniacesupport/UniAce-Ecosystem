@@ -3,7 +3,7 @@ import { X, Save, Trash2, Edit2 } from 'lucide-react';
 import { Course, Module, Department, Level, Semester, CourseScope } from '../types';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
-import { DEPARTMENTS, LEVELS, SEMESTERS } from '../constants';
+import { DEPARTMENTS, LEVELS, SEMESTERS, FACULTIES } from '../constants';
 
 interface CourseEditModalProps {
   course: Course;
@@ -20,6 +20,8 @@ export default function CourseEditModal({ course, onClose, onSave }: CourseEditM
   const [creditUnits, setCreditUnits] = useState<number>(course.creditUnits || 3);
   const [prerequisites, setPrerequisites] = useState<string>(course.prerequisites?.join(', ') || '');
   const [scope, setScope] = useState<CourseScope | undefined>(course.scope || 'GLOBAL');
+  const [selectedFaculties, setSelectedFaculties] = useState<string[]>(course.faculties || []);
+  const [selectedDepartments, setSelectedDepartments] = useState<Department[]>(course.departments || []);
   const [modules, setModules] = useState<Module[]>(course.syllabus);
   const [isSaving, setIsSaving] = useState(false);
   const [editingModuleId, setEditingModuleId] = useState<string | null>(null);
@@ -37,6 +39,8 @@ export default function CourseEditModal({ course, onClose, onSave }: CourseEditM
         creditUnits,
         prerequisites: prerequisites.split(',').map(p => p.trim()).filter(p => p),
         scope,
+        faculties: scope === 'FACULTY' ? selectedFaculties : [],
+        departments: scope === 'DEPARTMENT' ? selectedDepartments : [],
         syllabus: modules
       });
       onSave();
@@ -185,6 +189,50 @@ export default function CourseEditModal({ course, onClose, onSave }: CourseEditM
               </select>
             </div>
           </div>
+
+          {scope === 'FACULTY' && (
+            <div className="p-4 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-200 dark:border-slate-700">
+              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Select Faculties</label>
+              <div className="grid grid-cols-2 gap-2">
+                {FACULTIES.map(f => (
+                  <label key={f} className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400 cursor-pointer hover:text-slate-900 dark:hover:text-white transition-colors">
+                    <input 
+                      type="checkbox" 
+                      checked={selectedFaculties.includes(f)}
+                      onChange={(e) => {
+                        if (e.target.checked) setSelectedFaculties([...selectedFaculties, f]);
+                        else setSelectedFaculties(selectedFaculties.filter(sf => sf !== f));
+                      }}
+                      className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                    />
+                    {f}
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {scope === 'DEPARTMENT' && (
+            <div className="p-4 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-200 dark:border-slate-700">
+              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Select Departments</label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 max-h-48 overflow-y-auto p-1 scrollbar-thin scrollbar-thumb-slate-300 dark:scrollbar-thumb-slate-600">
+                {DEPARTMENTS.map(d => (
+                  <label key={d} className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400 cursor-pointer hover:text-slate-900 dark:hover:text-white transition-colors">
+                    <input 
+                      type="checkbox" 
+                      checked={selectedDepartments.includes(d)}
+                      onChange={(e) => {
+                        if (e.target.checked) setSelectedDepartments([...selectedDepartments, d]);
+                        else setSelectedDepartments(selectedDepartments.filter(sd => sd !== d));
+                      }}
+                      className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                    />
+                    {d}
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
