@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, FileText, Plus, CheckCircle, Loader2, BookOpen, AlertCircle, Settings, Trash2, Users, Activity, Database, Search, Zap, Trophy, Star, Bot, Shield, BarChart3, Globe, Edit2, RefreshCw, Clock, FileQuestion, MessageSquare, ArrowLeft, HeartPulse, X, ArrowRight, Layers, Key, Cpu, Share2, Download, Filter, Send, Check, Mail } from 'lucide-react';
+import { Upload, FileText, Plus, CheckCircle, Loader2, BookOpen, AlertCircle, Settings, Trash2, Users, Activity, Database, Search, Zap, Trophy, Star, Bot, Shield, BarChart3, Globe, Edit2, RefreshCw, Clock, FileQuestion, MessageSquare, ArrowLeft, HeartPulse, X, ArrowRight, Layers, Key, Cpu, Share2, Download, Filter } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -180,9 +180,7 @@ export default function AdminDashboard() {
   const [isCheckingAI, setIsCheckingAI] = useState(false);
   const [isRoleGuideOpen, setIsRoleGuideOpen] = useState(false);
   const [isCreateCourseModalOpen, setIsCreateCourseModalOpen] = useState(false);
-  const [activeCommTab, setActiveCommTab] = useState<'broadcast' | 'email' | 'history' | 'diagnostic'>('broadcast');
-  const [testEmailTo, setTestEmailTo] = useState('');
-  const [isSendingTestEmail, setIsSendingTestEmail] = useState(false);
+  const [activeCommTab, setActiveCommTab] = useState<'broadcast' | 'email' | 'history'>('broadcast');
   const [targetAudience, setTargetAudience] = useState<'all' | 'students' | 'tutors' | 'moderators' | 'department'>('all');
   const [selectedTemplate, setSelectedTemplate] = useState<string>('');
   const [selectedProviderForKeyManager, setSelectedProviderForKeyManager] = useState<string | null>(null);
@@ -1031,50 +1029,6 @@ export default function AdminDashboard() {
 
   const [emailDebugInfo, setEmailDebugInfo] = useState<any>(null);
   const [isDebuggingEmail, setIsDebuggingEmail] = useState(false);
-
-  const [emailLogs, setEmailLogs] = useState<SystemLog[]>([]);
-
-  useEffect(() => {
-    if (activeTab === 'communications' && activeCommTab === 'diagnostic') {
-      const unsubscribe = LogService.subscribeToLogs((logs) => {
-        const filtered = logs.filter(log => 
-          log.message.toLowerCase().includes('email') || 
-          log.category === 'admin' && log.message.includes('Sent')
-        );
-        setEmailLogs(filtered);
-      }, 50);
-      return () => unsubscribe();
-    }
-  }, [activeTab, activeCommTab]);
-
-  const handleSendTestEmail = async () => {
-    if (!testEmailTo) {
-      showToast("Please provide a recipient email.", "error");
-      return;
-    }
-    setIsSendingTestEmail(true);
-    try {
-      const idToken = await auth.currentUser?.getIdToken();
-      const res = await fetch('/api/admin/test-email', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${idToken}`
-        },
-        body: JSON.stringify({ to: testEmailTo })
-      });
-      const data = await res.json();
-      if (res.ok) {
-        showToast("Test email sent successfully!", "success");
-      } else {
-        showToast(data.error || "Failed to send test email", "error");
-      }
-    } catch (error: any) {
-      showToast(`Error: ${error.message}`, "error");
-    } finally {
-      setIsSendingTestEmail(false);
-    }
-  };
 
   const handleDebugEmail = async () => {
     setIsDebuggingEmail(true);
@@ -3948,12 +3902,12 @@ export default function AdminDashboard() {
 
       {activeTab === 'communications' && (
         <div className="space-y-8">
-          <div className="flex items-center gap-4 bg-white dark:bg-slate-800 p-2 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 w-fit overflow-x-auto max-w-full">
-            {(['broadcast', 'email', 'history', 'diagnostic'] as const).map((tab) => (
+          <div className="flex items-center gap-4 bg-white dark:bg-slate-800 p-2 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 w-fit">
+            {(['broadcast', 'email', 'history'] as const).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveCommTab(tab)}
-                className={`px-4 md:px-6 py-2 rounded-xl font-bold capitalize transition-all whitespace-nowrap ${
+                className={`px-6 py-2 rounded-xl font-bold capitalize transition-all ${
                   activeCommTab === tab 
                     ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-500/30' 
                     : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700'
@@ -3963,212 +3917,6 @@ export default function AdminDashboard() {
               </button>
             ))}
           </div>
-
-          {activeCommTab === 'diagnostic' && (
-            <div className="space-y-6">
-              {/* System Health Summary */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-white dark:bg-slate-800 p-6 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 flex items-center gap-4">
-                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${emailDebugInfo?.connection.success ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
-                    <Mail size={24} />
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Email System</p>
-                    <p className="text-lg font-bold text-slate-900 dark:text-white">
-                      {emailDebugInfo ? (emailDebugInfo.connection.success ? 'Healthy' : 'Issues Detected') : 'Not Checked'}
-                    </p>
-                  </div>
-                </div>
-                <div className="bg-white dark:bg-slate-800 p-6 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center">
-                    <Database size={24} />
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Database</p>
-                    <p className="text-lg font-bold text-slate-900 dark:text-white">Connected</p>
-                  </div>
-                </div>
-                <div className="bg-white dark:bg-slate-800 p-6 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-600 flex items-center justify-center">
-                    <Shield size={24} />
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Security</p>
-                    <p className="text-lg font-bold text-slate-900 dark:text-white">Active</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700">
-                <div className="flex items-center justify-between mb-6">
-                  <div>
-                    <h3 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                      <Activity className="text-emerald-500" size={24} />
-                      Email System Diagnostic
-                    </h3>
-                    <p className="text-sm text-slate-500 mt-1">Check SMTP configuration and test delivery.</p>
-                  </div>
-                  <button 
-                    onClick={handleDebugEmail}
-                    disabled={isDebuggingEmail}
-                    className="px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-white rounded-xl text-sm font-bold transition-all flex items-center gap-2"
-                  >
-                    {isDebuggingEmail ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
-                    Run Diagnostic
-                  </button>
-                </div>
-
-                {emailDebugInfo ? (
-                  <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                      {[
-                        { label: 'SMTP Host', value: emailDebugInfo.config.host, present: !!emailDebugInfo.config.host && emailDebugInfo.config.host !== 'Not Configured' },
-                        { label: 'SMTP User', value: emailDebugInfo.config.user, present: !!emailDebugInfo.config.user && emailDebugInfo.config.user !== 'Not Configured' },
-                        { label: 'SMTP Pass', value: emailDebugInfo.config.hasPass ? 'Configured' : 'Missing', present: emailDebugInfo.config.hasPass },
-                        { label: 'From Email', value: emailDebugInfo.config.from, present: !!emailDebugInfo.config.from && emailDebugInfo.config.from !== 'Not Configured' },
-                      ].map((item, idx) => (
-                        <div key={idx} className="bg-slate-50 dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800">
-                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">{item.label}</p>
-                          <p className={`text-sm font-mono truncate ${item.present ? 'text-slate-900 dark:text-white' : 'text-rose-500 font-bold'}`}>
-                            {item.value || 'Not Configured'}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-
-                    <div className={`p-6 rounded-2xl border ${emailDebugInfo.connection.success ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800' : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'}`}>
-                      <div className="flex items-center justify-between mb-4">
-                        <div className="flex items-center gap-3">
-                          <div className={`w-10 h-10 rounded-full flex items-center justify-center ${emailDebugInfo.connection.success ? 'bg-emerald-100 text-emerald-600' : 'bg-red-100 text-red-600'}`}>
-                            {emailDebugInfo.connection.success ? <Check size={20} /> : <X size={20} />}
-                          </div>
-                          <div>
-                            <p className="font-bold text-slate-900 dark:text-white">Connection Status</p>
-                            <p className={`text-sm ${emailDebugInfo.connection.success ? 'text-emerald-700 dark:text-emerald-300' : 'text-red-700 dark:text-red-300'}`}>
-                              {emailDebugInfo.connection.success ? 'SMTP Server Reachable' : 'Connection Failed'}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="bg-black/5 dark:bg-white/5 p-3 rounded-xl font-mono text-xs break-all">
-                        {emailDebugInfo.connection.message}
-                      </div>
-                      
-                      {!emailDebugInfo.connection.success && emailDebugInfo.connection.message?.includes('535') && (
-                        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 p-4 rounded-2xl mt-4">
-                          <div className="flex items-center gap-2 text-amber-800 dark:text-amber-200 font-bold mb-2">
-                            <AlertCircle size={18} />
-                            Authentication Tip
-                          </div>
-                          <p className="text-sm text-amber-700 dark:text-amber-300">
-                            Error 535 usually means incorrect credentials. If you are using Gmail, make sure you are using a <strong>16-character App Password</strong>, not your regular account password.
-                          </p>
-                        </div>
-                      )}
-                    </div>
-
-                    {emailDebugInfo.connection.success && (
-                      <div className="bg-slate-50 dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800">
-                        <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-                          <Send size={16} className="text-indigo-500" />
-                          Send Test Email
-                        </h4>
-                        <div className="flex flex-col sm:flex-row gap-3">
-                          <input 
-                            type="email"
-                            placeholder="Enter test recipient email..."
-                            value={testEmailTo}
-                            onChange={(e) => setTestEmailTo(e.target.value)}
-                            className="flex-grow bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                          />
-                          <button
-                            onClick={handleSendTestEmail}
-                            disabled={isSendingTestEmail || !testEmailTo}
-                            className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2"
-                          >
-                            {isSendingTestEmail ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-                            Send Test
-                          </button>
-                        </div>
-                        <p className="text-[10px] text-slate-500 mt-2">
-                          This will send a simple "System Health Check" email to verify end-to-end delivery.
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center justify-center py-12 text-center">
-                    <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4 text-slate-400">
-                      <Activity size={32} />
-                    </div>
-                    <h4 className="text-lg font-bold text-slate-900 dark:text-white mb-1">No Diagnostic Data</h4>
-                    <p className="text-sm text-slate-500 max-w-xs">Click the "Run Diagnostic" button to check your email system's health.</p>
-                  </div>
-                )}
-              </div>
-
-              <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700">
-                <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
-                  <Clock className="text-blue-500" size={24} />
-                  Recent Email Activity
-                </h3>
-                <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
-                  {emailLogs.length > 0 ? (
-                    emailLogs.map((log) => (
-                      <div key={log.id} className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800 flex items-start gap-3">
-                        <div className={`mt-1 w-2 h-2 rounded-full shrink-0 ${
-                          log.level === 'error' ? 'bg-rose-500' : 
-                          log.level === 'success' ? 'bg-emerald-500' : 'bg-blue-500'
-                        }`} />
-                        <div className="flex-grow min-w-0">
-                          <p className="text-sm text-slate-900 dark:text-white font-medium break-words">{log.message}</p>
-                          <div className="flex items-center gap-3 mt-1">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                              {log.timestamp?.toDate ? log.timestamp.toDate().toLocaleString() : 'Just now'}
-                            </span>
-                            {log.userEmail && (
-                              <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">
-                                By: {log.userEmail}
-                              </span>
-                            )}
-                          </div>
-                          {log.details && (
-                            <pre className="mt-2 p-2 bg-black/5 dark:bg-white/5 rounded-lg text-[10px] font-mono text-slate-500 dark:text-slate-400 overflow-x-auto">
-                              {JSON.stringify(log.details, null, 2)}
-                            </pre>
-                          )}
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="text-center py-8 text-slate-500">
-                      No recent email activity logged.
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700">
-                <div className="space-y-4">
-                  <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 rounded-2xl">
-                    <h4 className="font-bold text-blue-900 dark:text-blue-300 text-sm mb-2">Environment Variables Required:</h4>
-                    <ul className="text-xs space-y-1 text-blue-800 dark:text-blue-400 font-mono">
-                      <li>SMTP_HOST=smtp.gmail.com</li>
-                      <li>SMTP_PORT=587</li>
-                      <li>SMTP_USER=your-email@gmail.com</li>
-                      <li>SMTP_PASS=your-app-password</li>
-                      <li>SMTP_FROM_EMAIL=your-email@gmail.com</li>
-                    </ul>
-                  </div>
-                  <div className="text-sm text-slate-600 dark:text-slate-400 space-y-2">
-                    <p>1. <strong>Gmail:</strong> Enable 2-Step Verification and generate an "App Password".</p>
-                    <p>2. <strong>Outlook:</strong> Use SMTP settings (smtp-mail.outlook.com, port 587).</p>
-                    <p>3. <strong>Custom:</strong> Contact your IT provider for SMTP details.</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
 
           {activeCommTab === 'broadcast' && (
             <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700 h-full flex flex-col">

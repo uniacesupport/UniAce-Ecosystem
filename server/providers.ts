@@ -1,11 +1,6 @@
 import { z } from 'zod';
 import admin from 'firebase-admin';
 import { GoogleGenAI } from "@google/genai";
-import Groq from "groq-sdk";
-import { Mistral } from '@mistralai/mistralai';
-import { CohereClient } from "cohere-ai";
-import { HfInference } from "@huggingface/inference";
-import OpenAI from "openai";
 
 export interface ModelResponse {
   text: string;
@@ -196,61 +191,17 @@ export class GeminiDirectProvider implements ModelProvider {
     this.rotator = new DynamicKeyRotator('gemini_direct', apiKey);
   }
 
-  private transformMessagesToGemini(messages: any[]) {
-    const systemMessage = messages.find(m => m.role === 'system');
-    const otherMessages = messages.filter(m => m.role !== 'system');
-
-    const transformContent = (content: any) => {
-      if (typeof content === 'string') {
-        return [{ text: content }];
-      }
-      if (Array.isArray(content)) {
-        return content.map(part => {
-          if (part.type === 'text') {
-            return { text: part.text };
-          }
-          if (part.type === 'image_url' || part.type === 'file') {
-            const url = part.image_url?.url || part.file_url?.url;
-            if (!url) return { text: '' };
-            const matches = url.match(/^data:([^;]+);base64,(.+)$/);
-            if (matches) {
-              return {
-                inlineData: {
-                  mimeType: matches[1],
-                  data: matches[2]
-                }
-              };
-            }
-          }
-          return { text: JSON.stringify(part) };
-        });
-      }
-      return [{ text: String(content) }];
-    };
-
-    const contents = otherMessages.map(m => ({
-      role: m.role === 'assistant' ? 'model' : 'user',
-      parts: transformContent(m.content)
-    }));
-
-    const systemInstruction = systemMessage ? 
-      (typeof systemMessage.content === 'string' ? systemMessage.content : JSON.stringify(systemMessage.content)) : 
-      undefined;
-
-    return { contents, systemInstruction };
-  }
-
   async generate(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean }): Promise<ModelResponse> {
     return retry(async () => {
       const apiKey = await this.rotator.getNextKey();
       const ai = new GoogleGenAI({ apiKey });
-      const { contents, systemInstruction } = this.transformMessagesToGemini(messages);
-      
       const model = ai.models.generateContent({
         model: "gemini-3-flash-preview",
-        contents,
+        contents: messages.map(m => ({
+          role: m.role === 'assistant' ? 'model' : m.role,
+          parts: [{ text: m.content }]
+        })),
         config: {
-          systemInstruction,
           responseMimeType: options.jsonMode ? "application/json" : "text/plain",
           temperature: 0.5,
           maxOutputTokens: 8192,
@@ -263,7 +214,7 @@ export class GeminiDirectProvider implements ModelProvider {
       return {
         text: response.text,
         usage: {
-          promptTokens: 0,
+          promptTokens: 0, // SDK doesn't provide this easily
           completionTokens: 0,
           totalTokens: 0
         },
@@ -276,13 +227,13 @@ export class GeminiDirectProvider implements ModelProvider {
     return retry(async () => {
       const apiKey = await this.rotator.getNextKey();
       const ai = new GoogleGenAI({ apiKey });
-      const { contents, systemInstruction } = this.transformMessagesToGemini(messages);
-
       const result = await ai.models.generateContentStream({
         model: "gemini-3-flash-preview",
-        contents,
+        contents: messages.map(m => ({
+          role: m.role === 'assistant' ? 'model' : m.role,
+          parts: [{ text: m.content }]
+        })),
         config: {
-          systemInstruction,
           temperature: 0.5,
           maxOutputTokens: 8192,
         }
@@ -316,83 +267,113 @@ export class MistralOpenRouterProvider implements ModelProvider {
   async generate(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean }): Promise<ModelResponse> {
     return retry(async () => {
       const apiKey = await this.rotator.getNextKey();
-      const openai = new OpenAI({
-        baseURL: "https://openrouter.ai/api/v1",
-        apiKey: apiKey,
-        defaultHeaders: {
-          "HTTP-Referer": "https://uniace.app",
-          "X-Title": "UniAce Learning App",
-        }
+      const body: any = {
+        model: 'mistralai/mistral-large',
+        max_tokens: 8192,
+        temperature: 0.5,
+        messages: messages
+      };
+
+      if (options.jsonMode) {
+        body.response_format = { type: "json_object" };
+      }
+
+      const orRes = await fetchWithTimeout('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://uniace.app',
+          'X-Title': 'UniAce Learning App',
+        },
+        body: JSON.stringify(body)
       });
 
-      try {
-        const response = await openai.chat.completions.create({
-          model: 'mistralai/mistral-large',
-          messages: messages,
-          max_tokens: 8192,
-          temperature: 0.5,
-          response_format: options.jsonMode ? { type: "json_object" } : undefined
-        });
-
-        return {
-          text: response.choices[0]?.message?.content || '',
-          usage: {
-            promptTokens: response.usage?.prompt_tokens || 0,
-            completionTokens: response.usage?.completion_tokens || 0,
-            totalTokens: response.usage?.total_tokens || 0
-          },
-          finishReason: response.choices[0]?.finish_reason || 'stop'
-        };
-      } catch (error: any) {
-        if (error.status === 401 || error.status === 403 || error.status === 429) {
+      if (!orRes.ok) {
+        if (orRes.status === 401 || orRes.status === 403 || orRes.status === 429) {
           this.rotator.markKeyExhausted(apiKey);
         }
-        throw error;
+        throw new Error(`OpenRouter API Error: ${orRes.status} ${orRes.statusText}`);
       }
+
+      const data = await orRes.json();
+      const parsed = ProviderResponseSchema.parse(data);
+      
+      return {
+        text: parsed.choices[0].message.content,
+        usage: {
+          promptTokens: parsed.usage?.prompt_tokens || 0,
+          completionTokens: parsed.usage?.completion_tokens || 0,
+          totalTokens: parsed.usage?.total_tokens || 0
+        },
+        finishReason: parsed.choices[0].finish_reason || 'stop'
+      };
     }, 'MistralOpenRouter');
   }
 
   async stream(messages: any[], options: { complexity: 'high' | 'standard' }, onChunk: (chunk: string) => void): Promise<ModelResponse> {
     return retry(async () => {
       const apiKey = await this.rotator.getNextKey();
-      const openai = new OpenAI({
-        baseURL: "https://openrouter.ai/api/v1",
-        apiKey: apiKey,
-        defaultHeaders: {
-          "HTTP-Referer": "https://uniace.app",
-          "X-Title": "UniAce Learning App",
-        }
+      const body: any = {
+        model: 'mistralai/mistral-large',
+        max_tokens: 8192,
+        temperature: 0.5,
+        messages: messages,
+        stream: true
+      };
+
+      const orRes = await fetchWithTimeout('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://uniace.app',
+          'X-Title': 'UniAce Learning App',
+        },
+        body: JSON.stringify(body)
       });
 
-      try {
-        const stream = await openai.chat.completions.create({
-          model: 'mistralai/mistral-large',
-          messages: messages,
-          max_tokens: 8192,
-          temperature: 0.5,
-          stream: true
-        });
-
-        let fullText = '';
-        for await (const chunk of stream) {
-          const content = chunk.choices[0]?.delta?.content || '';
-          if (content) {
-            fullText += content;
-            onChunk(content);
-          }
-        }
-
-        return {
-          text: fullText,
-          usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
-          finishReason: 'stop'
-        };
-      } catch (error: any) {
-        if (error.status === 401 || error.status === 403 || error.status === 429) {
+      if (!orRes.ok) {
+        if (orRes.status === 401 || orRes.status === 403 || orRes.status === 429) {
           this.rotator.markKeyExhausted(apiKey);
         }
-        throw error;
+        throw new Error(`OpenRouter API Error: ${orRes.status} ${orRes.statusText}`);
       }
+
+      if (!orRes.body) throw new Error('No response body');
+
+      const reader = orRes.body.getReader();
+      const decoder = new TextDecoder();
+      let fullText = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n');
+        
+        for (const line of lines) {
+          if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.choices && data.choices[0].delta && data.choices[0].delta.content) {
+                const content = data.choices[0].delta.content;
+                fullText += content;
+                onChunk(content);
+              }
+            } catch (e) {
+              // Ignore parse errors
+            }
+          }
+        }
+      }
+
+      return {
+        text: fullText,
+        usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+        finishReason: 'stop'
+      };
     }, 'MistralOpenRouter');
   }
 }
@@ -407,83 +388,113 @@ export class GeminiOpenRouterProvider implements ModelProvider {
   async generate(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean }): Promise<ModelResponse> {
     return retry(async () => {
       const apiKey = await this.rotator.getNextKey();
-      const openai = new OpenAI({
-        baseURL: "https://openrouter.ai/api/v1",
-        apiKey: apiKey,
-        defaultHeaders: {
-          "HTTP-Referer": "https://uniace.app",
-          "X-Title": "UniAce Learning App",
-        }
+      const body: any = {
+        model: 'google/gemini-3-flash-preview', // Updated to Gemini 3 Flash Preview as per user request
+        max_tokens: 8192,
+        temperature: 0.5,
+        messages: messages
+      };
+
+      if (options.jsonMode) {
+        body.response_format = { type: "json_object" };
+      }
+
+      const orRes = await fetchWithTimeout('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://uniace.app',
+          'X-Title': 'UniAce Learning App',
+        },
+        body: JSON.stringify(body)
       });
 
-      try {
-        const response = await openai.chat.completions.create({
-          model: 'google/gemini-3-flash-preview',
-          messages: messages,
-          max_tokens: 8192,
-          temperature: 0.5,
-          response_format: options.jsonMode ? { type: "json_object" } : undefined
-        });
-
-        return {
-          text: response.choices[0]?.message?.content || '',
-          usage: {
-            promptTokens: response.usage?.prompt_tokens || 0,
-            completionTokens: response.usage?.completion_tokens || 0,
-            totalTokens: response.usage?.total_tokens || 0
-          },
-          finishReason: response.choices[0]?.finish_reason || 'stop'
-        };
-      } catch (error: any) {
-        if (error.status === 401 || error.status === 403 || error.status === 429) {
+      if (!orRes.ok) {
+        if (orRes.status === 401 || orRes.status === 403 || orRes.status === 429) {
           this.rotator.markKeyExhausted(apiKey);
         }
-        throw error;
+        throw new Error(`OpenRouter API Error: ${orRes.status} ${orRes.statusText}`);
       }
+
+      const data = await orRes.json();
+      const parsed = ProviderResponseSchema.parse(data);
+      
+      return {
+        text: parsed.choices[0].message.content,
+        usage: {
+          promptTokens: parsed.usage?.prompt_tokens || 0,
+          completionTokens: parsed.usage?.completion_tokens || 0,
+          totalTokens: parsed.usage?.total_tokens || 0
+        },
+        finishReason: parsed.choices[0].finish_reason || 'stop'
+      };
     }, 'GeminiOpenRouter');
   }
 
   async stream(messages: any[], options: { complexity: 'high' | 'standard' }, onChunk: (chunk: string) => void): Promise<ModelResponse> {
     return retry(async () => {
       const apiKey = await this.rotator.getNextKey();
-      const openai = new OpenAI({
-        baseURL: "https://openrouter.ai/api/v1",
-        apiKey: apiKey,
-        defaultHeaders: {
-          "HTTP-Referer": "https://uniace.app",
-          "X-Title": "UniAce Learning App",
-        }
+      const body: any = {
+        model: 'google/gemini-2.5-flash',
+        max_tokens: 8192,
+        temperature: 0.5,
+        messages: messages,
+        stream: true
+      };
+
+      const orRes = await fetchWithTimeout('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://uniace.app',
+          'X-Title': 'UniAce Learning App',
+        },
+        body: JSON.stringify(body)
       });
 
-      try {
-        const stream = await openai.chat.completions.create({
-          model: 'google/gemini-2.5-flash',
-          messages: messages,
-          max_tokens: 8192,
-          temperature: 0.5,
-          stream: true
-        });
-
-        let fullText = '';
-        for await (const chunk of stream) {
-          const content = chunk.choices[0]?.delta?.content || '';
-          if (content) {
-            fullText += content;
-            onChunk(content);
-          }
-        }
-
-        return {
-          text: fullText,
-          usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
-          finishReason: 'stop'
-        };
-      } catch (error: any) {
-        if (error.status === 401 || error.status === 403 || error.status === 429) {
+      if (!orRes.ok) {
+        if (orRes.status === 401 || orRes.status === 403 || orRes.status === 429) {
           this.rotator.markKeyExhausted(apiKey);
         }
-        throw error;
+        throw new Error(`OpenRouter API Error: ${orRes.status} ${orRes.statusText}`);
       }
+
+      if (!orRes.body) throw new Error('No response body');
+
+      const reader = orRes.body.getReader();
+      const decoder = new TextDecoder();
+      let fullText = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n');
+        
+        for (const line of lines) {
+          if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.choices && data.choices[0].delta && data.choices[0].delta.content) {
+                const content = data.choices[0].delta.content;
+                fullText += content;
+                onChunk(content);
+              }
+            } catch (e) {
+              // Ignore parse errors on incomplete chunks
+            }
+          }
+        }
+      }
+
+      return {
+        text: fullText,
+        usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+        finishReason: 'stop'
+      };
     }, 'GeminiOpenRouter');
   }
 }
@@ -498,68 +509,109 @@ export class MistralProvider implements ModelProvider {
   async generate(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean }): Promise<ModelResponse> {
     return retry(async () => {
       const apiKey = await this.rotator.getNextKey();
-      const mistral = new Mistral({ apiKey: apiKey });
+      const body: any = {
+        model: options.complexity === 'high' ? 'mistral-large-latest' : 'mistral-small-latest',
+        temperature: 0.5,
+        max_tokens: 8192,
+        messages: messages
+      };
 
-      try {
-        const response = await mistral.chat.complete({
-          model: options.complexity === 'high' ? 'mistral-large-latest' : 'mistral-small-latest',
-          temperature: 0.5,
-          maxTokens: 8192,
-          messages: messages,
-          responseFormat: options.jsonMode ? { type: "json_object" } : undefined
-        });
+      if (options.jsonMode) {
+        body.response_format = { type: "json_object" };
+      }
 
-        return {
-          text: response.choices?.[0]?.message?.content as string || '',
-          usage: {
-            promptTokens: response.usage?.promptTokens || 0,
-            completionTokens: response.usage?.completionTokens || 0,
-            totalTokens: response.usage?.totalTokens || 0
-          },
-          finishReason: response.choices?.[0]?.finishReason || 'stop'
-        };
-      } catch (error: any) {
-        if (error.status === 401 || error.status === 403 || error.status === 429) {
+      const res = await fetchWithTimeout('https://api.mistral.ai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(body)
+      });
+
+      if (!res.ok) {
+        if (res.status === 401 || res.status === 403 || res.status === 429) {
           this.rotator.markKeyExhausted(apiKey);
         }
-        throw error;
+        throw new Error(`Mistral API Error: ${res.status} ${res.statusText}`);
       }
+
+      const data = await res.json();
+      const parsed = ProviderResponseSchema.parse(data);
+      
+      return {
+        text: parsed.choices[0].message.content,
+        usage: {
+          promptTokens: parsed.usage?.prompt_tokens || 0,
+          completionTokens: parsed.usage?.completion_tokens || 0,
+          totalTokens: parsed.usage?.total_tokens || 0
+        },
+        finishReason: parsed.choices[0].finish_reason || 'stop'
+      };
     }, 'Mistral');
   }
 
   async stream(messages: any[], options: { complexity: 'high' | 'standard' }, onChunk: (chunk: string) => void): Promise<ModelResponse> {
     return retry(async () => {
       const apiKey = await this.rotator.getNextKey();
-      const mistral = new Mistral({ apiKey: apiKey });
+      const body: any = {
+        model: options.complexity === 'high' ? 'mistral-large-latest' : 'mistral-small-latest',
+        temperature: 0.5,
+        max_tokens: 8192,
+        messages: messages,
+        stream: true
+      };
 
-      try {
-        const stream = await mistral.chat.stream({
-          model: options.complexity === 'high' ? 'mistral-large-latest' : 'mistral-small-latest',
-          temperature: 0.5,
-          maxTokens: 8192,
-          messages: messages
-        });
+      const res = await fetchWithTimeout('https://api.mistral.ai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(body)
+      });
 
-        let fullText = '';
-        for await (const chunk of stream) {
-          const content = chunk.data.choices[0]?.delta?.content as string || '';
-          if (content) {
-            fullText += content;
-            onChunk(content);
-          }
-        }
-
-        return {
-          text: fullText,
-          usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
-          finishReason: 'stop'
-        };
-      } catch (error: any) {
-        if (error.status === 401 || error.status === 403 || error.status === 429) {
+      if (!res.ok) {
+        if (res.status === 401 || res.status === 403 || res.status === 429) {
           this.rotator.markKeyExhausted(apiKey);
         }
-        throw error;
+        throw new Error(`Mistral API Error: ${res.status} ${res.statusText}`);
       }
+
+      if (!res.body) throw new Error('No response body');
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let fullText = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n');
+        
+        for (const line of lines) {
+          if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.choices && data.choices[0].delta && data.choices[0].delta.content) {
+                const content = data.choices[0].delta.content;
+                fullText += content;
+                onChunk(content);
+              }
+            } catch (e) {
+              // Ignore parse errors on incomplete chunks
+            }
+          }
+        }
+      }
+
+      return {
+        text: fullText,
+        usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+        finishReason: 'stop'
+      };
     }, 'Mistral');
   }
 }
@@ -574,113 +626,110 @@ export class GroqProvider implements ModelProvider {
   async generate(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean }): Promise<ModelResponse> {
     return retry(async () => {
       const apiKey = await this.rotator.getNextKey();
-      const groq = new Groq({ apiKey: apiKey });
+      const body: any = {
+        model: options.complexity === 'high' ? 'llama-3.3-70b-versatile' : 'llama-3.1-8b-instant',
+        temperature: 0.5,
+        max_tokens: 8192,
+        messages: messages
+      };
 
-      // Truncate messages for Groq to avoid TPM limits (especially for 8b model)
-      const maxTokens = options.complexity === 'high' ? 5000 : 3000;
-      const truncatedMessages = this.truncateMessages(messages, maxTokens);
+      if (options.jsonMode) {
+        body.response_format = { type: "json_object" };
+      }
 
-      try {
-        const response = await groq.chat.completions.create({
-          model: options.complexity === 'high' ? 'llama-3.3-70b-versatile' : 'llama-3.1-8b-instant',
-          temperature: 0.5,
-          max_tokens: 8192,
-          messages: truncatedMessages,
-          response_format: options.jsonMode ? { type: "json_object" } : undefined
-        });
+      const res = await fetchWithTimeout('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(body)
+      });
 
-        return {
-          text: response.choices[0]?.message?.content || '',
-          usage: {
-            promptTokens: response.usage?.prompt_tokens || 0,
-            completionTokens: response.usage?.completion_tokens || 0,
-            totalTokens: response.usage?.total_tokens || 0
-          },
-          finishReason: response.choices[0]?.finish_reason || 'stop'
-        };
-      } catch (error: any) {
-        if (error.status === 401 || error.status === 403 || error.status === 429) {
+      if (!res.ok) {
+        if (res.status === 401 || res.status === 403 || res.status === 429) {
           this.rotator.markKeyExhausted(apiKey);
         }
-        throw error;
+        throw new Error(`Groq API Error: ${res.status} ${res.statusText}`);
       }
+
+      const data = await res.json();
+      const parsed = ProviderResponseSchema.parse(data);
+      
+      return {
+        text: parsed.choices[0].message.content,
+        usage: {
+          promptTokens: parsed.usage?.prompt_tokens || 0,
+          completionTokens: parsed.usage?.completion_tokens || 0,
+          totalTokens: parsed.usage?.total_tokens || 0
+        },
+        finishReason: parsed.choices[0].finish_reason || 'stop'
+      };
     }, 'Groq');
   }
 
   async stream(messages: any[], options: { complexity: 'high' | 'standard' }, onChunk: (chunk: string) => void): Promise<ModelResponse> {
     return retry(async () => {
       const apiKey = await this.rotator.getNextKey();
-      const groq = new Groq({ apiKey: apiKey });
+      const body: any = {
+        model: options.complexity === 'high' ? 'llama-3.3-70b-versatile' : 'llama-3.1-8b-instant',
+        temperature: 0.5,
+        max_tokens: 8192,
+        messages: messages,
+        stream: true
+      };
 
-      // Truncate messages for Groq to avoid TPM limits
-      const maxTokens = options.complexity === 'high' ? 5000 : 3000;
-      const truncatedMessages = this.truncateMessages(messages, maxTokens);
+      const res = await fetchWithTimeout('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(body)
+      });
 
-      try {
-        const stream = await groq.chat.completions.create({
-          model: options.complexity === 'high' ? 'llama-3.3-70b-versatile' : 'llama-3.1-8b-instant',
-          temperature: 0.5,
-          max_tokens: 8192,
-          messages: truncatedMessages,
-          stream: true
-        });
-
-        let fullText = '';
-        for await (const chunk of stream) {
-          const content = chunk.choices[0]?.delta?.content || '';
-          if (content) {
-            fullText += content;
-            onChunk(content);
-          }
-        }
-
-        return {
-          text: fullText,
-          usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
-          finishReason: 'stop'
-        };
-      } catch (error: any) {
-        if (error.status === 401 || error.status === 403 || error.status === 429) {
+      if (!res.ok) {
+        if (res.status === 401 || res.status === 403 || res.status === 429) {
           this.rotator.markKeyExhausted(apiKey);
         }
-        throw error;
+        throw new Error(`Groq API Error: ${res.status} ${res.statusText}`);
       }
+
+      if (!res.body) throw new Error('No response body');
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let fullText = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n');
+        
+        for (const line of lines) {
+          if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.choices && data.choices[0].delta && data.choices[0].delta.content) {
+                const content = data.choices[0].delta.content;
+                fullText += content;
+                onChunk(content);
+              }
+            } catch (e) {
+              // Ignore parse errors on incomplete chunks
+            }
+          }
+        }
+      }
+
+      return {
+        text: fullText,
+        usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+        finishReason: 'stop'
+      };
     }, 'Groq');
-  }
-
-  private truncateMessages(messages: any[], maxTokens: number): any[] {
-    if (!messages || messages.length === 0) return [];
-    
-    // Conservative estimate: 1 token ≈ 2.5 characters
-    let currentTokens = 0;
-    const truncated = [];
-    
-    // Always keep the system message if it exists
-    const systemMessage = messages.find(m => m.role === 'system');
-    if (systemMessage) {
-      currentTokens += Math.ceil((systemMessage.content?.length || 0) / 2.5);
-    }
-
-    // Process other messages from newest to oldest
-    const otherMessages = messages.filter(m => m.role !== 'system');
-    for (let i = otherMessages.length - 1; i >= 0; i--) {
-      const msg = otherMessages[i];
-      const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
-      const estimatedTokens = Math.ceil(content.length / 2.5);
-      
-      if (currentTokens + estimatedTokens > maxTokens) {
-        break;
-      }
-      
-      currentTokens += estimatedTokens;
-      truncated.unshift(msg);
-    }
-    
-    if (systemMessage) {
-      truncated.unshift(systemMessage);
-    }
-    
-    return truncated;
   }
 }
 
@@ -694,44 +743,55 @@ export class CohereProvider implements ModelProvider {
   async generate(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean }): Promise<ModelResponse> {
     return retry(async () => {
       const apiKey = await this.rotator.getNextKey();
-      const cohere = new CohereClient({ token: apiKey });
       
+      // Convert OpenAI format to Cohere format
       const chatHistory = messages.slice(0, -1).map(m => ({
         role: m.role === 'assistant' ? 'CHATBOT' : (m.role === 'system' ? 'SYSTEM' : 'USER'),
         message: m.content
       }));
       const lastMessage = messages[messages.length - 1].content;
 
-      try {
-        const response = await cohere.chat({
-          model: options.complexity === 'high' ? 'command-r-plus' : 'command-r',
-          message: lastMessage,
-          chatHistory: chatHistory as any,
-          temperature: 0.5,
-        });
+      const body: any = {
+        model: options.complexity === 'high' ? 'command-r-plus' : 'command-r',
+        message: lastMessage,
+        chat_history: chatHistory,
+        temperature: 0.5,
+      };
 
-        return {
-          text: response.text,
-          usage: {
-            promptTokens: response.meta?.billedUnits?.inputTokens || 0,
-            completionTokens: response.meta?.billedUnits?.outputTokens || 0,
-            totalTokens: (response.meta?.billedUnits?.inputTokens || 0) + (response.meta?.billedUnits?.outputTokens || 0)
-          },
-          finishReason: response.finishReason || 'COMPLETE'
-        };
-      } catch (error: any) {
-        if (error.statusCode === 401 || error.statusCode === 403 || error.statusCode === 429) {
+      const res = await fetchWithTimeout('https://api.cohere.ai/v1/chat', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'accept': 'application/json'
+        },
+        body: JSON.stringify(body)
+      });
+
+      if (!res.ok) {
+        if (res.status === 401 || res.status === 403 || res.status === 429) {
           this.rotator.markKeyExhausted(apiKey);
         }
-        throw error;
+        throw new Error(`Cohere API Error: ${res.status} ${res.statusText}`);
       }
+
+      const data = await res.json();
+      
+      return {
+        text: data.text,
+        usage: {
+          promptTokens: data.meta?.billed_units?.input_tokens || 0,
+          completionTokens: data.meta?.billed_units?.output_tokens || 0,
+          totalTokens: (data.meta?.billed_units?.input_tokens || 0) + (data.meta?.billed_units?.output_tokens || 0)
+        },
+        finishReason: data.finish_reason || 'COMPLETE'
+      };
     }, 'Cohere');
   }
 
   async stream(messages: any[], options: { complexity: 'high' | 'standard' }, onChunk: (chunk: string) => void): Promise<ModelResponse> {
     return retry(async () => {
       const apiKey = await this.rotator.getNextKey();
-      const cohere = new CohereClient({ token: apiKey });
       
       const chatHistory = messages.slice(0, -1).map(m => ({
         role: m.role === 'assistant' ? 'CHATBOT' : (m.role === 'system' ? 'SYSTEM' : 'USER'),
@@ -739,33 +799,63 @@ export class CohereProvider implements ModelProvider {
       }));
       const lastMessage = messages[messages.length - 1].content;
 
-      try {
-        const stream = await cohere.chatStream({
-          model: options.complexity === 'high' ? 'command-r-plus' : 'command-r',
-          message: lastMessage,
-          chatHistory: chatHistory as any,
-          temperature: 0.5,
-        });
+      const body: any = {
+        model: options.complexity === 'high' ? 'command-r-plus' : 'command-r',
+        message: lastMessage,
+        chat_history: chatHistory,
+        temperature: 0.5,
+        stream: true
+      };
 
-        let fullText = '';
-        for await (const chunk of stream) {
-          if (chunk.eventType === 'text-generation') {
-            fullText += chunk.text;
-            onChunk(chunk.text);
-          }
-        }
+      const res = await fetchWithTimeout('https://api.cohere.ai/v1/chat', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'accept': 'application/stream+json'
+        },
+        body: JSON.stringify(body)
+      });
 
-        return {
-          text: fullText,
-          usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
-          finishReason: 'COMPLETE'
-        };
-      } catch (error: any) {
-        if (error.statusCode === 401 || error.statusCode === 403 || error.statusCode === 429) {
+      if (!res.ok) {
+        if (res.status === 401 || res.status === 403 || res.status === 429) {
           this.rotator.markKeyExhausted(apiKey);
         }
-        throw error;
+        throw new Error(`Cohere API Error: ${res.status} ${res.statusText}`);
       }
+
+      if (!res.body) throw new Error('No response body');
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let fullText = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n');
+        
+        for (const line of lines) {
+          if (line.trim() === '') continue;
+          try {
+            const data = JSON.parse(line);
+            if (data.event_type === 'text-generation') {
+              fullText += data.text;
+              onChunk(data.text);
+            }
+          } catch (e) {
+            // Ignore parse errors
+          }
+        }
+      }
+
+      return {
+        text: fullText,
+        usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+        finishReason: 'COMPLETE'
+      };
     }, 'Cohere');
   }
 }
@@ -780,67 +870,105 @@ export class HuggingFaceProvider implements ModelProvider {
   async generate(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean }): Promise<ModelResponse> {
     return retry(async () => {
       const apiKey = await this.rotator.getNextKey();
-      const hf = new HfInference(apiKey);
+      const body: any = {
+        model: 'meta-llama/Meta-Llama-3-8B-Instruct',
+        messages: messages,
+        max_tokens: 8192,
+        temperature: 0.5
+      };
 
-      try {
-        const response = await hf.chatCompletion({
-          model: 'meta-llama/Meta-Llama-3-8B-Instruct',
-          messages: messages,
-          max_tokens: 8192,
-          temperature: 0.5
-        });
+      const res = await fetchWithTimeout('https://api-inference.huggingface.co/models/meta-llama/Meta-Llama-3-8B-Instruct/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(body)
+      });
 
-        return {
-          text: response.choices[0]?.message?.content || '',
-          usage: {
-            promptTokens: response.usage?.prompt_tokens || 0,
-            completionTokens: response.usage?.completion_tokens || 0,
-            totalTokens: response.usage?.total_tokens || 0
-          },
-          finishReason: response.choices[0]?.finish_reason || 'stop'
-        };
-      } catch (error: any) {
-        if (error.status === 401 || error.status === 403 || error.status === 429) {
+      if (!res.ok) {
+        if (res.status === 401 || res.status === 403 || res.status === 429) {
           this.rotator.markKeyExhausted(apiKey);
         }
-        throw error;
+        throw new Error(`HuggingFace API Error: ${res.status} ${res.statusText}`);
       }
+
+      const data = await res.json();
+      const parsed = ProviderResponseSchema.parse(data);
+      
+      return {
+        text: parsed.choices[0].message.content,
+        usage: {
+          promptTokens: parsed.usage?.prompt_tokens || 0,
+          completionTokens: parsed.usage?.completion_tokens || 0,
+          totalTokens: parsed.usage?.total_tokens || 0
+        },
+        finishReason: parsed.choices[0].finish_reason || 'stop'
+      };
     }, 'HuggingFace');
   }
 
   async stream(messages: any[], options: { complexity: 'high' | 'standard' }, onChunk: (chunk: string) => void): Promise<ModelResponse> {
     return retry(async () => {
       const apiKey = await this.rotator.getNextKey();
-      const hf = new HfInference(apiKey);
+      const body: any = {
+        model: 'meta-llama/Meta-Llama-3-8B-Instruct',
+        messages: messages,
+        max_tokens: 8192,
+        temperature: 0.5,
+        stream: true
+      };
 
-      try {
-        const stream = hf.chatCompletionStream({
-          model: 'meta-llama/Meta-Llama-3-8B-Instruct',
-          messages: messages,
-          max_tokens: 8192,
-          temperature: 0.5
-        });
+      const res = await fetchWithTimeout('https://api-inference.huggingface.co/models/meta-llama/Meta-Llama-3-8B-Instruct/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(body)
+      });
 
-        let fullText = '';
-        for await (const chunk of stream) {
-          const content = chunk.choices[0]?.delta?.content || '';
-          if (content) {
-            fullText += content;
-            onChunk(content);
-          }
-        }
-
-        return {
-          text: fullText,
-          usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
-          finishReason: 'stop'
-        };
-      } catch (error: any) {
-        if (error.status === 401 || error.status === 403 || error.status === 429) {
+      if (!res.ok) {
+        if (res.status === 401 || res.status === 403 || res.status === 429) {
           this.rotator.markKeyExhausted(apiKey);
         }
-        throw error;
+        throw new Error(`HuggingFace API Error: ${res.status} ${res.statusText}`);
       }
+
+      if (!res.body) throw new Error('No response body');
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let fullText = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n');
+        
+        for (const line of lines) {
+          if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.choices && data.choices[0].delta && data.choices[0].delta.content) {
+                const content = data.choices[0].delta.content;
+                fullText += content;
+                onChunk(content);
+              }
+            } catch (e) {
+              // Ignore parse errors on incomplete chunks
+            }
+          }
+        }
+      }
+
+      return {
+        text: fullText,
+        usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+        finishReason: 'stop'
+      };
     }, 'HuggingFace');
   }
 }

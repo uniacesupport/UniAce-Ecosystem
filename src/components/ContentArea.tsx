@@ -33,7 +33,6 @@ interface ContentAreaProps {
   onViewSelect?: (view: any) => void;
   progress?: UserProgress;
   onToggleCalculator?: () => void;
-  onLessonContentChange?: (content: string) => void;
 }
 
 export default function ContentArea({ 
@@ -51,8 +50,7 @@ export default function ContentArea({
   onBookmark,
   onViewSelect,
   progress,
-  onToggleCalculator,
-  onLessonContentChange
+  onToggleCalculator
 }: ContentAreaProps) {
   const [showQuiz, setShowQuiz] = useState(autoStartQuiz);
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -119,7 +117,6 @@ export default function ContentArea({
         if (lessonDoc.exists() && lessonDoc.data().content) {
           const data = lessonDoc.data();
           setFetchedLesson({ content: data.content, metadata: data.metadata || {} });
-          onLessonContentChange?.(data.content);
         } else {
           // Trigger generation if not found
           setFetchedLesson(null);
@@ -210,7 +207,6 @@ export default function ContentArea({
 
       // Update local state
       setFetchedLesson(lesson);
-      onLessonContentChange?.(lesson.content);
 
       // Update global state to reflect new content
       await refreshCourses();

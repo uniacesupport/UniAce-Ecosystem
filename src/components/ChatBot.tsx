@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Send, User, Bot, X, MessageSquare, Mic, MicOff, Image as ImageIcon, Volume2, VolumeX, Maximize2, Minimize2, Copy, Check, Zap, Lightbulb, Sparkles, Settings, ArrowRight, FileText, Calculator, FileUp, Palette, Plus } from "lucide-react";
+import { Send, User, Bot, X, MessageSquare, Mic, MicOff, Image as ImageIcon, Volume2, VolumeX, Maximize2, Minimize2, Copy, Check, Zap, Lightbulb, Sparkles, Settings, ArrowRight, FileText, Calculator } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { ChatMessage, CourseId, UserProgress, AIPersonality } from "../types";
 import { jsonrepair } from 'jsonrepair';
@@ -8,12 +8,6 @@ import { AIService } from "../services/ai";
 import { useAuth } from "../context/AuthContext";
 import { useWebSocketChat } from "../hooks/useWebSocketChat";
 import PricingModal from './PricingModal';
-import * as pdfjsLib from 'pdfjs-dist';
-import { jsPDF } from "jspdf";
-import autoTable from "jspdf-autotable";
-
-// Set up PDF.js worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
 interface ChatBotProps {
   isFullPage?: boolean;
@@ -28,8 +22,6 @@ interface ChatBotProps {
   profile?: any;
   onUpdatePersonality?: (personality: AIPersonality) => void;
   onToggleCalculator?: () => void;
-  onOpenVoiceTutor?: () => void;
-  onPdfTextChange?: (text: string | null) => void;
 }
 
 export default function ChatBot({ 
@@ -44,9 +36,7 @@ export default function ChatBot({
   progress,
   profile,
   onUpdatePersonality,
-  onToggleCalculator,
-  onOpenVoiceTutor,
-  onPdfTextChange
+  onToggleCalculator
 }: ChatBotProps) {
   const { user, updateProfileData, signInWithGoogle } = useAuth();
   const { isConnected: isWsConnected, sendMessage: sendWsMessage } = useWebSocketChat();
@@ -59,13 +49,9 @@ export default function ChatBot({
   const [isRecording, setIsRecording] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [autoSpeak, setAutoSpeak] = useState(false);
-  const [fastMode, setFastMode] = useState(true);
   const [sparksRemaining, setSparksRemaining] = useState<number | null>(profile?.ai_sparks ?? null);
   const [isProMode, setIsProMode] = useState(false);
   const [showPricingModal, setShowPricingModal] = useState(false);
-  const [selectedPdfText, setSelectedPdfText] = useState<string | null>(null);
-  const [pdfFileName, setPdfFileName] = useState<string | null>(null);
-  const [isGeneratingDiagram, setIsGeneratingDiagram] = useState(false);
   
   useEffect(() => {
     localStorage.setItem('chat_input_backup', input);
@@ -79,10 +65,8 @@ export default function ChatBot({
   const [showSettings, setShowSettings] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const pdfInputRef = useRef<HTMLInputElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const recognitionRef = useRef<any>(null);
-  const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
   const [copiedId, setCopiedId] = useState<number | null>(null);
 
   const currentPersonality = progress?.aiPersonality || 'encouraging';
@@ -100,36 +84,6 @@ export default function ChatBot({
     navigator.clipboard.writeText(text);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
-  };
-
-  const downloadChatAsPDF = () => {
-    if (messages.length === 0) return;
-    
-    const doc = new jsPDF();
-    doc.setFontSize(20);
-    doc.text("UniAce Study Session", 14, 22);
-    doc.setFontSize(11);
-    doc.setTextColor(100);
-    doc.text(`Generated on ${new Date().toLocaleString()}`, 14, 30);
-    
-    const tableData = messages.map(msg => [
-      msg.role === 'user' ? 'You' : 'UniAce',
-      msg.text
-    ]);
-
-    autoTable(doc, {
-      startY: 40,
-      head: [['Role', 'Message']],
-      body: tableData,
-      theme: 'striped',
-      headStyles: { fillColor: [16, 185, 129] }, // Emerald-500
-      columnStyles: {
-        0: { cellWidth: 30, fontStyle: 'bold' },
-        1: { cellWidth: 'auto' }
-      }
-    });
-
-    doc.save(`uniace-session-${new Date().getTime()}.pdf`);
   };
 
   useEffect(() => {
@@ -185,71 +139,6 @@ export default function ChatBot({
         setSelectedImage(reader.result as string);
       };
       reader.readAsDataURL(file);
-    }
-  };
-
-  const handlePdfSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const isFreeUser = profile?.plan_type === 'free';
-    if (isFreeUser && !isAdmin) {
-      setShowPricingModal(true);
-      return;
-    }
-
-    const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 20 * 1024 * 1024) {
-        alert("File size must be less than 20MB");
-        return;
-      }
-      
-      setPdfFileName(file.name);
-      setIsLoading(true);
-      
-      try {
-        const arrayBuffer = await file.arrayBuffer();
-        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-        let fullText = "";
-        
-        for (let i = 1; i <= pdf.numPages; i++) {
-          const page = await pdf.getPage(i);
-          const textContent = await page.getTextContent();
-          const pageText = textContent.items.map((item: any) => item.str).join(" ");
-          fullText += pageText + "\n";
-        }
-        
-        setSelectedPdfText(fullText);
-        onPdfTextChange?.(fullText);
-      } catch (error) {
-        console.error("Error parsing PDF:", error);
-        alert("Failed to parse PDF. Please try another file.");
-      } finally {
-        setIsLoading(false);
-      }
-    }
-  };
-
-  const handleGenerateDiagram = async () => {
-    if (!input.trim()) {
-      alert("Please describe the diagram you want to generate.");
-      return;
-    }
-
-    setIsGeneratingDiagram(true);
-    try {
-      const imageUrl = await AIService.generateImage(input);
-      const newMessage: ChatMessage = {
-        role: 'model',
-        text: `Here is the diagram for: ${input}`,
-        image: imageUrl,
-        isDiagram: true
-      };
-      setMessages(prev => [...prev, newMessage]);
-      setInput("");
-    } catch (error) {
-      console.error("Error generating diagram:", error);
-      alert("Failed to generate diagram. Please try again.");
-    } finally {
-      setIsGeneratingDiagram(false);
     }
   };
 
@@ -336,9 +225,8 @@ export default function ChatBot({
 
     const userMsg: ChatMessage = { 
       role: "user", 
-      text: textToSend || (selectedImage ? "Analyzed an image." : (selectedPdfText ? "Analyzed a document." : "")),
-      image: selectedImage || undefined,
-      pdfContent: selectedPdfText || undefined
+      text: textToSend || (selectedImage ? "Analyzed an image." : ""),
+      image: selectedImage || undefined
     };
     
     setMessages((prev) => [...prev, userMsg]);
@@ -353,9 +241,6 @@ export default function ChatBot({
 
     localStorage.removeItem('chat_input_backup');
     setSelectedImage(null);
-    setSelectedPdfText(null);
-    setPdfFileName(null);
-    onPdfTextChange?.(null);
     setIsLoading(true);
 
     // Calculate mastery level
@@ -385,7 +270,6 @@ export default function ChatBot({
           subTopicContent && `Content: ${subTopicContent}`
         ].filter(Boolean).join(', ') || 'General Chat',
         complexity: isProMode ? 'high' : 'standard',
-        fastMode,
         isHintRequest,
         masteryLevel,
         personality: currentPersonality,
@@ -400,11 +284,9 @@ export default function ChatBot({
       }, () => {
         setIsLoading(false);
         setMessages(prev => {
-          const newMsgs = [...prev];
-          const finalMsg = newMsgs[msgIndex];
-          finalMsg.text = finalMsg.text.replace(/^["']|["']$/g, '');
+          const finalMsg = prev[msgIndex];
           if (autoSpeak) speakText(finalMsg.text);
-          return newMsgs;
+          return prev;
         });
       }, (err) => {
         console.error("WS Chat error:", err);
@@ -446,7 +328,6 @@ export default function ChatBot({
             subTopicContent && `Content: ${subTopicContent}`
           ].filter(Boolean).join(', ') || 'General Chat',
           complexity: isProMode ? 'high' : 'standard',
-          fastMode,
           isHintRequest,
           masteryLevel,
           personality: currentPersonality,
@@ -475,7 +356,7 @@ export default function ChatBot({
 
       const modelMsg: ChatMessage = { 
         role: "model", 
-        text: data.response.replace(/^["']|["']$/g, '')
+        text: data.response
       };
       setMessages((prev) => [...prev, modelMsg]);
       setSparksRemaining(data.sparksRemaining);
@@ -732,25 +613,17 @@ export default function ChatBot({
               </div>
             )}
 
-            {(selectedImage || pdfFileName) && (
+            {selectedImage && (
               <div className="relative inline-block mb-4">
-                {selectedImage ? (
-                  <img src={selectedImage} alt="Preview" className="h-20 w-20 object-cover rounded-2xl border-2 border-emerald-500 shadow-lg" />
-                ) : (
-                  <div className="h-20 px-4 flex items-center gap-2 bg-emerald-50 dark:bg-emerald-900/20 border-2 border-emerald-500 rounded-2xl shadow-lg">
-                    <FileText className="text-emerald-500" size={24} />
-                    <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 max-w-[100px] truncate">
-                      {pdfFileName}
-                    </span>
+                {selectedImage.startsWith('data:application/pdf') ? (
+                  <div className="h-20 w-20 bg-slate-100 dark:bg-slate-800 rounded-2xl border-2 border-emerald-500 shadow-lg flex items-center justify-center">
+                    <FileText className="text-emerald-500" size={32} />
                   </div>
+                ) : (
+                  <img src={selectedImage} alt="Preview" className="h-20 w-20 object-cover rounded-2xl border-2 border-emerald-500 shadow-lg" />
                 )}
                 <button 
-                  onClick={() => {
-                    setSelectedImage(null);
-                    setSelectedPdfText(null);
-                    setPdfFileName(null);
-                    onPdfTextChange?.(null);
-                  }}
+                  onClick={() => setSelectedImage(null)}
                   className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 shadow-lg"
                 >
                   <X size={12} />
@@ -758,87 +631,28 @@ export default function ChatBot({
               </div>
             )}
             
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setIsProMode(!isProMode)}
-                  className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all ${
-                    isProMode 
-                      ? 'bg-purple-500 text-white shadow-lg shadow-purple-200 dark:shadow-purple-900/20' 
-                      : 'bg-slate-100 dark:bg-zinc-800 text-slate-400 dark:text-zinc-500 hover:bg-slate-200 dark:hover:bg-zinc-700'
-                  }`}
-                  title={isProMode ? "Deep Analysis (Cost varies by length)" : "Standard Query (Cost varies by length)"}
-                >
-                  <Sparkles size={12} fill={isProMode ? "currentColor" : "none"} />
-                  {isProMode ? "Deep Analysis" : "Standard Query"}
-                </button>
-
-                {isProMode && (
-                  <span className="text-[10px] text-purple-500 font-medium animate-pulse">
-                    High precision mode enabled
-                  </span>
-                )}
-              </div>
-
-              {messages.length > 0 && (
-                <button
-                  onClick={downloadChatAsPDF}
-                  className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-slate-100 dark:bg-zinc-800 text-slate-400 dark:text-zinc-500 hover:bg-slate-200 dark:hover:bg-zinc-700 transition-all"
-                  title="Download Chat History"
-                >
-                  <FileUp size={12} />
-                  Export PDF
-                </button>
+            <div className="flex items-center gap-2 mb-2">
+              <button
+                onClick={() => setIsProMode(!isProMode)}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all ${
+                  isProMode 
+                    ? 'bg-purple-500 text-white shadow-lg shadow-purple-200 dark:shadow-purple-900/20' 
+                    : 'bg-slate-100 dark:bg-zinc-800 text-slate-400 dark:text-zinc-500 hover:bg-slate-200 dark:hover:bg-zinc-700'
+                }`}
+                title={isProMode ? "Deep Analysis (Cost varies by length)" : "Standard Query (Cost varies by length)"}
+              >
+                <Sparkles size={12} fill={isProMode ? "currentColor" : "none"} />
+                {isProMode ? "Deep Analysis" : "Standard Query"}
+              </button>
+              {isProMode && (
+                <span className="text-[10px] text-purple-500 font-medium animate-pulse">
+                  High precision mode enabled
+                </span>
               )}
             </div>
             
-            <div className="flex items-center gap-3 relative">
-              {/* Attachment Button */}
-              <div className="relative">
-                <button 
-                  onClick={() => setShowAttachmentMenu(!showAttachmentMenu)}
-                  className="w-12 h-12 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-slate-900 dark:text-white rounded-full flex items-center justify-center shadow-sm hover:shadow-md transition-all active:scale-95"
-                >
-                  <Plus size={24} className={`transition-transform duration-300 ${showAttachmentMenu ? 'rotate-45' : ''}`} />
-                </button>
-
-                <AnimatePresence>
-                  {showAttachmentMenu && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 10, scale: 0.9 }}
-                      animate={{ opacity: 1, y: -10, scale: 1 }}
-                      exit={{ opacity: 0, y: 10, scale: 0.9 }}
-                      className="absolute bottom-full left-0 mb-2 w-48 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-2xl shadow-xl overflow-hidden z-20"
-                    >
-                      <button 
-                        onClick={() => { fileInputRef.current?.click(); setShowAttachmentMenu(false); }}
-                        className="w-full p-3 flex items-center gap-3 text-xs font-medium text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors"
-                      >
-                        <ImageIcon size={16} className="text-emerald-500" />
-                        Upload Image
-                      </button>
-                      <button 
-                        onClick={() => { pdfInputRef.current?.click(); setShowAttachmentMenu(false); }}
-                        className="w-full p-3 flex items-center gap-3 text-xs font-medium text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors border-t border-slate-100 dark:border-zinc-800"
-                      >
-                        <FileUp size={16} className="text-blue-500" />
-                        Upload PDF
-                      </button>
-                      <button 
-                        onClick={() => { handleGenerateDiagram(); setShowAttachmentMenu(false); }}
-                        disabled={isGeneratingDiagram || !input.trim()}
-                        className="w-full p-3 flex items-center gap-3 text-xs font-medium text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors border-t border-slate-100 dark:border-zinc-800 disabled:opacity-50"
-                      >
-                        <Palette size={16} className="text-purple-500" />
-                        Generate Diagram
-                      </button>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-
-              {/* Pill Input */}
-              <div className="flex-1 relative flex items-center bg-slate-100 dark:bg-zinc-900 rounded-full px-4 py-1.5 transition-all focus-within:ring-2 focus-within:ring-emerald-500">
+            <div className="flex items-center gap-3">
+              <div className="relative flex-1">
                 <textarea
                   value={input}
                   onChange={(e) => {
@@ -853,53 +667,49 @@ export default function ChatBot({
                       handleSend();
                     }
                   }}
-                  placeholder={isRecording ? "Listening..." : "Ask UniAce..."}
+                  placeholder={isRecording ? "Listening..." : "Ask anything..."}
                   rows={1}
-                  className="flex-1 bg-transparent border-none text-sm dark:text-white focus:ring-0 resize-none py-2 px-2 focus:outline-none"
-                  style={{ minHeight: '40px', maxHeight: '120px' }}
+                  className={`w-full pl-5 pr-12 py-3.5 bg-slate-100 dark:bg-zinc-900 border-none rounded-2xl text-sm dark:text-white focus:ring-2 focus:ring-slate-900 dark:focus:ring-emerald-500 transition-all resize-none overflow-y-auto ${isRecording ? 'animate-pulse ring-2 ring-emerald-500' : ''}`}
+                  style={{ minHeight: '48px', maxHeight: '120px' }}
                 />
-                
-                <div className="flex items-center gap-1">
-                  <button 
-                    onClick={toggleRecording}
-                    className={`p-2 rounded-full transition-all ${isRecording ? 'text-emerald-500 animate-pulse' : 'text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
-                  >
-                    <Mic size={20} />
-                  </button>
-                  
-                  {input.trim() && (
-                    <button 
-                      onClick={() => handleSend()}
-                      disabled={isLoading}
-                      className="p-2 bg-slate-900 dark:bg-emerald-600 text-white rounded-full hover:bg-emerald-500 transition-all shadow-sm"
-                    >
-                      <Send size={16} />
-                    </button>
-                  )}
-                </div>
+                <button 
+                  onClick={() => handleSend()}
+                  disabled={isLoading || (!input.trim() && !selectedImage)}
+                  className="absolute right-2 bottom-2 p-2 bg-slate-900 dark:bg-emerald-600 text-white rounded-xl hover:bg-emerald-500 disabled:opacity-50 transition-all"
+                >
+                  <Send size={18} />
+                </button>
               </div>
-
-              {/* Voice Tutor Button */}
-              <button 
-                onClick={onOpenVoiceTutor}
-                className="w-12 h-12 bg-slate-900 dark:bg-emerald-600 text-white rounded-full flex items-center justify-center shadow-lg hover:bg-emerald-500 transition-all active:scale-95"
-                title="Live Voice Tutor"
-              >
-                <Volume2 size={24} />
-              </button>
+              
+              <div className="flex items-center gap-1.5">
+                <button 
+                  onClick={() => fileInputRef.current?.click()}
+                  className="p-3 text-slate-400 dark:text-zinc-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-xl transition-colors"
+                  title="Upload image"
+                >
+                  <ImageIcon size={20} />
+                </button>
+                <button 
+                  onClick={toggleRecording}
+                  className={`p-3 rounded-xl transition-colors ${isRecording ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-200 dark:shadow-emerald-900/20' : 'text-slate-400 dark:text-zinc-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-zinc-800'}`}
+                  title="Voice input"
+                >
+                  {isRecording ? <Mic size={20} /> : <MicOff size={20} />}
+                </button>
+                <button 
+                  onClick={() => setAutoSpeak(!autoSpeak)}
+                  className={`p-3 rounded-xl transition-colors ${autoSpeak ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800' : 'text-slate-400 dark:text-zinc-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-zinc-800'}`}
+                  title="Toggle auto-speak"
+                >
+                  {autoSpeak ? <Volume2 size={20} /> : <VolumeX size={20} />}
+                </button>
+              </div>
             </div>
             <input 
               type="file" 
               ref={fileInputRef} 
               onChange={handleImageSelect} 
-              accept="image/*" 
-              className="hidden" 
-            />
-            <input 
-              type="file" 
-              ref={pdfInputRef} 
-              onChange={handlePdfSelect} 
-              accept=".pdf,.txt" 
+              accept="image/*,application/pdf" 
               className="hidden" 
             />
           </div>
@@ -1168,122 +978,73 @@ export default function ChatBot({
                   </div>
                 )}
                 
-            <div className="flex items-center gap-2 mb-2">
-              <button
-                onClick={() => setIsProMode(!isProMode)}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all ${
-                  isProMode 
-                    ? 'bg-purple-500 text-white shadow-lg shadow-purple-200 dark:shadow-purple-900/20' 
-                    : 'bg-slate-100 dark:bg-zinc-800 text-slate-400 dark:text-zinc-500 hover:bg-slate-200 dark:hover:bg-zinc-700'
-                }`}
-                title={isProMode ? "Deep Analysis (Cost varies by length)" : "Standard Query (Cost varies by length)"}
-              >
-                <Sparkles size={12} fill={isProMode ? "currentColor" : "none"} />
-                {isProMode ? "Deep Analysis" : "Standard Query"}
-              </button>
-              {isProMode && (
-                <span className="text-[10px] text-purple-500 font-medium animate-pulse">
-                  High precision mode enabled
-                </span>
-              )}
-            </div>
-
-            <div className="flex items-center gap-4 relative">
-              {/* Attachment Button */}
-              <div className="relative">
-                <button 
-                  onClick={() => setShowAttachmentMenu(!showAttachmentMenu)}
-                  className="w-14 h-14 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-slate-900 dark:text-white rounded-full flex items-center justify-center shadow-sm hover:shadow-md transition-all active:scale-95"
-                >
-                  <Plus size={28} className={`transition-transform duration-300 ${showAttachmentMenu ? 'rotate-45' : ''}`} />
-                </button>
-
-                <AnimatePresence>
-                  {showAttachmentMenu && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 10, scale: 0.9 }}
-                      animate={{ opacity: 1, y: -10, scale: 1 }}
-                      exit={{ opacity: 0, y: 10, scale: 0.9 }}
-                      className="absolute bottom-full left-0 mb-2 w-56 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-2xl shadow-xl overflow-hidden z-20"
-                    >
-                      <button 
-                        onClick={() => { fileInputRef.current?.click(); setShowAttachmentMenu(false); }}
-                        className="w-full p-4 flex items-center gap-3 text-sm font-medium text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors"
-                      >
-                        <ImageIcon size={18} className="text-emerald-500" />
-                        Upload Image
-                      </button>
-                      <button 
-                        onClick={() => { pdfInputRef.current?.click(); setShowAttachmentMenu(false); }}
-                        className="w-full p-4 flex items-center gap-3 text-sm font-medium text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors border-t border-slate-100 dark:border-zinc-800"
-                      >
-                        <FileUp size={18} className="text-blue-500" />
-                        Upload PDF
-                      </button>
-                      <button 
-                        onClick={() => { handleGenerateDiagram(); setShowAttachmentMenu(false); }}
-                        disabled={isGeneratingDiagram || !input.trim()}
-                        className="w-full p-4 flex items-center gap-3 text-sm font-medium text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors border-t border-slate-100 dark:border-zinc-800 disabled:opacity-50"
-                      >
-                        <Palette size={18} className="text-purple-500" />
-                        Generate Diagram
-                      </button>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-
-              {/* Pill Input */}
-              <div className="flex-1 relative flex items-center bg-slate-100 dark:bg-zinc-900 rounded-full px-6 py-2 transition-all focus-within:ring-2 focus-within:ring-emerald-500">
-                <textarea
-                  value={input}
-                  onChange={(e) => {
-                    setInput(e.target.value);
-                    e.target.style.height = 'auto';
-                    e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
-                  }}
-                  onKeyDown={(e) => {
-                    const isMobile = window.innerWidth < 768 || /Mobi|Android/i.test(navigator.userAgent);
-                    if (e.key === "Enter" && !e.shiftKey && !isMobile) {
-                      e.preventDefault();
-                      handleSend();
-                    }
-                  }}
-                  placeholder={isRecording ? "Listening..." : "Ask UniAce..."}
-                  rows={1}
-                  className="flex-1 bg-transparent border-none text-base dark:text-white focus:ring-0 resize-none py-3 px-2"
-                  style={{ minHeight: '48px', maxHeight: '120px' }}
-                />
-                
-                <div className="flex items-center gap-2">
-                  <button 
-                    onClick={toggleRecording}
-                    className={`p-2.5 rounded-full transition-all ${isRecording ? 'text-emerald-500 animate-pulse' : 'text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
+                <div className="flex items-center gap-2 mb-2">
+                  <button
+                    onClick={() => setIsProMode(!isProMode)}
+                    className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all ${
+                      isProMode 
+                        ? 'bg-purple-500 text-white shadow-lg shadow-purple-200 dark:shadow-purple-900/20' 
+                        : 'bg-slate-100 dark:bg-zinc-800 text-slate-400 dark:text-zinc-500 hover:bg-slate-200 dark:hover:bg-zinc-700'
+                    }`}
+                    title={isProMode ? "Deep Analysis (Cost varies by length)" : "Standard Query (Cost varies by length)"}
                   >
-                    <Mic size={24} />
+                    <Sparkles size={12} fill={isProMode ? "currentColor" : "none"} />
+                    {isProMode ? "Deep Analysis" : "Standard Query"}
                   </button>
-                  
-                  {input.trim() && (
+                  {isProMode && (
+                    <span className="text-[10px] text-purple-500 font-medium animate-pulse">
+                      High precision mode enabled
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <div className="relative flex-1">
+                    <textarea
+                      value={input}
+                      onChange={(e) => {
+                        setInput(e.target.value);
+                        e.target.style.height = 'auto';
+                        e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
+                      }}
+                      onKeyDown={(e) => {
+                        const isMobile = window.innerWidth < 768 || /Mobi|Android/i.test(navigator.userAgent);
+                        if (e.key === "Enter" && !e.shiftKey && !isMobile) {
+                          e.preventDefault();
+                          handleSend();
+                        }
+                      }}
+                      placeholder={isRecording ? "Listening..." : "Ask anything..."}
+                      rows={1}
+                      className={`w-full pl-6 pr-14 py-4 bg-slate-100 dark:bg-zinc-900 border-none rounded-2xl text-sm dark:text-white focus:ring-2 focus:ring-slate-900 dark:focus:ring-emerald-500 transition-all resize-none overflow-y-auto ${isRecording ? 'animate-pulse ring-2 ring-emerald-500' : ''}`}
+                      style={{ minHeight: '56px', maxHeight: '120px' }}
+                    />
                     <button 
                       onClick={() => handleSend()}
-                      disabled={isLoading}
-                      className="p-2.5 bg-slate-900 dark:bg-emerald-600 text-white rounded-full hover:bg-emerald-500 transition-all shadow-md"
+                      disabled={isLoading || (!input.trim() && !selectedImage)}
+                      className="absolute right-2 bottom-2 p-2.5 bg-slate-900 dark:bg-emerald-600 text-white rounded-xl hover:bg-emerald-500 disabled:opacity-50 transition-all shadow-md active:scale-95"
                     >
                       <Send size={20} />
                     </button>
-                  )}
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    <button 
+                      onClick={() => fileInputRef.current?.click()}
+                      className="p-4 bg-slate-100 dark:bg-zinc-900 text-slate-400 dark:text-zinc-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-zinc-800 rounded-xl transition-all"
+                      title="Upload image"
+                    >
+                      <ImageIcon size={22} />
+                    </button>
+                    <button 
+                      onClick={toggleRecording}
+                      className={`p-4 rounded-xl transition-all ${isRecording ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-200 dark:shadow-emerald-900/20' : 'bg-slate-100 dark:bg-zinc-900 text-slate-400 dark:text-zinc-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-zinc-800'}`}
+                      title="Voice input"
+                    >
+                      {isRecording ? <Mic size={22} /> : <MicOff size={22} />}
+                    </button>
+                  </div>
                 </div>
-              </div>
-
-              {/* Voice Tutor Button */}
-              <button 
-                onClick={onOpenVoiceTutor}
-                className="w-14 h-14 bg-slate-900 dark:bg-emerald-600 text-white rounded-full flex items-center justify-center shadow-xl hover:bg-emerald-500 transition-all active:scale-95"
-                title="Live Voice Tutor"
-              >
-                <Volume2 size={28} />
-              </button>
-            </div>
                 <input 
                   type="file" 
                   ref={fileInputRef} 

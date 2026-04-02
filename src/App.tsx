@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { AnimatePresence } from 'motion/react';
 import Sidebar from './components/Sidebar';
 import BottomNav from './components/BottomNav';
 import ContentArea from './components/ContentArea';
@@ -30,44 +30,27 @@ import GlobalNotification from './components/GlobalNotification';
 import PaywallManager from './components/PaywallManager';
 import PWAInstallPrompt from './components/PWAInstallPrompt';
 import Calculator from './components/Calculator';
-import VoiceTutor from './components/VoiceTutor';
 import AcademicProfileModal from './components/AcademicProfileModal';
 import { CalculatorProvider, useCalculator } from './context/CalculatorContext';
 import { useUserProgress } from './hooks/useUserProgress';
 import { useAuth } from './context/AuthContext';
 import { useCourses } from './context/CourseContext';
-import { Menu, Mic } from 'lucide-react';
+import { Menu } from 'lucide-react';
 import { Toaster } from 'react-hot-toast';
 import { View, ChatMessage, CourseId, Department, Semester } from './types';
 import { generateModuleContent, generateCourseSkeleton } from './services/aiCourseGenerator';
 
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useAppStore } from './lib/store';
-
-const queryClient = new QueryClient();
-
 export default function App() {
   console.log('App.tsx: Rendering...');
   return (
-    <QueryClientProvider client={queryClient}>
-      <CalculatorProvider>
-        <AppContent />
-      </CalculatorProvider>
-    </QueryClientProvider>
+    <CalculatorProvider>
+      <AppContent />
+    </CalculatorProvider>
   );
 }
 
 function AppContent() {
   const { isConfigured, user, profile, loading, signInWithGoogle } = useAuth();
-  const { theme } = useAppStore();
-  
-  useEffect(() => {
-    if (theme === 'dark') {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }, [theme]);
   const { courses, refreshCourses } = useCourses();
   const { progress, addXp, updateMastery, recordStudyTime, addBookmark, removeBookmark, enrollCourse, unenrollCourse, updateAIPersonality, isOnline, checkAndUpdateStreak } = useUserProgress();
   const [activeCourseId, setActiveCourseId] = useState<CourseId | null>(null);
@@ -121,9 +104,6 @@ function AppContent() {
   const [regenerationProgress, setRegenerationProgress] = useState(0);
   const [regenerationStatus, setRegenerationStatus] = useState('');
   const { isCalculatorOpen, setIsCalculatorOpen } = useCalculator();
-  const [isVoiceTutorOpen, setIsVoiceTutorOpen] = useState(false);
-  const [activePdfText, setActivePdfText] = useState<string | null>(null);
-  const [activeLessonContent, setActiveLessonContent] = useState<string | null>(null);
 
   useEffect(() => {
     const handleResize = () => {
@@ -149,10 +129,6 @@ function AppContent() {
       window.removeEventListener('navigate', handleCustomNavigate);
     };
   }, []);
-
-  useEffect(() => {
-    setActiveLessonContent(null);
-  }, [activeSubTopicId]);
 
   const activeModule = syllabus.find(m => m.id === activeModuleId) || syllabus[0];
   const activeSubTopicContent = activeModule?.subTopics.find(s => s.id === activeSubTopicId)?.content;
@@ -521,7 +497,6 @@ function AppContent() {
             onViewSelect={handleViewSelect}
             progress={progress}
             onToggleCalculator={() => setIsCalculatorOpen(!isCalculatorOpen)}
-            onLessonContentChange={setActiveLessonContent}
           />
         )}
 
@@ -637,52 +612,30 @@ function AppContent() {
             activeCourseId={activeCourseId}
             activeModule={activeModule?.title}
             activeSubTopic={activeModule?.subTopics.find(s => s.id === activeSubTopicId)?.title}
-            subTopicContent={activeLessonContent || activeSubTopicContent}
+            subTopicContent={activeSubTopicContent}
             progress={progress}
             profile={profile}
             onUpdatePersonality={updateAIPersonality}
             onToggleCalculator={() => setIsCalculatorOpen(!isCalculatorOpen)}
-            onOpenVoiceTutor={() => setIsVoiceTutorOpen(true)}
-            onPdfTextChange={setActivePdfText}
           />
         )}
       </div>
 
       {/* AI Chatbot Overlay */}
       {activeView !== 'ai-tutor' && (
-        <>
-          <motion.button
-            initial={{ scale: 0, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
-            onClick={() => setIsVoiceTutorOpen(true)}
-            className="fixed bottom-24 right-6 w-14 h-14 bg-emerald-500 text-white rounded-full shadow-lg shadow-emerald-500/30 flex items-center justify-center z-40 lg:bottom-24 lg:right-8"
-          >
-            <motion.div
-              animate={{ scale: [1, 1.2, 1] }}
-              transition={{ repeat: Infinity, duration: 2 }}
-            >
-              <Mic className="w-6 h-6" />
-            </motion.div>
-          </motion.button>
-          
-          <ChatBot 
-            onToggleFullPage={() => setActiveView('ai-tutor')} 
-            messages={chatMessages}
-            setMessages={setChatMessages}
-            activeCourseId={activeCourseId}
-            activeModule={activeModule?.title}
-            activeSubTopic={activeModule?.subTopics.find(s => s.id === activeSubTopicId)?.title}
-            subTopicContent={activeLessonContent || activeSubTopicContent}
-            progress={progress}
-            profile={profile}
-            onUpdatePersonality={updateAIPersonality}
-            onToggleCalculator={() => setIsCalculatorOpen(!isCalculatorOpen)}
-            onOpenVoiceTutor={() => setIsVoiceTutorOpen(true)}
-            onPdfTextChange={setActivePdfText}
-          />
-        </>
+        <ChatBot 
+          onToggleFullPage={() => setActiveView('ai-tutor')} 
+          messages={chatMessages}
+          setMessages={setChatMessages}
+          activeCourseId={activeCourseId}
+          activeModule={activeModule?.title}
+          activeSubTopic={activeModule?.subTopics.find(s => s.id === activeSubTopicId)?.title}
+          subTopicContent={activeSubTopicContent}
+          progress={progress}
+          profile={profile}
+          onUpdatePersonality={updateAIPersonality}
+          onToggleCalculator={() => setIsCalculatorOpen(!isCalculatorOpen)}
+        />
       )}
 
       {/* Bottom Navigation (Mobile) */}
@@ -693,22 +646,6 @@ function AppContent() {
 
       {/* PWA Install Prompt */}
       <PWAInstallPrompt />
-
-      {/* Voice Tutor */}
-      <VoiceTutor 
-        isOpen={isVoiceTutorOpen} 
-        onClose={() => setIsVoiceTutorOpen(false)} 
-        pdfContent={activePdfText || undefined}
-        systemInstruction={`You are a Senior AI Tutor specializing in the Nigerian University System (NUC/CCMAS).
-Your teaching strategy (The UniAce Hybrid Approach):
-1. NUC ALIGNMENT: Ensure the core content covers exactly what is required by the NUC/CCMAS syllabus for this topic.
-2. INTERNATIONAL DEPTH: Do not just list facts. Provide deep, step-by-step explanations, clear derivations, and multiple worked examples.
-3. UNIACE TUTOR STYLE: 
-   - Use simple, relatable language for complex parts.
-   - Include a "Pro-Tip: Common Exam Pitfalls" section highlighting where students usually lose marks.
-   - Add a "Step-by-Step Breakdown" for any calculation or complex process.
-   - Include 2-3 "Self-Check Questions" at the end of the content.`}
-      />
 
       {/* Global Admin Alert */}
       <GlobalNotification />

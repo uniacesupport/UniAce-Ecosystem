@@ -32,12 +32,6 @@ interface UserProfile {
   faculty?: string;
   academic_level?: string;
   semester?: string;
-  learningProfile?: {
-    strengths: string[];
-    weaknesses: string[];
-    lastUpdated: string;
-    fastMode?: boolean;
-  };
 }
 
 interface AuthContextType {
@@ -159,7 +153,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         department: userDoc.exists() ? userDoc.data().department : undefined,
         academic_level: userDoc.exists() ? userDoc.data().academic_level : undefined,
         semester: userDoc.exists() ? userDoc.data().semester : undefined,
-        learningProfile: userDoc.exists() ? userDoc.data().learningProfile : undefined,
       };
 
       const dataToSave: any = {

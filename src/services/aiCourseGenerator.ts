@@ -267,10 +267,9 @@ export async function generateCourseSkeleton(
     `;
   }
 
-    const skeletonPrompt = `
+  const skeletonPrompt = `
     ${promptContext}
-    You are a Senior Academic Architect specializing in the Nigerian University System. 
-    Generate a comprehensive course skeleton for a university-level course, strictly adhering to the NUC (National Universities Commission) and CCMAS (Core Curriculum and Minimum Academic Standards) guidelines.
+    Generate a comprehensive course skeleton for a university-level course, strictly adhering to the NUC (National Universities Commission) curriculum standards, or dynamically adapting to the most relevant global academic benchmarks for this subject.
     
     Target: ${courseName}
     Description: ${courseDescription}
@@ -279,11 +278,6 @@ export async function generateCourseSkeleton(
     ${department ? `Department: ${department}` : ''}
     ${outline ? `Course Outline / Syllabus:\n${outline}` : ''}
     ${existingModuleTitles.length > 0 ? `Current Existing Modules: ${existingModuleTitles.join(', ')}` : ''}
-    
-    STRATEGY (The UniAce Hybrid Approach):
-    1. STRUCTURE: Use the NUC/CCMAS-based outline as the absolute base. Topics must follow the standard Nigerian university week-by-week progression.
-    2. RELEVANCE: Ensure topics are exactly what lecturers teach and what appears in exams (e.g., focus on standard derivations, core theories, and local applications).
-    3. CLARITY: Break down compressed NUC topics into logical, bite-sized lesson titles that a student can follow easily.
     
     The output must be a detailed JSON object containing:
     1. A "description" field which is a concise summary of the course content (1-2 sentences), ensuring it aligns with NUC or relevant curriculum objectives.
@@ -305,7 +299,7 @@ export async function generateCourseSkeleton(
         }
       ]
     }
-    `;
+  `;
 
   const result = await callGenerateAPI(skeletonPrompt, 'skeleton', provider);
   
@@ -375,28 +369,20 @@ export async function generateLessonContent(
   provider: string = 'mistral'
 ): Promise<{ title: string, content: string, metadata: PipelineMetadata }> {
   const lessonPrompt = `
-    You are an expert university professor and a friendly tutor. Generate a detailed, exhaustive lecture note for ONE specific lesson.
+    You are an expert university professor. Generate a detailed, exhaustive lecture note for ONE specific lesson, ensuring it strictly follows the NUC (National Universities Commission) curriculum standards, or dynamically adapts to the most relevant global academic benchmarks for this subject.
     
     Course: ${courseName}
     Module: ${moduleTitle}
     Lesson: ${lessonTitle}
     
-    STRATEGY (The UniAce Hybrid Approach):
-    1. NUC ALIGNMENT: Ensure the core content covers exactly what is required by the NUC/CCMAS syllabus for this topic.
-    2. INTERNATIONAL DEPTH: Do not just list facts. Provide deep, step-by-step explanations, clear derivations, and multiple worked examples.
-    3. UNIACE TUTOR STYLE: 
-       - Use simple, relatable language for complex parts.
-       - Include a "Pro-Tip: Common Exam Pitfalls" section highlighting where students usually lose marks.
-       - Add a "Step-by-Step Breakdown" for any calculation or complex process.
-       - Include 2-3 "Self-Check Questions" at the end of the content.
-    
     Requirements:
-    1. Write a high-impact, university-level lecture note in Markdown format.
-    2. Target length: 800-1200 words for maximum depth.
-    3. Use a professional yet accessible academic tone.
-    4. Use LaTeX for ALL mathematical equations, variables, and scientific notation.
-    5. CRITICAL: Use $ ... $ for inline math and $$ ... $$ for block math. Ensure LaTeX commands are properly formatted.
-    6. CRITICAL: Output ONLY valid JSON matching this structure:
+    1. Write a CONCISE, high-impact, university-level lecture note in Markdown format.
+    2. Target length: 600-900 words. Focus on core concepts, key derivations, and practical examples. Avoid unnecessary filler content.
+    3. Use a professional, academic tone suitable for a top-tier university.
+    4. Ensure all concepts are explained clearly and logically, meeting the depth required by NUC/relevant curriculum standards.
+    5. Use LaTeX for ALL mathematical equations, variables, and scientific notation.
+    6. CRITICAL: Use $ ... $ for inline math and $$ ... $$ for block math. Ensure LaTeX commands are properly formatted (e.g., use \\frac{a}{b} not frac{a}{b}).
+    7. CRITICAL: Output ONLY valid JSON matching this structure:
     {
       "content": "The raw markdown content...",
       "metadata": {
@@ -407,8 +393,9 @@ export async function generateLessonContent(
     }
     CRITICAL: Do NOT wrap the JSON in markdown blocks. Output raw JSON only.
     CRITICAL: Ensure all double quotes inside the "content" string are properly escaped (e.g., \\"word\\").
-    7. CRITICAL: Ensure the lesson is COMPLETE and does not cut off abruptly.
-    8. CRITICAL [MERMAID DIRECTIVE]: If you include Mermaid diagrams, use supported syntax (flowchart, sequenceDiagram, classDiagram, stateDiagram, pie, mindmap).
+    8. CRITICAL: Ensure the lesson is COMPLETE and does not cut off abruptly. Provide a clear conclusion or summary at the end.
+    9. CRITICAL: The content must be academically rigorous and align with the latest NUC or relevant global curriculum standards.
+    10. CRITICAL [MERMAID DIRECTIVE]: If you include Mermaid diagrams, you MUST ONLY use supported Mermaid.js syntax. Allowed types are: flowchart, sequenceDiagram, classDiagram, stateDiagram, pie, mindmap. Do NOT use unsupported types like vennDiagram or barChart. Always wrap node text containing punctuation or special characters in double quotes (e.g., B["TLD Servers (.com, .org)"]).
   `;
 
   const result = await callGenerateAPI(lessonPrompt, 'lesson', provider);
@@ -426,26 +413,22 @@ export async function generateModuleQuiz(
   provider: string = 'groq'
 ): Promise<any> {
   const quizPrompt = `
-    Generate a university-level quiz for this module.
+    Generate a university-level quiz for this module, ensuring the questions align with the depth and rigor expected by NUC (National Universities Commission) or dynamically adapt to the most relevant global academic benchmarks for this subject.
     Course: ${courseName}
     Module: ${moduleTitle}
     Topics: ${quizTopics.join(', ')}
     
-    STRATEGY (The UniAce Hybrid Approach):
-    1. EXAM FOCUS: Include questions that mirror standard Nigerian university exam patterns (e.g., focus on core definitions, standard problems, and theoretical applications).
-    2. CONCEPTUAL DEPTH: Ensure questions aren't just about memory; they should require applying the "International Depth" taught in the lessons.
-    3. TUTOR FEEDBACK: The "explanation" should feel like a tutor explaining WHY the answer is correct and pointing out the "Common Pitfall" related to that question.
-    
     Requirements:
     1. Generate 8-12 challenging, high-quality multiple-choice questions.
-    2. Questions must test deep conceptual understanding and application of knowledge.
+    2. Questions must test deep conceptual understanding and application of knowledge, avoiding simple rote memorization.
     3. Include a mix of difficulty levels: 20% foundational, 50% intermediate, 30% advanced/analytical.
     4. CRITICAL: Be concise in explanations and hints to avoid output truncation.
-    5. CRITICAL: Do NOT include any conversational text inside the JSON fields. 
-    6. CRITICAL: The "explanation" field must provide a detailed academic justification.
-    7. CRITICAL: Ensure all double quotes inside strings are properly escaped.
-    8. CRITICAL: For LaTeX in JSON strings, use double backslashes (e.g., "\\\\mathbf").
-    9. Return ONLY valid JSON:
+    5. CRITICAL: Do NOT include any conversational text, self-corrections, or "thinking out loud" inside the JSON fields. 
+    6. CRITICAL: The "explanation" field must provide a detailed academic justification for the correct answer and why other options are incorrect.
+    7. CRITICAL: Ensure all double quotes inside strings are properly escaped (e.g., \\"word\\").
+    8. CRITICAL: For LaTeX in JSON strings, use double backslashes (e.g., "\\\\mathbf"). Do NOT use triple backslashes.
+    9. CRITICAL: Ensure the quiz meets the academic standards set by NUC or relevant global guidelines.
+    10. Return ONLY valid JSON:
     {
       "questions": [
         {
