@@ -204,8 +204,6 @@ export default function AdminDashboard() {
   const [quickSubject, setQuickSubject] = useState<Subject>('Mathematics');
   const [quickLevel, setQuickLevel] = useState<Level>('100');
   const [quickSemester, setQuickSemester] = useState<Semester>('1st Semester');
-  const [quickCreditUnits, setQuickCreditUnits] = useState<number>(3);
-  const [quickPrerequisites, setQuickPrerequisites] = useState<string>('');
   const [quickDepartment, setQuickDepartment] = useState<Department>('Mathematics');
   const [courseScope, setCourseScope] = useState<CourseScope>('DEPARTMENT');
   const [selectedFaculties, setSelectedFaculties] = useState<string[]>([]);
@@ -581,8 +579,8 @@ export default function AdminDashboard() {
         subject: quickSubject,
         level: quickLevel,
         semester: quickSemester,
-        creditUnits: quickCreditUnits,
-        prerequisites: quickPrerequisites.split(',').map(p => p.trim()).filter(p => p),
+        creditUnits: 0,
+        prerequisites: [],
         scope: courseScope,
         faculties: courseScope === 'FACULTY' ? selectedFaculties : [],
         departments: courseScope === 'DEPARTMENT' ? selectedDepartments : [],
@@ -1320,8 +1318,8 @@ export default function AdminDashboard() {
         scope: courseScope,
         faculties: courseScope === 'FACULTY' ? selectedFaculties : [],
         departments: courseScope === 'DEPARTMENT' ? selectedDepartments : [],
-        creditUnits: quickCreditUnits,
-        prerequisites: quickPrerequisites.split(',').map(p => p.trim()).filter(p => p),
+        creditUnits: 0,
+        prerequisites: [],
         createdAt: new Date().toISOString(),
         sourcePdf: selectedFile.name
       });
@@ -2118,30 +2116,6 @@ export default function AdminDashboard() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                    <div>
-                      <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Credit Units</label>
-                      <input 
-                        type="number"
-                        min="1"
-                        max="10"
-                        value={quickCreditUnits}
-                        onChange={(e) => setQuickCreditUnits(parseInt(e.target.value) || 3)}
-                        className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Prerequisites (Comma separated)</label>
-                      <input 
-                        type="text"
-                        placeholder="e.g. MTH101, PHY101"
-                        value={quickPrerequisites}
-                        onChange={(e) => setQuickPrerequisites(e.target.value)}
-                        className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      />
-                    </div>
-                  </div>
-
                   {courseScope === 'FACULTY' && (
                     <div className="mb-6 animate-in fade-in slide-in-from-top-2">
                       <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Select Target Faculties</label>
@@ -2442,27 +2416,6 @@ export default function AdminDashboard() {
                     <option key={sem} value={sem}>{sem}</option>
                   ))}
                 </select>
-              </div>
-              <div>
-                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Credit Units</label>
-                <input 
-                  type="number"
-                  min="1"
-                  max="10"
-                  value={quickCreditUnits}
-                  onChange={(e) => setQuickCreditUnits(parseInt(e.target.value) || 3)}
-                  className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Prerequisites (Comma separated)</label>
-                <input 
-                  type="text"
-                  placeholder="e.g. MTH101, PHY101"
-                  value={quickPrerequisites}
-                  onChange={(e) => setQuickPrerequisites(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-                />
               </div>
               <div>
                 <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Department</label>

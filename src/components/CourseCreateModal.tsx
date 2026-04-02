@@ -3,7 +3,7 @@ import { X, Save } from 'lucide-react';
 import { Course, Module, Department, Level, Semester, CourseScope } from '../types';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
-import { DEPARTMENTS, LEVELS, SEMESTERS } from '../constants';
+import { DEPARTMENTS, LEVELS, SEMESTERS, FACULTIES } from '../constants';
 
 interface CourseCreateModalProps {
   onClose: () => void;
@@ -17,9 +17,9 @@ export default function CourseCreateModal({ onClose, onSave }: CourseCreateModal
   const [department, setDepartment] = useState<Department>(DEPARTMENTS[0]);
   const [level, setLevel] = useState<Level>('100');
   const [semester, setSemester] = useState<Semester>('1st Semester');
-  const [creditUnits, setCreditUnits] = useState<number>(3);
-  const [prerequisites, setPrerequisites] = useState<string>('');
   const [scope, setScope] = useState<CourseScope>('GLOBAL');
+  const [faculties, setFaculties] = useState<string[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
   const [modules, setModules] = useState<Module[]>([]);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -38,9 +38,9 @@ export default function CourseCreateModal({ onClose, onSave }: CourseCreateModal
         department,
         level,
         semester,
-        creditUnits,
-        prerequisites: prerequisites.split(',').map(p => p.trim()).filter(p => p),
         scope,
+        faculties: scope === 'FACULTY' ? faculties : [],
+        departments: scope === 'DEPARTMENT' ? departments : [],
         syllabus: modules,
         createdAt: new Date().toISOString()
       });
@@ -139,6 +139,50 @@ export default function CourseCreateModal({ onClose, onSave }: CourseCreateModal
               </select>
             </div>
           </div>
+
+          {scope === 'FACULTY' && (
+            <div>
+              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Select Faculties</label>
+              <div className="grid grid-cols-2 gap-2">
+                {FACULTIES.map(f => (
+                  <label key={f} className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+                    <input
+                      type="checkbox"
+                      checked={faculties.includes(f)}
+                      onChange={(e) => {
+                        if (e.target.checked) setFaculties([...faculties, f]);
+                        else setFaculties(faculties.filter(item => item !== f));
+                      }}
+                      className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                    />
+                    {f}
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {scope === 'DEPARTMENT' && (
+            <div>
+              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Select Departments</label>
+              <div className="grid grid-cols-2 gap-2">
+                {DEPARTMENTS.map(d => (
+                  <label key={d} className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+                    <input
+                      type="checkbox"
+                      checked={departments.includes(d)}
+                      onChange={(e) => {
+                        if (e.target.checked) setDepartments([...departments, d]);
+                        else setDepartments(departments.filter(item => item !== d));
+                      }}
+                      className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                    />
+                    {d}
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="p-6 border-t border-slate-200 dark:border-slate-700 flex justify-end gap-3 sticky bottom-0 bg-white dark:bg-slate-800 z-10">

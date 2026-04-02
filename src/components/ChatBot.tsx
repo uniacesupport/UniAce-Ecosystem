@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Send, User, Bot, X, MessageSquare, Mic, MicOff, Image as ImageIcon, Volume2, VolumeX, Maximize2, Minimize2, Copy, Check, Zap, Lightbulb, Sparkles, Settings, ArrowRight, FileText, Calculator } from "lucide-react";
+import { Send, User, Bot, X, MessageSquare, Mic, MicOff, Image as ImageIcon, Volume2, VolumeX, Maximize2, Minimize2, Copy, Check, Zap, Lightbulb, Sparkles, Settings, ArrowRight, FileText, Calculator, Plus, Activity } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { ChatMessage, CourseId, UserProgress, AIPersonality } from "../types";
 import { jsonrepair } from 'jsonrepair';
@@ -652,7 +652,17 @@ export default function ChatBot({
             </div>
             
             <div className="flex items-center gap-3">
-              <div className="relative flex-1">
+              {/* Plus Button */}
+              <button 
+                onClick={() => fileInputRef.current?.click()}
+                className="w-12 h-12 flex items-center justify-center rounded-full bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-slate-900 dark:text-white hover:bg-slate-50 dark:hover:bg-zinc-800 transition-all shadow-sm"
+                title="Upload"
+              >
+                <Plus size={24} />
+              </button>
+
+              {/* Input Bar */}
+              <div className="flex-1 flex items-center bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-full px-4 py-2 shadow-sm transition-all">
                 <textarea
                   value={input}
                   onChange={(e) => {
@@ -667,41 +677,28 @@ export default function ChatBot({
                       handleSend();
                     }
                   }}
-                  placeholder={isRecording ? "Listening..." : "Ask anything..."}
+                  placeholder={isRecording ? "Listening..." : "Ask UniAce..."}
                   rows={1}
-                  className={`w-full pl-5 pr-12 py-3.5 bg-slate-100 dark:bg-zinc-900 border-none rounded-2xl text-sm dark:text-white focus:ring-2 focus:ring-slate-900 dark:focus:ring-emerald-500 transition-all resize-none overflow-y-auto ${isRecording ? 'animate-pulse ring-2 ring-emerald-500' : ''}`}
-                  style={{ minHeight: '48px', maxHeight: '120px' }}
+                  className="flex-1 bg-transparent border-none outline-none focus:outline-none focus:ring-0 text-sm dark:text-white resize-none overflow-y-auto py-2"
+                  style={{ minHeight: '24px', maxHeight: '120px' }}
                 />
+                
+                {/* Microphone Button (inside input) */}
+                <button 
+                  onClick={toggleRecording}
+                  className={`p-2 rounded-full transition-colors ${isRecording ? 'text-emerald-500 animate-pulse' : 'text-slate-400 dark:text-zinc-500 hover:text-slate-900 dark:hover:text-white'}`}
+                  title="Voice input"
+                >
+                  <Mic size={20} />
+                </button>
+
+                {/* Waveform Button (far right) */}
                 <button 
                   onClick={() => handleSend()}
                   disabled={isLoading || (!input.trim() && !selectedImage)}
-                  className="absolute right-2 bottom-2 p-2 bg-slate-900 dark:bg-emerald-600 text-white rounded-xl hover:bg-emerald-500 disabled:opacity-50 transition-all"
+                  className="ml-2 w-10 h-10 flex items-center justify-center rounded-full bg-black text-white hover:bg-slate-800 disabled:opacity-50 transition-all"
                 >
-                  <Send size={18} />
-                </button>
-              </div>
-              
-              <div className="flex items-center gap-1.5">
-                <button 
-                  onClick={() => fileInputRef.current?.click()}
-                  className="p-3 text-slate-400 dark:text-zinc-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-xl transition-colors"
-                  title="Upload image"
-                >
-                  <ImageIcon size={20} />
-                </button>
-                <button 
-                  onClick={toggleRecording}
-                  className={`p-3 rounded-xl transition-colors ${isRecording ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-200 dark:shadow-emerald-900/20' : 'text-slate-400 dark:text-zinc-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-zinc-800'}`}
-                  title="Voice input"
-                >
-                  {isRecording ? <Mic size={20} /> : <MicOff size={20} />}
-                </button>
-                <button 
-                  onClick={() => setAutoSpeak(!autoSpeak)}
-                  className={`p-3 rounded-xl transition-colors ${autoSpeak ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800' : 'text-slate-400 dark:text-zinc-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-zinc-800'}`}
-                  title="Toggle auto-speak"
-                >
-                  {autoSpeak ? <Volume2 size={20} /> : <VolumeX size={20} />}
+                  <Activity size={20} />
                 </button>
               </div>
             </div>

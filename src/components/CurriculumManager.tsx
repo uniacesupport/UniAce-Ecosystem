@@ -64,23 +64,11 @@ export const CurriculumManager: React.FC = () => {
   }, [allCourses, allocatedCourses, selectedDepartment]);
 
   const totalCreditUnits = useMemo(() => {
-    return allocatedCourses.reduce((sum, course) => sum + (course.creditUnits || 0), 0);
+    return 0;
   }, [allocatedCourses]);
 
   const missingPrerequisites = useMemo(() => {
-    const allocatedIds = new Set<string>(allocatedCourses.map(c => c.id));
-    const missing: Record<string, string[]> = {}; // courseId -> missing prereq IDs
-    
-    allocatedCourses.forEach(course => {
-      if (course.prerequisites && course.prerequisites.length > 0) {
-        const missingForCourse = course.prerequisites.filter(p => !allocatedIds.has(p));
-        if (missingForCourse.length > 0) {
-          missing[course.id] = missingForCourse;
-        }
-      }
-    });
-    
-    return missing;
+    return {};
   }, [allocatedCourses]);
 
   const handleRemoveCourse = async (course: Course) => {
@@ -238,7 +226,7 @@ export const CurriculumManager: React.FC = () => {
             Curriculum Manager
           </h2>
           <p className="text-slate-500 dark:text-slate-400 mt-1">
-            Manage course allocations, credit units, and prerequisites across departments.
+            Manage course allocations across departments.
           </p>
         </div>
       </div>
@@ -312,8 +300,8 @@ export const CurriculumManager: React.FC = () => {
                 Allocated Courses ({allocatedCourses.length})
               </h3>
               {selectedLevel && selectedSemester && (
-                <div className={`px-3 py-1 rounded-full text-sm font-medium ${totalCreditUnits > 24 ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400' : 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-400'}`}>
-                  Total Units: {totalCreditUnits}
+                <div className="px-3 py-1 rounded-full text-sm font-medium bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-400">
+                  {allocatedCourses.length} Courses
                 </div>
               )}
             </div>
@@ -395,7 +383,7 @@ export const CurriculumManager: React.FC = () => {
                       <div>
                         <div className="font-medium text-slate-900 dark:text-white">{c.id} - {c.title}</div>
                         <div className="text-xs text-slate-500 dark:text-slate-400">
-                          Level: {c.level || 'N/A'} | Semester: {c.semester || 'N/A'} | Units: {c.creditUnits || 'N/A'}
+                          Level: {c.level || 'N/A'} | Semester: {c.semester || 'N/A'}
                         </div>
                       </div>
                     </div>
@@ -417,7 +405,6 @@ export const CurriculumManager: React.FC = () => {
                   <th className="p-4 font-medium">Title</th>
                   <th className="p-4 font-medium">Level</th>
                   <th className="p-4 font-medium">Semester</th>
-                  <th className="p-4 font-medium">Units</th>
                   <th className="p-4 font-medium">Scope</th>
                   <th className="p-4 font-medium text-right">Actions</th>
                 </tr>
@@ -428,17 +415,10 @@ export const CurriculumManager: React.FC = () => {
                     <tr key={course.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                       <td className="p-4 font-bold text-slate-900 dark:text-white">
                         {course.id}
-                        {missingPrerequisites[course.id] && (
-                          <div className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400 mt-1 font-normal" title={`Missing prerequisites: ${missingPrerequisites[course.id].join(', ')}`}>
-                            <AlertTriangle size={12} />
-                            Missing Prereq
-                          </div>
-                        )}
                       </td>
                       <td className="p-4 text-slate-600 dark:text-slate-300">{course.title}</td>
                       <td className="p-4 text-slate-600 dark:text-slate-300">{course.level || '-'}</td>
                       <td className="p-4 text-slate-600 dark:text-slate-300">{course.semester || '-'}</td>
-                      <td className="p-4 text-slate-600 dark:text-slate-300 font-medium">{course.creditUnits || '-'}</td>
                       <td className="p-4">{getScopeBadge(course)}</td>
                       <td className="p-4 text-right">
                         <button

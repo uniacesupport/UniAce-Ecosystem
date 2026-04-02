@@ -269,7 +269,11 @@ export async function generateCourseSkeleton(
 
   const skeletonPrompt = `
     ${promptContext}
-    Generate a comprehensive course skeleton for a university-level course, strictly adhering to the NUC (National Universities Commission) curriculum standards, or dynamically adapting to the most relevant global academic benchmarks for this subject.
+    Generate a comprehensive course skeleton for a university-level course.
+    
+    CRITICAL: You MUST use a "Hybrid Approach" to ensure the course is both exam-relevant and deeply educational:
+    1. Structure: Strictly follow the NUC (National Universities Commission) curriculum outline (weeks, topics order, what to cover) to ensure exam readiness.
+    2. Depth: Use international-style depth for the content breakdown (step-by-step teaching, more examples, better breakdowns) to ensure true understanding.
     
     Target: ${courseName}
     Description: ${courseDescription}
@@ -281,14 +285,14 @@ export async function generateCourseSkeleton(
     
     The output must be a detailed JSON object containing:
     1. A "description" field which is a concise summary of the course content (1-2 sentences), ensuring it aligns with NUC or relevant curriculum objectives.
-    2. An appropriate number of modules (typically 6-12) based on the course complexity and the provided outline. 
-    ${ccmasCore && isCurriculumGen ? '3. Since this is a curriculum generation, the "modules" should represent the ELECTIVE COURSES you are suggesting.' : '3. Each module should have 4 to 6 lesson titles (no content yet, just titles).'}
+    2. An appropriate number of modules (typically 6-12) based on the course complexity and the provided outline, structured according to the NUC curriculum.
+    ${ccmasCore && isCurriculumGen ? '3. Since this is a curriculum generation, the "modules" should represent the ELECTIVE COURSES you are suggesting.' : '3. Each module should have 4 to 6 lesson titles (no content yet, just titles), structured for step-by-step learning.'}
     4. Each module should have a list of topics that will be covered in the quiz.
     
     CRITICAL: You must return ONLY valid JSON.
     CRITICAL: Ensure all double quotes inside strings are properly escaped (e.g., \\"word\\").
     CRITICAL: If generating electives for a curriculum, ensure they do not overlap with the core courses: ${ccmasCore?.coreCourses.map((c: any) => c.code).join(', ') || 'None'}.
-    CRITICAL: Ensure the curriculum is robust, academically rigorous, and follows NUC guidelines or relevant global standards.
+    CRITICAL: Ensure the curriculum is robust, academically rigorous, and follows the Hybrid Approach (NUC structure + International depth).
     {
       "description": "A concise summary...",
       "modules": [
@@ -369,7 +373,11 @@ export async function generateLessonContent(
   provider: string = 'mistral'
 ): Promise<{ title: string, content: string, metadata: PipelineMetadata }> {
   const lessonPrompt = `
-    You are an expert university professor. Generate a detailed, exhaustive lecture note for ONE specific lesson, ensuring it strictly follows the NUC (National Universities Commission) curriculum standards, or dynamically adapts to the most relevant global academic benchmarks for this subject.
+    You are an expert university professor. Generate a detailed, exhaustive lecture note for ONE specific lesson.
+    
+    CRITICAL: You MUST use the "Hybrid Approach" to ensure the content is deeply educational:
+    1. Structure: Follow the NUC curriculum outline for the topic.
+    2. Depth: Use international-style depth (step-by-step teaching, more examples, better breakdowns) to ensure true understanding.
     
     Course: ${courseName}
     Module: ${moduleTitle}
@@ -379,7 +387,7 @@ export async function generateLessonContent(
     1. Write a CONCISE, high-impact, university-level lecture note in Markdown format.
     2. Target length: 600-900 words. Focus on core concepts, key derivations, and practical examples. Avoid unnecessary filler content.
     3. Use a professional, academic tone suitable for a top-tier university.
-    4. Ensure all concepts are explained clearly and logically, meeting the depth required by NUC/relevant curriculum standards.
+    4. Ensure all concepts are explained clearly and logically, using step-by-step breakdowns and multiple examples to ensure deep understanding.
     5. Use LaTeX for ALL mathematical equations, variables, and scientific notation.
     6. CRITICAL: Use $ ... $ for inline math and $$ ... $$ for block math. Ensure LaTeX commands are properly formatted (e.g., use \\frac{a}{b} not frac{a}{b}).
     7. CRITICAL: Output ONLY valid JSON matching this structure:
@@ -394,7 +402,7 @@ export async function generateLessonContent(
     CRITICAL: Do NOT wrap the JSON in markdown blocks. Output raw JSON only.
     CRITICAL: Ensure all double quotes inside the "content" string are properly escaped (e.g., \\"word\\").
     8. CRITICAL: Ensure the lesson is COMPLETE and does not cut off abruptly. Provide a clear conclusion or summary at the end.
-    9. CRITICAL: The content must be academically rigorous and align with the latest NUC or relevant global curriculum standards.
+    9. CRITICAL: The content must be academically rigorous and align with the Hybrid Approach (NUC structure + International depth).
     10. CRITICAL [MERMAID DIRECTIVE]: If you include Mermaid diagrams, you MUST ONLY use supported Mermaid.js syntax. Allowed types are: flowchart, sequenceDiagram, classDiagram, stateDiagram, pie, mindmap. Do NOT use unsupported types like vennDiagram or barChart. Always wrap node text containing punctuation or special characters in double quotes (e.g., B["TLD Servers (.com, .org)"]).
   `;
 
@@ -413,7 +421,12 @@ export async function generateModuleQuiz(
   provider: string = 'groq'
 ): Promise<any> {
   const quizPrompt = `
-    Generate a university-level quiz for this module, ensuring the questions align with the depth and rigor expected by NUC (National Universities Commission) or dynamically adapt to the most relevant global academic benchmarks for this subject.
+    Generate a university-level quiz for this module.
+    
+    CRITICAL: You MUST use the "Hybrid Approach" to ensure the quiz is both exam-relevant and deeply educational:
+    1. Relevance: Questions must align with NUC curriculum standards to ensure exam readiness.
+    2. Depth: Questions must be challenging and conceptual, requiring deep understanding rather than rote memorization.
+    
     Course: ${courseName}
     Module: ${moduleTitle}
     Topics: ${quizTopics.join(', ')}
@@ -427,7 +440,7 @@ export async function generateModuleQuiz(
     6. CRITICAL: The "explanation" field must provide a detailed academic justification for the correct answer and why other options are incorrect.
     7. CRITICAL: Ensure all double quotes inside strings are properly escaped (e.g., \\"word\\").
     8. CRITICAL: For LaTeX in JSON strings, use double backslashes (e.g., "\\\\mathbf"). Do NOT use triple backslashes.
-    9. CRITICAL: Ensure the quiz meets the academic standards set by NUC or relevant global guidelines.
+    9. CRITICAL: Ensure the quiz meets the academic standards set by NUC or relevant global guidelines, following the Hybrid Approach.
     10. Return ONLY valid JSON:
     {
       "questions": [
