@@ -2287,6 +2287,31 @@ app.post('/api/admin/ingest', verifyAuth, async (req, res) => {
   }
 });
 
+// Fetch ingested RAG content
+app.get('/api/admin/rag-content', verifyAuth, async (req, res) => {
+  try {
+    const adminUser = (req as any).user;
+    const adminDoc = await getAdminApp().firestore().collection('users').doc(adminUser.uid).get();
+    if (adminDoc.data()?.role !== 'admin') {
+      return res.status(403).json({ error: 'Forbidden: Admin access required' });
+    }
+
+    const kbRef = getAdminApp().firestore().collection('knowledge_base');
+    const snapshot = await kbRef.orderBy('createdAt', 'desc').limit(100).get();
+    
+    const content = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      createdAt: doc.data().createdAt?.toDate ? doc.data().createdAt.toDate().toISOString() : null
+    }));
+
+    res.json({ success: true, content });
+  } catch (error: any) {
+    console.error('Error fetching RAG content:', error);
+    res.status(500).json({ error: 'Failed to fetch RAG content', details: error.message });
+  }
+});
+
 // --- Question Bank Endpoints (Hybrid Approach) ---
 
 app.post('/api/admin/questions/add', verifyAuth, async (req, res) => {

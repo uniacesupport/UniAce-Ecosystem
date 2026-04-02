@@ -123,6 +123,7 @@ function AppContent() {
   const { isCalculatorOpen, setIsCalculatorOpen } = useCalculator();
   const [isVoiceTutorOpen, setIsVoiceTutorOpen] = useState(false);
   const [activePdfText, setActivePdfText] = useState<string | null>(null);
+  const [activeLessonContent, setActiveLessonContent] = useState<string | null>(null);
 
   useEffect(() => {
     const handleResize = () => {
@@ -148,6 +149,10 @@ function AppContent() {
       window.removeEventListener('navigate', handleCustomNavigate);
     };
   }, []);
+
+  useEffect(() => {
+    setActiveLessonContent(null);
+  }, [activeSubTopicId]);
 
   const activeModule = syllabus.find(m => m.id === activeModuleId) || syllabus[0];
   const activeSubTopicContent = activeModule?.subTopics.find(s => s.id === activeSubTopicId)?.content;
@@ -516,6 +521,7 @@ function AppContent() {
             onViewSelect={handleViewSelect}
             progress={progress}
             onToggleCalculator={() => setIsCalculatorOpen(!isCalculatorOpen)}
+            onLessonContentChange={setActiveLessonContent}
           />
         )}
 
@@ -631,7 +637,7 @@ function AppContent() {
             activeCourseId={activeCourseId}
             activeModule={activeModule?.title}
             activeSubTopic={activeModule?.subTopics.find(s => s.id === activeSubTopicId)?.title}
-            subTopicContent={activeSubTopicContent}
+            subTopicContent={activeLessonContent || activeSubTopicContent}
             progress={progress}
             profile={profile}
             onUpdatePersonality={updateAIPersonality}
@@ -668,7 +674,7 @@ function AppContent() {
             activeCourseId={activeCourseId}
             activeModule={activeModule?.title}
             activeSubTopic={activeModule?.subTopics.find(s => s.id === activeSubTopicId)?.title}
-            subTopicContent={activeSubTopicContent}
+            subTopicContent={activeLessonContent || activeSubTopicContent}
             progress={progress}
             profile={profile}
             onUpdatePersonality={updateAIPersonality}

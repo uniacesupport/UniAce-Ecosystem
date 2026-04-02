@@ -400,9 +400,11 @@ export default function ChatBot({
       }, () => {
         setIsLoading(false);
         setMessages(prev => {
-          const finalMsg = prev[msgIndex];
+          const newMsgs = [...prev];
+          const finalMsg = newMsgs[msgIndex];
+          finalMsg.text = finalMsg.text.replace(/^["']|["']$/g, '');
           if (autoSpeak) speakText(finalMsg.text);
-          return prev;
+          return newMsgs;
         });
       }, (err) => {
         console.error("WS Chat error:", err);
@@ -473,7 +475,7 @@ export default function ChatBot({
 
       const modelMsg: ChatMessage = { 
         role: "model", 
-        text: data.response
+        text: data.response.replace(/^["']|["']$/g, '')
       };
       setMessages((prev) => [...prev, modelMsg]);
       setSparksRemaining(data.sparksRemaining);

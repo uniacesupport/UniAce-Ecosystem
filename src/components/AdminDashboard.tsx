@@ -92,7 +92,33 @@ export default function AdminDashboard() {
   const [isIngesting, setIsIngesting] = useState(false);
   const [ingestionStatus, setIngestionStatus] = useState('');
   const [kbStats, setKbStats] = useState({ totalChunks: 0 });
+  const [ragContent, setRagContent] = useState<any[]>([]);
+  const [isLoadingRagContent, setIsLoadingRagContent] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'courses' | 'users' | 'rag' | 'communications' | 'settings' | 'logs' | 'question-bank' | 'curriculum-health' | 'curriculum-manager'>('overview');
+
+  useEffect(() => {
+    if (activeTab === 'rag') {
+      fetchRagContent();
+    }
+  }, [activeTab]);
+
+  const fetchRagContent = async () => {
+    setIsLoadingRagContent(true);
+    try {
+      const idToken = await auth.currentUser?.getIdToken();
+      const res = await fetch('/api/admin/rag-content', {
+        headers: { 'Authorization': `Bearer ${idToken}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setRagContent(data.content);
+      }
+    } catch (error) {
+      console.error("Error fetching RAG content:", error);
+    } finally {
+      setIsLoadingRagContent(false);
+    }
+  };
 
   useEffect(() => {
     // Redirect if current tab is not allowed for the role
@@ -2889,6 +2915,38 @@ export default function AdminDashboard() {
                 Ingest to Knowledge Base
               </button>
             </div>
+          </div>
+
+          <div className="mt-8 pt-8 border-t border-slate-200 dark:border-slate-700">
+            <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Ingested Content</h3>
+            {isLoadingRagContent ? (
+              <div className="text-center py-8 text-slate-500">Loading ingested content...</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead>
+                    <tr className="border-b border-slate-200 dark:border-slate-700">
+                      <th className="pb-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Course</th>
+                      <th className="pb-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Module</th>
+                      <th className="pb-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Topic</th>
+                      <th className="pb-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Content Preview</th>
+                      <th className="pb-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Date</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-sm">
+                    {ragContent.map((item) => (
+                      <tr key={item.id} className="border-b border-slate-100 dark:border-slate-700/50 last:border-0">
+                        <td className="py-3 font-bold text-slate-900 dark:text-white">{item.course_code}</td>
+                        <td className="py-3 text-slate-600 dark:text-slate-300">{item.module_name}</td>
+                        <td className="py-3 text-slate-600 dark:text-slate-300">{item.topic_name}</td>
+                        <td className="py-3 text-slate-500 text-xs max-w-xs truncate">{item.content}</td>
+                        <td className="py-3 text-slate-500 text-xs">{item.createdAt ? new Date(item.createdAt).toLocaleDateString() : 'N/A'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       )}
