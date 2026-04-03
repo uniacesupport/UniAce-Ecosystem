@@ -1610,7 +1610,17 @@ app.post('/api/openrouter/stream', verifyAuth, async (req, res) => {
       past_questions: 'gemini'
     };
     
-    const preferredProviderName = req.body.preferredProvider || routingConfig[taskType || 'lesson'] || 'mistral';
+    // Fetch Global AI Mode
+    const aiModeDoc = await appAdmin.firestore().collection('system_config').doc('ai_mode').get();
+    const globalAiMode = aiModeDoc.exists ? aiModeDoc.data()?.mode : 'normal';
+    
+    let preferredProviderName = req.body.preferredProvider || routingConfig[taskType || 'lesson'] || 'mistral';
+    
+    // If Global Fast Mode is enabled, force Groq for all students
+    if (globalAiMode === 'fast') {
+      console.log(`[AI Stream] Global Fast Mode enabled. Forcing Groq for ${uid}`);
+      preferredProviderName = 'groq';
+    }
     
     const providerMap: Record<string, any> = {
       gemini: globalGeminiDirectBreaker,
@@ -1645,16 +1655,32 @@ app.post('/api/openrouter/stream', verifyAuth, async (req, res) => {
     let success = false;
     let lastError;
 
+    console.log(`[AI Stream] Starting generation for ${uid}. Task: ${taskType}, Preferred: ${preferredProviderName}`);
+
     for (const provider of providers) {
       try {
-        await provider.stream(messages, { complexity }, (chunk) => {
+        const providerName = (provider as any).provider?.constructor.name || 'Unknown';
+        console.log(`[AI Stream] Trying provider: ${providerName}`);
+        
+        // Add a timeout for the entire stream to prevent hanging
+        const streamPromise = provider.stream(messages, { complexity }, (chunk) => {
           res.write(`data: ${JSON.stringify({ text: chunk })}\n\n`);
         });
+
+        let timeoutId: any;
+        const timeoutPromise = new Promise((_, reject) => 
+          timeoutId = setTimeout(() => reject(new Error('AI Provider stream timeout')), 45000)
+        );
+
+        await Promise.race([streamPromise, timeoutPromise]);
+        clearTimeout(timeoutId);
+        
         success = true;
+        console.log(`[AI Stream] Success with provider: ${providerName}`);
         break;
-      } catch (err) {
+      } catch (err: any) {
         lastError = err;
-        console.warn('Streaming provider failed, trying next...', err);
+        console.warn(`[AI Stream] Provider failed, trying next... Error: ${err.message}`);
       }
     }
 
@@ -2977,6 +3003,96 @@ app.get('/api/admin/chat-analytics', verifyAuth, async (req, res) => {
   } catch (error) {
     console.error('Error fetching chat analytics:', error);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// --- AI Admin Endpoints ---
+
+// 1. Get/Set Global AI Mode
+app.get('/api/admin/ai-mode', verifyAuth, async (req, res) => {
+  const adminUid = (req as any).user.uid;
+  const app = getAdminApp();
+  if (!app) return res.status(503).json({ error: 'Service unavailable' });
+
+  try {
+    const adminDoc = await app.firestore().collection('users').doc(adminUid).get();
+    if (adminDoc.data()?.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+
+    const doc = await app.firestore().collection('system_config').doc('ai_mode').get();
+    res.json(doc.exists ? doc.data() : { mode: 'normal' });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch AI mode' });
+  }
+});
+
+app.post('/api/admin/ai-mode', verifyAuth, async (req, res) => {
+  const adminUid = (req as any).user.uid;
+  const { mode } = req.body;
+  const app = getAdminApp();
+  if (!app) return res.status(503).json({ error: 'Service unavailable' });
+
+  try {
+    const adminDoc = await app.firestore().collection('users').doc(adminUid).get();
+    if (adminDoc.data()?.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+
+    await app.firestore().collection('system_config').doc('ai_mode').set({ 
+      mode, 
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedBy: adminUid
+    });
+    
+    console.log(`[Admin] Global AI Mode updated to: ${mode}`);
+    res.json({ success: true, mode });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update AI mode' });
+  }
+});
+
+// 2. Test API Key
+app.post('/api/admin/test-api-key', verifyAuth, async (req, res) => {
+  const adminUid = (req as any).user.uid;
+  const { provider, key } = req.body;
+  const app = getAdminApp();
+  if (!app) return res.status(503).json({ error: 'Service unavailable' });
+
+  try {
+    const adminDoc = await app.firestore().collection('users').doc(adminUid).get();
+    if (adminDoc.data()?.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+
+    console.log(`[Admin] Testing API key for provider: ${provider}`);
+    
+    let testResult: any;
+    const testMessages = [{ role: 'user', content: 'Say "API Key Test Successful" if you can read this.' }];
+
+    let testProvider;
+    switch (provider) {
+      case 'gemini_direct': testProvider = new GeminiDirectProvider(key); break;
+      case 'mistral_direct': testProvider = new MistralProvider(key); break;
+      case 'groq': testProvider = new GroqProvider(key); break;
+      case 'openrouter': testProvider = new GeminiOpenRouterProvider(key); break;
+      default: throw new Error('Unsupported provider for testing');
+    }
+
+    const startTime = Date.now();
+    try {
+      testResult = await testProvider.generate(testMessages, { complexity: 'standard' });
+      const latency = Date.now() - startTime;
+      
+      res.json({ 
+        success: true, 
+        message: testResult.text,
+        latency: `${latency}ms`,
+        usage: testResult.usage
+      });
+    } catch (err: any) {
+      res.json({ 
+        success: false, 
+        error: err.message,
+        details: err.stack
+      });
+    }
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 

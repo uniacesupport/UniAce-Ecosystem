@@ -4,6 +4,7 @@ import { AIService } from '../services/ai';
 import { motion, AnimatePresence } from 'motion/react';
 import { Brain, CheckCircle2, XCircle, Loader2, ArrowRight, Zap } from 'lucide-react';
 import MarkdownRenderer from './MarkdownRenderer';
+import { useAuth } from '../context/AuthContext';
 
 interface QuickCheckProps {
   subTopic: SubTopic;
@@ -11,6 +12,7 @@ interface QuickCheckProps {
 }
 
 export default function QuickCheck({ subTopic, onCorrect }: QuickCheckProps) {
+  const { profile } = useAuth();
   const [question, setQuestion] = useState<QuizQuestion | null>(null);
   const [loading, setLoading] = useState(false);
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
@@ -21,7 +23,11 @@ export default function QuickCheck({ subTopic, onCorrect }: QuickCheckProps) {
     const loadQuestion = async () => {
       setLoading(true);
       try {
-        const q = await AIService.generateQuickCheck(subTopic);
+        const q = await AIService.generateQuickCheck(
+          subTopic,
+          profile?.academic_level,
+          profile?.department
+        );
         setQuestion(q);
       } catch (error) {
         console.error("Failed to load quick check:", error);

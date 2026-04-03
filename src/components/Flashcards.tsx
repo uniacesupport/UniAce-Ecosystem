@@ -5,6 +5,7 @@ import { Module, SubTopic, Flashcard, SRSData } from '../types';
 import { AIService } from '../services/ai';
 import MarkdownRenderer from './MarkdownRenderer';
 import { useUserProgress } from '../hooks/useUserProgress';
+import { useAuth } from '../context/AuthContext';
 
 interface FlashcardsProps {
   module: Module;
@@ -14,6 +15,7 @@ interface FlashcardsProps {
 
 export default function Flashcards({ module, subTopic, onClose }: FlashcardsProps) {
   const { progress, updateSRSData } = useUserProgress();
+  const { profile } = useAuth();
   const [cards, setCards] = useState<Flashcard[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
@@ -26,7 +28,13 @@ export default function Flashcards({ module, subTopic, onClose }: FlashcardsProp
       try {
         // In a real app, we'd fetch existing cards from the backend and filter by due date.
         // For this demo, we generate new ones if none exist for this module/subtopic.
-        const generatedCards = await AIService.generateFlashcards(module, subTopic, 10);
+        const generatedCards = await AIService.generateFlashcards(
+          module, 
+          subTopic, 
+          10,
+          profile?.academic_level,
+          profile?.department
+        );
         setCards(generatedCards);
       } catch (error) {
         console.error("Failed to generate flashcards:", error);

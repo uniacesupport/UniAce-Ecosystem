@@ -141,7 +141,16 @@ export default function QuizGenerator({
         }
       }
 
-      const data = await AIService.generateQuiz(moduleForQuiz, subTopicForQuiz, numQuestions, questionType, isAdaptive, userSkillLevel);
+      const data = await AIService.generateQuiz(
+        moduleForQuiz, 
+        subTopicForQuiz, 
+        numQuestions, 
+        questionType, 
+        isAdaptive, 
+        userSkillLevel,
+        profile?.academic_level,
+        profile?.department
+      );
       
       if (!data || data.length === 0) {
         throw new Error("No questions generated. Please try again.");

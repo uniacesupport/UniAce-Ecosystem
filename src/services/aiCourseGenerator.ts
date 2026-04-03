@@ -369,7 +369,9 @@ export async function generateLessonContent(
   courseName: string,
   moduleTitle: string,
   lessonTitle: string,
-  provider: string = 'mistral'
+  provider: string = 'mistral',
+  level?: string,
+  department?: string
 ): Promise<{ title: string, content: string, metadata: PipelineMetadata }> {
   const lessonPrompt = `
     You are an expert university professor. Generate a detailed, exhaustive lecture note for ONE specific lesson.
@@ -381,6 +383,8 @@ export async function generateLessonContent(
     Course: ${courseName}
     Module: ${moduleTitle}
     Lesson: ${lessonTitle}
+    ${level ? `Level: ${level}` : ''}
+    ${department ? `Department: ${department}` : ''}
     
     Requirements:
     1. Write a CONCISE, high-impact, university-level lecture note in Markdown format.
@@ -402,7 +406,8 @@ export async function generateLessonContent(
     CRITICAL: Ensure all double quotes inside the "content" string are properly escaped (e.g., \\"word\\").
     8. CRITICAL: Ensure the lesson is COMPLETE and does not cut off abruptly. Provide a clear conclusion or summary at the end.
     9. CRITICAL: The content must be academically rigorous and align with the Hybrid Approach (NUC structure + International depth).
-    10. CRITICAL [MERMAID DIRECTIVE]: If you include Mermaid diagrams, you MUST ONLY use supported Mermaid.js syntax. Allowed types are: flowchart, sequenceDiagram, classDiagram, stateDiagram, pie, mindmap. Do NOT use unsupported types like vennDiagram or barChart. Always wrap node text containing punctuation or special characters in double quotes (e.g., B["TLD Servers (.com, .org)"]).
+    10. CRITICAL: Calibrate the depth and complexity to the student's level (${level || 'University Level'}).
+    11. CRITICAL [MERMAID DIRECTIVE]: If you include Mermaid diagrams, you MUST ONLY use supported Mermaid.js syntax. Allowed types are: flowchart, sequenceDiagram, classDiagram, stateDiagram, pie, mindmap. Do NOT use unsupported types like vennDiagram or barChart. Always wrap node text containing punctuation or special characters in double quotes (e.g., B["TLD Servers (.com, .org)"]).
   `;
 
   const result = await callGenerateAPI(lessonPrompt, 'lesson', provider);
@@ -417,7 +422,9 @@ export async function generateModuleQuiz(
   courseName: string,
   moduleTitle: string,
   quizTopics: string[],
-  provider: string = 'groq'
+  provider: string = 'groq',
+  level?: string,
+  department?: string
 ): Promise<any> {
   const quizPrompt = `
     Generate a university-level quiz for this module.
@@ -429,18 +436,21 @@ export async function generateModuleQuiz(
     Course: ${courseName}
     Module: ${moduleTitle}
     Topics: ${quizTopics.join(', ')}
+    ${level ? `Level: ${level}` : ''}
+    ${department ? `Department: ${department}` : ''}
     
     Requirements:
     1. Generate 8-12 challenging, high-quality multiple-choice questions.
     2. Questions must test deep conceptual understanding and application of knowledge, avoiding simple rote memorization.
     3. Include a mix of difficulty levels: 20% foundational, 50% intermediate, 30% advanced/analytical.
-    4. CRITICAL: Be concise in explanations and hints to avoid output truncation.
-    5. CRITICAL: Do NOT include any conversational text, self-corrections, or "thinking out loud" inside the JSON fields. 
-    6. CRITICAL: The "explanation" field must provide a detailed academic justification for the correct answer and why other options are incorrect.
-    7. CRITICAL: Ensure all double quotes inside strings are properly escaped (e.g., \\"word\\").
-    8. CRITICAL: For LaTeX in JSON strings, use double backslashes (e.g., "\\\\mathbf"). Do NOT use triple backslashes.
-    9. CRITICAL: Ensure the quiz meets the academic standards set by NUC or relevant global guidelines, following the Hybrid Approach.
-    10. Return ONLY valid JSON:
+    4. CRITICAL: Calibrate the difficulty to the student's level (${level || 'University Level'}).
+    5. CRITICAL: Be concise in explanations and hints to avoid output truncation.
+    6. CRITICAL: Do NOT include any conversational text, self-corrections, or "thinking out loud" inside the JSON fields. 
+    7. CRITICAL: The "explanation" field must provide a detailed academic justification for the correct answer and why other options are incorrect.
+    8. CRITICAL: Ensure all double quotes inside strings are properly escaped (e.g., \\"word\\").
+    9. CRITICAL: For LaTeX in JSON strings, use double backslashes (e.g., "\\\\mathbf"). Do NOT use triple backslashes.
+    10. CRITICAL: Ensure the quiz meets the academic standards set by NUC or relevant global guidelines, following the Hybrid Approach.
+    11. Return ONLY valid JSON:
     {
       "questions": [
         {

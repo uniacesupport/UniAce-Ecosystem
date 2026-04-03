@@ -147,6 +147,7 @@ export default function ContentArea({
 
     const timer = setTimeout(() => {
       if (!isMiniTeacherOpenRef.current && !showQuizRef.current) {
+        console.log(`[Proactive Check-In] Triggering for topic: ${activeSubTopic.title}`);
         handleOpenMiniTeacher('proactive');
       }
       hasCheckedInRef.current.add(activeSubTopic.id);
@@ -199,7 +200,10 @@ export default function ContentArea({
       const lesson = await generateLessonContent(
         courseTitle,
         module.title,
-        activeSubTopic.title
+        activeSubTopic.title,
+        'mistral',
+        profile?.academic_level,
+        profile?.department
       );
 
       // Save to Firestore

@@ -284,7 +284,10 @@ SECURITY RULES:
     subTopic: SubTopic,
     difficulty: string = 'Medium',
     mode: 'default' | 'simpler' | 'quiz' | 'proactive' = 'default',
-    learningProfile?: any
+    learningProfile?: any,
+    level?: string,
+    department?: string,
+    signal?: AbortSignal
   ) {
     let prompt = '';
     
@@ -304,11 +307,14 @@ Student Profile:
       prompt = `
 CURRENT STUDY TOPIC: ${subTopic.title}
 MODULE: ${module.title}
+STUDENT LEVEL: ${level || 'University Level'}
+DEPARTMENT: ${department || 'General Academic'}
 CONTENT CONTEXT: ${truncatedContent}
 ${profileStr}
 
 The student is currently studying the topic above. You are their proactive AI tutor.
 Write a short, engaging check-in message (2-3 sentences max).
+CRITICAL: Calibrate the tone and complexity to the student's level (${level || 'University Level'}).
 CRITICAL: Your message MUST be about the CURRENT STUDY TOPIC (${subTopic.title}). 
 Do NOT discuss the NUC, CCMAS, or university administration unless the topic itself is about them.
 - If the topic relates to their weaknesses, gently offer to explain it differently or provide a simpler analogy.
@@ -320,10 +326,13 @@ Use emojis. Format using Markdown.
       prompt = `
 Topic: ${subTopic.title}
 Module: ${module.title}
+Student Level: ${level || 'University Level'}
+Department: ${department || 'General Academic'}
 Content Context: ${truncatedContent}
 
 The student has been reading this for a while and might be stuck. 
 Explain this concept AS SIMPLY AS POSSIBLE. 
+CRITICAL: Calibrate the explanation to the student's level (${level || 'University Level'}).
 - Use a real-world analogy.
 - Keep it under 3 short paragraphs.
 - Focus only on the absolute core idea.
@@ -333,10 +342,13 @@ Format the output beautifully using Markdown and LaTeX for math.
       prompt = `
 Topic: ${subTopic.title}
 Module: ${module.title}
+Student Level: ${level || 'University Level'}
+Department: ${department || 'General Academic'}
 Content Context: ${truncatedContent}
 
 The student wants a quick practice check.
 Generate a quick 3-question multiple-choice practice quiz to test understanding of this concept.
+CRITICAL: Calibrate the difficulty to the student's level (${level || 'University Level'}).
 - Provide the 3 questions first.
 - Provide the answer key and brief explanations at the very end.
 Format the output beautifully using Markdown and LaTeX for math.
@@ -345,6 +357,8 @@ Format the output beautifully using Markdown and LaTeX for math.
       prompt = `
 Topic: ${subTopic.title}
 Module: ${module.title}
+Student Level: ${level || 'University Level'}
+Department: ${department || 'General Academic'}
 Difficulty: ${difficulty}
 Content Context: ${truncatedContent}
 
@@ -353,6 +367,7 @@ Generate a structured mini-lesson following this exact format:
 - 1 worked example showing step-by-step execution.
 - 2 practice questions for the student to solve.
 
+CRITICAL: Calibrate the depth and complexity to the student's level (${level || 'University Level'}).
 Format the output beautifully using Markdown and LaTeX for math.
       `;
     }
@@ -383,6 +398,9 @@ MATH & EQUATIONS:
 - ALWAYS use LaTeX for ALL mathematical formulas and variables (e.g., use $x$ instead of just x). The TTS engine is configured to read LaTeX properly.`;
 
     const token = await getAuthToken();
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout
+
     const response = await fetch('/api/openrouter/stream', {
       method: 'POST',
       headers: {
@@ -394,8 +412,11 @@ MATH & EQUATIONS:
         systemInstruction,
         taskType: 'lesson',
         preferredProvider: learningProfile?.fastMode ? 'groq' : undefined
-      })
+      }),
+      signal: signal || controller.signal
     });
+
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       throw new Error(`OpenRouter Stream Error: ${response.statusText}`);
@@ -425,8 +446,11 @@ MATH & EQUATIONS:
             const data = JSON.parse(line.slice(6));
             if (data.text) {
               yield data.text;
+            } else if (data.error) {
+              throw new Error(data.error);
             }
-          } catch (e) {
+          } catch (e: any) {
+            if (e.message?.includes('data.error')) throw e;
             // Ignore parse errors on incomplete chunks
           }
         }
@@ -440,7 +464,9 @@ MATH & EQUATIONS:
     numQuestions: number, 
     questionType: QuestionType,
     adaptive: boolean = false,
-    userSkillLevel: number = 3
+    userSkillLevel: number = 3,
+    level?: string,
+    department?: string
   ): Promise<QuizQuestion[]> => {
     const contextInfo = subTopic 
       ? `Generate a quiz for the specific subtopic: "${subTopic.title}" within the module "${module.title}". 
@@ -449,14 +475,21 @@ MATH & EQUATIONS:
          The content for this module includes the following subtopics and their detailed content:
          ${module.subTopics.map(st => `--- Subtopic: ${st.title} ---\n${st.content}`).join('\n\n')}`;
 
+    const studentContext = `
+    Student Level: ${level || 'University Level'}
+    Department: ${department || 'General Academic'}
+    `;
+
     const adaptiveInstruction = adaptive 
       ? `Generate exactly 15 questions, 3 for each difficulty level from 1 (very easy) to 5 (very hard). Ensure the difficulty field is set correctly. The user's current estimated skill level is ${userSkillLevel} out of 5.`
       : `Number of questions: ${numQuestions}.`;
 
     const prompt = `${contextInfo}
+    ${studentContext}
     ${adaptiveInstruction}
     Question type: ${questionType}.
     Ensure questions are technically accurate and mathematically rigorous for the given subject (Math, Physics, Zoology, GST, etc.).
+    CRITICAL: Calibrate the difficulty and complexity to the student's level (${level || 'University Level'}).
     Include mathematical formulas in LaTeX format.
     IMPORTANT: You are generating a JSON string. Use $ for inline LaTeX (e.g., $x$) and $$ for block LaTeX (e.g., $$x^2$$). For any LaTeX commands that use a backslash (e.g., \\mathbf), you MUST output them with double backslashes (e.g., \\\\mathbf).
     For multiple-choice, provide 4 options.
@@ -498,13 +531,16 @@ MATH & EQUATIONS:
     }
   },
 
-  generateQuickCheck: async (subTopic: SubTopic): Promise<QuizQuestion> => {
+  generateQuickCheck: async (subTopic: SubTopic, level?: string, department?: string): Promise<QuizQuestion> => {
     const prompt = `Generate a single, high-quality multiple-choice "Quick Check" question for the following subtopic:
     
     Topic: ${subTopic.title}
     Content: ${subTopic.content}
+    Student Level: ${level || 'University Level'}
+    Department: ${department || 'General Academic'}
     
     The question should test a key concept from the content. 
+    CRITICAL: Calibrate the difficulty and complexity to the student's level (${level || 'University Level'}).
     Provide 4 options, the correct answer, and a short, helpful explanation.
     Return the response as a VALID JSON object.
     IMPORTANT: You are generating a JSON string. Use $ for inline LaTeX (e.g., $x$) and $$ for block LaTeX (e.g., $$x^2$$). For any LaTeX commands that use a backslash (e.g., \\mathbf), you MUST output them with double backslashes (e.g., \\\\mathbf).
@@ -546,7 +582,7 @@ MATH & EQUATIONS:
     return response.text || "Try breaking the problem into smaller parts.";
   },
 
-  generateFlashcards: async (module: Module, subTopic?: SubTopic, numCards: number = 10): Promise<Flashcard[]> => {
+  generateFlashcards: async (module: Module, subTopic?: SubTopic, numCards: number = 10, level?: string, department?: string): Promise<Flashcard[]> => {
     const contextInfo = subTopic 
       ? `Generate ${numCards} spaced-repetition flashcards for the specific subtopic: "${subTopic.title}" within the module "${module.title}". 
          The content for this subtopic is: ${subTopic.content}`
@@ -555,7 +591,10 @@ MATH & EQUATIONS:
          ${module.subTopics.map(st => `--- Subtopic: ${st.title} ---\n${st.content}`).join('\n\n')}`;
 
     const prompt = `${contextInfo}
+    Student Level: ${level || 'University Level'}
+    Department: ${department || 'General Academic'}
     Create high-quality flashcards suitable for university-level learning.
+    CRITICAL: Calibrate the depth and complexity to the student's level (${level || 'University Level'}).
     The "front" should be a clear, concise question, concept name, or formula prompt.
     The "back" should be the precise answer, definition, or formula.
     Use LaTeX formatting for mathematical expressions. 

@@ -4,6 +4,7 @@ import { Sparkles, X, Loader2, Brain } from 'lucide-react';
 import { Module, SubTopic, UserProgress } from '../types';
 import { AIService } from '../services/ai';
 import MarkdownRenderer from './MarkdownRenderer';
+import { useAuth } from '../context/AuthContext';
 
 interface MiniTeacherModalProps {
   isOpen: boolean;
@@ -16,11 +17,13 @@ interface MiniTeacherModalProps {
 }
 
 export default function MiniTeacherModal({ isOpen, onClose, onAction, module, subTopic, mode = 'default', progress }: MiniTeacherModalProps) {
+  const { profile } = useAuth();
   const [content, setContent] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeMode, setActiveMode] = useState(mode);
   const contentRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -28,10 +31,12 @@ export default function MiniTeacherModal({ isOpen, onClose, onAction, module, su
       setError(null);
       setActiveMode(mode);
       
-      if (mode === 'proactive') {
-        generateLesson('proactive');
-      } else {
-        generateLesson(mode);
+      generateLesson(mode);
+    } else {
+      // Abort any ongoing generation when modal is closed
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
       }
     }
   }, [isOpen, subTopic.id, mode]);
@@ -43,17 +48,37 @@ export default function MiniTeacherModal({ isOpen, onClose, onAction, module, su
   }, [content]);
 
   const generateLesson = async (lessonMode: string) => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
+    const signal = abortControllerRef.current.signal;
+
+    console.log(`[MiniTeacher] Generating lesson. Mode: ${lessonMode}, Topic: ${subTopic.title}`);
     setIsGenerating(true);
     try {
-      const stream = AIService.generateMiniLessonStream(module, subTopic, 'Medium', lessonMode as any, progress?.learningProfile);
+      const stream = AIService.generateMiniLessonStream(
+        module, 
+        subTopic, 
+        'Medium', 
+        lessonMode as any, 
+        progress?.learningProfile,
+        profile?.academic_level,
+        profile?.department,
+        signal
+      );
       for await (const chunk of stream) {
+        if (signal.aborted) break;
         setContent(prev => prev + chunk);
       }
     } catch (err: any) {
+      if (err.name === 'AbortError') return;
       console.error('Mini Teacher Error:', err);
       setError(err.message || 'Failed to generate lesson. Please try again.');
     } finally {
-      setIsGenerating(false);
+      if (!signal.aborted) {
+        setIsGenerating(false);
+      }
     }
   };
 

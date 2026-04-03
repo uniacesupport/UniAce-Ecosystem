@@ -211,6 +211,12 @@ export default function AdminDashboard() {
   const [quickCourseOutline, setQuickCourseOutline] = useState('');
   const [generationProgress, setGenerationProgress] = useState(0);
   const [aiProvider, setAiProvider] = useState<'gemini_direct' | 'gemini_openrouter' | 'mistral_direct' | 'mistral_openrouter' | 'groq' | 'cohere' | 'huggingface'>('mistral_direct');
+  const [globalAiMode, setGlobalAiMode] = useState<'normal' | 'fast'>('normal');
+  const [isUpdatingAiMode, setIsUpdatingAiMode] = useState(false);
+  const [testKeyProvider, setTestKeyProvider] = useState<string>('gemini_direct');
+  const [testKeyInput, setTestKeyInput] = useState('');
+  const [testKeyResult, setTestKeyResult] = useState<any>(null);
+  const [isTestingKey, setIsTestingKey] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -230,6 +236,7 @@ export default function AdminDashboard() {
       fetchChatAnalytics();
       fetchSystemConfig();
       fetchRoutingConfig();
+      fetchAiMode();
       fetchLogs();
       fetchIntegrityData();
     }
@@ -395,6 +402,75 @@ export default function AdminDashboard() {
       }
     } catch (error) {
       console.error("Error fetching routing config:", error);
+    }
+  };
+
+  const fetchAiMode = async () => {
+    try {
+      const idToken = await auth.currentUser?.getIdToken();
+      const res = await fetch('/api/admin/ai-mode', {
+        headers: { 'Authorization': `Bearer ${idToken}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setGlobalAiMode(data.mode || 'normal');
+      }
+    } catch (error) {
+      console.error("Error fetching AI mode:", error);
+    }
+  };
+
+  const updateAiMode = async (mode: 'normal' | 'fast') => {
+    setIsUpdatingAiMode(true);
+    try {
+      const idToken = await auth.currentUser?.getIdToken();
+      const res = await fetch('/api/admin/ai-mode', {
+        method: 'POST',
+        headers: { 
+          'Authorization': `Bearer ${idToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ mode })
+      });
+      if (res.ok) {
+        setGlobalAiMode(mode);
+        showToast(`Global AI Mode updated to ${mode === 'fast' ? 'Fast Mode (Groq)' : 'Normal Mode'}`, 'success');
+      }
+    } catch (error) {
+      showToast("Failed to update AI mode", "error");
+    } finally {
+      setIsUpdatingAiMode(false);
+    }
+  };
+
+  const handleTestApiKey = async () => {
+    if (!testKeyInput) {
+      showToast("Please enter an API key to test", "error");
+      return;
+    }
+    setIsTestingKey(true);
+    setTestKeyResult(null);
+    try {
+      const idToken = await auth.currentUser?.getIdToken();
+      const res = await fetch('/api/admin/test-api-key', {
+        method: 'POST',
+        headers: { 
+          'Authorization': `Bearer ${idToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ provider: testKeyProvider, key: testKeyInput })
+      });
+      const data = await res.json();
+      setTestKeyResult(data);
+      if (data.success) {
+        showToast("API Key test successful!", "success");
+      } else {
+        showToast("API Key test failed", "error");
+      }
+    } catch (error) {
+      showToast("Error testing API key", "error");
+    } finally {
+      setIsTestingKey(false);
     }
   };
 
@@ -3498,6 +3574,40 @@ export default function AdminDashboard() {
                       <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${systemConfig.strictAcademicFilter ? 'right-0.5' : 'left-0.5'}`} />
                     </div>
                   </div>
+
+                  <div className="p-4 rounded-2xl bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800/50">
+                    <div className="flex items-center justify-between mb-2">
+                      <div>
+                        <div className="font-bold text-indigo-900 dark:text-indigo-300 flex items-center gap-2">
+                          <Zap size={16} />
+                          Global AI Mode
+                        </div>
+                        <div className="text-[10px] text-indigo-600 dark:text-indigo-400">Affects all students globally.</div>
+                      </div>
+                      <div className="flex bg-slate-200 dark:bg-slate-700 p-1 rounded-xl">
+                        <button 
+                          onClick={() => updateAiMode('normal')}
+                          disabled={isUpdatingAiMode}
+                          className={`px-3 py-1 rounded-lg text-[10px] font-bold transition-all ${globalAiMode === 'normal' ? 'bg-white dark:bg-slate-600 text-indigo-600 shadow-sm' : 'text-slate-500'}`}
+                        >
+                          Normal
+                        </button>
+                        <button 
+                          onClick={() => updateAiMode('fast')}
+                          disabled={isUpdatingAiMode}
+                          className={`px-3 py-1 rounded-lg text-[10px] font-bold transition-all ${globalAiMode === 'fast' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500'}`}
+                        >
+                          Fast
+                        </button>
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-slate-500 italic">
+                      {globalAiMode === 'fast' 
+                        ? "Fast Mode: Prioritizes speed using Groq (Llama 3) for all interactions." 
+                        : "Normal Mode: Uses default routing (Mistral/Gemini) for balanced reasoning."}
+                    </p>
+                  </div>
+
                   <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 flex items-center justify-between">
                     <div>
                       <div className="font-bold text-slate-900 dark:text-white">Auto-Fallback Mode</div>
@@ -3509,6 +3619,84 @@ export default function AdminDashboard() {
                     >
                       <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${systemConfig.autoFallback ? 'right-0.5' : 'left-0.5'}`} />
                     </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* API Key Debugging Tool */}
+              <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700">
+                <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
+                  <Key className="text-indigo-500" size={24} />
+                  API Key Debugger
+                </h3>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Select Provider</label>
+                    <select 
+                      value={testKeyProvider}
+                      onChange={(e) => setTestKeyProvider(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-700 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                    >
+                      <option value="gemini_direct">Gemini (Direct)</option>
+                      <option value="mistral_direct">Mistral (Direct)</option>
+                      <option value="groq">Groq</option>
+                      <option value="openrouter">OpenRouter (Gemini 2.5 Flash)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">API Key to Test</label>
+                    <div className="relative">
+                      <input 
+                        type="password"
+                        value={testKeyInput}
+                        onChange={(e) => setTestKeyInput(e.target.value)}
+                        placeholder="Enter key to validate..."
+                        className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-700 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none pr-10"
+                      />
+                      <Key className="absolute right-3 top-2.5 text-slate-400" size={16} />
+                    </div>
+                  </div>
+                  <button 
+                    onClick={handleTestApiKey}
+                    disabled={isTestingKey}
+                    className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/20"
+                  >
+                    {isTestingKey ? <Loader2 className="animate-spin" size={18} /> : <Zap size={18} />}
+                    {isTestingKey ? 'Testing Key...' : 'Test & Debug Key'}
+                  </button>
+
+                  {testKeyResult && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className={`p-4 rounded-2xl border ${testKeyResult.success ? 'bg-emerald-50 border-emerald-100 dark:bg-emerald-900/20 dark:border-emerald-800' : 'bg-rose-50 border-rose-100 dark:bg-rose-900/20 dark:border-rose-800'}`}
+                    >
+                      <div className="flex items-center gap-2 mb-2">
+                        {testKeyResult.success ? <CheckCircle className="text-emerald-500" size={16} /> : <AlertCircle className="text-rose-500" size={16} />}
+                        <span className={`text-xs font-bold ${testKeyResult.success ? 'text-emerald-700' : 'text-rose-700'}`}>
+                          {testKeyResult.success ? 'Success' : 'Failed'}
+                        </span>
+                        {testKeyResult.latency && <span className="text-[10px] text-slate-400 ml-auto">Latency: {testKeyResult.latency}</span>}
+                      </div>
+                      {testKeyResult.success ? (
+                        <p className="text-xs text-emerald-600 dark:text-emerald-400 line-clamp-2 italic">"{testKeyResult.message}"</p>
+                      ) : (
+                        <div className="space-y-1">
+                          <p className="text-xs text-rose-600 dark:text-rose-400 font-bold">{testKeyResult.error}</p>
+                          <p className="text-[10px] text-rose-500/70 truncate">{testKeyResult.details}</p>
+                        </div>
+                      )}
+                    </motion.div>
+                  )}
+                  
+                  <div className="p-4 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-100 dark:border-slate-700">
+                    <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Best Practices</h4>
+                    <ul className="text-[10px] text-slate-500 space-y-1 list-disc pl-4">
+                      <li>Use Gemini 2.5 Flash for free-tier compatibility.</li>
+                      <li>Rotate keys if you encounter rate limits (429 errors).</li>
+                      <li>Groq is recommended for "Fast Mode" interactions.</li>
+                      <li>Never share your API keys in logs or screenshots.</li>
+                    </ul>
                   </div>
                 </div>
               </div>
