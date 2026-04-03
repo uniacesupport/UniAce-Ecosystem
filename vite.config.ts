@@ -16,33 +16,27 @@ export default defineConfig(({mode}) => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
-        workbox: {
-          maximumFileSizeToCacheInBytes: 10 * 1024 * 1024, // 10MB
-        },
+        includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
         manifest: {
-          name: 'UniAce AI - Smart Study Companion',
+          name: 'UniAce',
           short_name: 'UniAce',
-          description: 'Your intelligent AI tutor for university success.',
-          theme_color: '#10b981',
+          description: 'UniAce Learning Platform',
+          theme_color: '#ffffff',
           icons: [
             {
-              src: 'icon.svg',
+              src: 'pwa-192x192.png',
               sizes: '192x192',
-              type: 'image/svg+xml'
+              type: 'image/png'
             },
             {
-              src: 'icon.svg',
+              src: 'pwa-512x512.png',
               sizes: '512x512',
-              type: 'image/svg+xml'
-            },
-            {
-              src: 'icon.svg',
-              sizes: '512x512',
-              type: 'image/svg+xml',
-              purpose: 'any maskable'
+              type: 'image/png'
             }
           ]
+        },
+        workbox: {
+          maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
         }
       })
     ],
@@ -58,9 +52,6 @@ export default defineConfig(({mode}) => {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modify—file watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
-    },
-    build: {
-      outDir: 'build',
     },
     base: './',
   };

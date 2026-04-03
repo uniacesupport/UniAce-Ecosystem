@@ -784,9 +784,9 @@ export class HuggingFaceProvider implements ModelProvider {
 
       try {
         const response = await hf.chatCompletion({
-          model: 'meta-llama/Meta-Llama-3-8B-Instruct',
+          model: 'mistralai/Mistral-7B-Instruct-v0.3',
           messages: messages,
-          max_tokens: 8192,
+          max_tokens: 4096,
           temperature: 0.5
         });
 
@@ -815,9 +815,9 @@ export class HuggingFaceProvider implements ModelProvider {
 
       try {
         const stream = hf.chatCompletionStream({
-          model: 'meta-llama/Meta-Llama-3-8B-Instruct',
+          model: 'mistralai/Mistral-7B-Instruct-v0.3',
           messages: messages,
-          max_tokens: 8192,
+          max_tokens: 4096,
           temperature: 0.5
         });
 

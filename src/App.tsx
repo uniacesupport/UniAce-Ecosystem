@@ -651,22 +651,6 @@ function AppContent() {
       {/* AI Chatbot Overlay */}
       {activeView !== 'ai-tutor' && (
         <>
-          <motion.button
-            initial={{ scale: 0, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
-            onClick={() => setIsVoiceTutorOpen(true)}
-            className="fixed bottom-24 right-6 w-14 h-14 bg-emerald-500 text-white rounded-full shadow-lg shadow-emerald-500/30 flex items-center justify-center z-40 lg:bottom-24 lg:right-8"
-          >
-            <motion.div
-              animate={{ scale: [1, 1.2, 1] }}
-              transition={{ repeat: Infinity, duration: 2 }}
-            >
-              <Mic className="w-6 h-6" />
-            </motion.div>
-          </motion.button>
-          
           <ChatBot 
             onToggleFullPage={() => setActiveView('ai-tutor')} 
             messages={chatMessages}

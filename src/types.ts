@@ -175,6 +175,7 @@ export interface ChatMessage {
   text: string;
   image?: string;
   sources?: { title: string; uri: string }[];
+  pdfContent?: string;
 }
 
 export type QuestionType = 'multiple-choice' | 'fill-in-the-blank';

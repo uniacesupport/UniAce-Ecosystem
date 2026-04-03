@@ -22,6 +22,8 @@ interface ChatBotProps {
   profile?: any;
   onUpdatePersonality?: (personality: AIPersonality) => void;
   onToggleCalculator?: () => void;
+  onOpenVoiceTutor?: () => void;
+  onPdfTextChange?: (text: string | null) => void;
 }
 
 export default function ChatBot({ 
@@ -36,7 +38,9 @@ export default function ChatBot({
   progress,
   profile,
   onUpdatePersonality,
-  onToggleCalculator
+  onToggleCalculator,
+  onOpenVoiceTutor,
+  onPdfTextChange
 }: ChatBotProps) {
   const { user, updateProfileData, signInWithGoogle } = useAuth();
   const { isConnected: isWsConnected, sendMessage: sendWsMessage } = useWebSocketChat();
@@ -52,6 +56,7 @@ export default function ChatBot({
   const [sparksRemaining, setSparksRemaining] = useState<number | null>(profile?.ai_sparks ?? null);
   const [isProMode, setIsProMode] = useState(false);
   const [showPricingModal, setShowPricingModal] = useState(false);
+  const [isSpeedDialOpen, setIsSpeedDialOpen] = useState(false);
   
   useEffect(() => {
     localStorage.setItem('chat_input_backup', input);
@@ -1055,14 +1060,63 @@ export default function ChatBot({
         )}
       </AnimatePresence>
 
-      <div className={`fixed bottom-24 sm:bottom-6 right-6 z-[60] transition-opacity duration-300 ${isOpen ? 'opacity-0 pointer-events-none sm:opacity-100 sm:pointer-events-auto' : 'opacity-100'}`}>
+      <div className={`fixed bottom-28 sm:bottom-6 right-6 z-[60] transition-opacity duration-300 ${isOpen ? 'opacity-0 pointer-events-none sm:opacity-100 sm:pointer-events-auto' : 'opacity-100'}`}>
+        <AnimatePresence>
+          {isSpeedDialOpen && !isOpen && (
+            <motion.div 
+              initial={{ opacity: 0, y: 20, scale: 0.8 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 20, scale: 0.8 }}
+              className="absolute bottom-full right-0 mb-4 flex flex-col gap-3"
+            >
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => {
+                  setIsSpeedDialOpen(false);
+                  onOpenVoiceTutor?.();
+                }}
+                className="flex items-center gap-3 bg-emerald-500 text-white px-4 py-3 rounded-full shadow-lg hover:bg-emerald-600 transition-colors whitespace-nowrap"
+              >
+                <span className="font-medium text-sm">Voice Tutor</span>
+                <div className="bg-white/20 p-1.5 rounded-full">
+                  <Mic size={18} />
+                </div>
+              </motion.button>
+              
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => {
+                  setIsSpeedDialOpen(false);
+                  setIsOpen(true);
+                }}
+                className="flex items-center gap-3 bg-slate-900 dark:bg-zinc-800 text-white px-4 py-3 rounded-full shadow-lg hover:bg-slate-800 dark:hover:bg-zinc-700 transition-colors whitespace-nowrap"
+              >
+                <span className="font-medium text-sm">Text Chat</span>
+                <div className="bg-white/20 p-1.5 rounded-full">
+                  <MessageSquare size={18} />
+                </div>
+              </motion.button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <motion.button
           whileHover={{ scale: 1.1 }}
           whileTap={{ scale: 0.9 }}
-          onClick={() => setIsOpen(!isOpen)}
-          className="bg-slate-900 dark:bg-emerald-600 text-white p-5 rounded-[2rem] shadow-2xl hover:bg-emerald-500 transition-all flex items-center justify-center group"
+          onClick={() => isOpen ? setIsOpen(false) : setIsSpeedDialOpen(!isSpeedDialOpen)}
+          className={`p-5 rounded-[2rem] shadow-2xl transition-all flex items-center justify-center group ${
+            isOpen || isSpeedDialOpen 
+              ? 'bg-slate-800 dark:bg-zinc-800 text-white hover:bg-slate-700 dark:hover:bg-zinc-700' 
+              : 'bg-slate-900 dark:bg-emerald-600 text-white hover:bg-emerald-500'
+          }`}
         >
-          {isOpen ? <X size={28} className="group-hover:rotate-90 transition-transform duration-300" /> : <MessageSquare size={28} className="group-hover:scale-110 transition-transform duration-300" />}
+          {isOpen || isSpeedDialOpen ? (
+            <X size={28} className="group-hover:rotate-90 transition-transform duration-300" />
+          ) : (
+            <MessageSquare size={28} className="group-hover:scale-110 transition-transform duration-300" />
+          )}
         </motion.button>
       </div>
 
