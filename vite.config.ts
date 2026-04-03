@@ -54,7 +54,7 @@ export default defineConfig(({mode}) => {
       hmr: process.env.DISABLE_HMR !== 'true',
     },
     build: {
-      outDir: 'build',
+      outDir: 'dist',
     },
     base: './',
   };
