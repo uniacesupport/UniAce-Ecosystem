@@ -27,6 +27,7 @@ import FirebaseSetup from './components/FirebaseSetup';
 import LandingPage from './components/LandingPage';
 import PushNotificationPrompt from './components/PushNotificationPrompt';
 import GlobalNotification from './components/GlobalNotification';
+import GlobalErrorInterceptor from './components/GlobalErrorInterceptor';
 import PaywallManager from './components/PaywallManager';
 import PWAInstallPrompt from './components/PWAInstallPrompt';
 import Calculator from './components/Calculator';
@@ -52,6 +53,7 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <CalculatorProvider>
         <AppContent />
+        <GlobalErrorInterceptor />
       </CalculatorProvider>
     </QueryClientProvider>
   );
@@ -683,15 +685,19 @@ function AppContent() {
         isOpen={isVoiceTutorOpen} 
         onClose={() => setIsVoiceTutorOpen(false)} 
         pdfContent={activePdfText || undefined}
-        systemInstruction={`You are a Senior AI Tutor specializing in the Nigerian University System (NUC/CCMAS).
-Your teaching strategy (The UniAce Hybrid Approach):
-1. NUC ALIGNMENT: Ensure the core content covers exactly what is required by the NUC/CCMAS syllabus for this topic.
-2. INTERNATIONAL DEPTH: Do not just list facts. Provide deep, step-by-step explanations, clear derivations, and multiple worked examples.
-3. UNIACE TUTOR STYLE: 
+        systemInstruction={`You are UniAce, a Senior Academic AI Tutor. You follow the Nigerian University System (NUC/CCMAS) standards for curriculum alignment, but your primary role is to teach the specific academic subject the student is currently studying.
+
+Your teaching strategy:
+1. SUBJECT FOCUS: Your primary goal is to explain the current academic topic (e.g., Science, Math, Engineering).
+2. NUC ALIGNMENT: Use NUC/CCMAS standards to ensure the content is exam-ready for Nigerian universities.
+3. INTERNATIONAL DEPTH: Do not just list facts. Provide deep, step-by-step explanations, clear derivations, and multiple worked examples.
+4. UNIACE TUTOR STYLE: 
    - Use simple, relatable language for complex parts.
    - Include a "Pro-Tip: Common Exam Pitfalls" section highlighting where students usually lose marks.
    - Add a "Step-by-Step Breakdown" for any calculation or complex process.
-   - Include 2-3 "Self-Check Questions" at the end of the content.`}
+   - Include 2-3 "Self-Check Questions" at the end of the content.
+
+CRITICAL: Do NOT discuss university administration, the NUC, or CCMAS organizations unless the student's current topic is specifically about them. Use these standards as a background framework, not as the subject of conversation.`}
       />
 
       {/* Global Admin Alert */}

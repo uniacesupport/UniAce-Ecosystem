@@ -67,9 +67,13 @@ async function retry<T>(fn: () => Promise<T>, providerName: string, retries = 3,
     const statusCode = error.statusCode || (error.message?.match(/\b(\d{3})\b/)?.[1] ? parseInt(error.message.match(/\b(\d{3})\b/)[1]) : undefined);
     
     // Non-retryable errors
-    const isUnauthorized = statusCode === 401 || error.message?.includes('invalid_api_key') || error.message?.includes('Unauthorized');
+    const isUnauthorized = statusCode === 401 || 
+                           error.message?.includes('invalid_api_key') || 
+                           error.message?.includes('Unauthorized') ||
+                           error.message?.includes('API key not valid') ||
+                           error.message?.includes('INVALID_ARGUMENT');
     const isKeyLimit = statusCode === 403 && error.message?.includes('Key limit exceeded');
-    const isBadRequest = statusCode === 400 && !error.message?.includes('rate_limit');
+    const isBadRequest = statusCode === 400 && !error.message?.includes('rate_limit') && !isUnauthorized;
     const isNotFound = statusCode === 404;
     
     const isRetryable = (!isBadRequest && !isNotFound && retries > 0) || isUnauthorized || isKeyLimit;
@@ -132,10 +136,23 @@ export class DynamicKeyRotator {
 
   async getNextKey(): Promise<string> {
     await this.fetchKeys();
-    const activeKeys = this.dbKeys.length > 0 ? this.dbKeys : this.fallbackKeys;
+    const allKeys = this.dbKeys.length > 0 ? this.dbKeys : this.fallbackKeys;
+    
+    // Filter out obvious placeholders
+    const activeKeys = allKeys.filter(k => 
+      k && 
+      k.length > 5 && 
+      !k.includes('TODO') && 
+      !k.includes('YOUR_') && 
+      !k.includes('PLACEHOLDER') &&
+      !k.includes('<') &&
+      !k.includes('>')
+    );
     
     if (activeKeys.length === 0) {
-      throw new Error(`No API keys available for provider: ${this.providerName}`);
+      const msg = `No valid API keys available for provider: ${this.providerName}. ${allKeys.length > 0 ? 'The provided keys appear to be placeholders.' : 'Please configure them in the Admin Dashboard or environment variables.'}`;
+      console.error(msg);
+      throw new Error(msg);
     }
     
     // Try to find a non-exhausted key
@@ -240,12 +257,35 @@ export class GeminiDirectProvider implements ModelProvider {
     return { contents, systemInstruction };
   }
 
+  private ensureJsonInMessages(messages: any[]) {
+    if (!messages || messages.length === 0) return;
+    const lastMessage = messages[messages.length - 1];
+    const jsonRequirement = " (Your response MUST be a valid JSON object. Ensure the word 'json' is present in your internal reasoning if applicable, and the output is strictly JSON.)";
+    
+    if (typeof lastMessage.content === 'string') {
+      if (!lastMessage.content.toLowerCase().includes('json')) {
+        lastMessage.content += jsonRequirement;
+      }
+    } else if (Array.isArray(lastMessage.content)) {
+      const hasJson = lastMessage.content.some((part: any) => 
+        part.type === 'text' && part.text.toLowerCase().includes('json')
+      );
+      if (!hasJson) {
+        lastMessage.content.push({ type: 'text', text: jsonRequirement });
+      }
+    }
+  }
+
   async generate(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean }): Promise<ModelResponse> {
     return retry(async () => {
       const apiKey = await this.rotator.getNextKey();
       const ai = new GoogleGenAI({ apiKey });
       const { contents, systemInstruction } = this.transformMessagesToGemini(messages);
       
+      if (options.jsonMode) {
+        this.ensureJsonInMessages(messages);
+      }
+
       const model = ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents,
@@ -313,6 +353,25 @@ export class MistralOpenRouterProvider implements ModelProvider {
     this.rotator = new DynamicKeyRotator('openrouter', apiKey);
   }
 
+  private ensureJsonInMessages(messages: any[]) {
+    if (!messages || messages.length === 0) return;
+    const lastMessage = messages[messages.length - 1];
+    const jsonRequirement = " (Your response MUST be a valid JSON object. Ensure the word 'json' is present in your internal reasoning if applicable, and the output is strictly JSON.)";
+    
+    if (typeof lastMessage.content === 'string') {
+      if (!lastMessage.content.toLowerCase().includes('json')) {
+        lastMessage.content += jsonRequirement;
+      }
+    } else if (Array.isArray(lastMessage.content)) {
+      const hasJson = lastMessage.content.some((part: any) => 
+        part.type === 'text' && part.text.toLowerCase().includes('json')
+      );
+      if (!hasJson) {
+        lastMessage.content.push({ type: 'text', text: jsonRequirement });
+      }
+    }
+  }
+
   async generate(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean }): Promise<ModelResponse> {
     return retry(async () => {
       const apiKey = await this.rotator.getNextKey();
@@ -324,6 +383,10 @@ export class MistralOpenRouterProvider implements ModelProvider {
           "X-Title": "UniAce Learning App",
         }
       });
+
+      if (options.jsonMode) {
+        this.ensureJsonInMessages(messages);
+      }
 
       try {
         const response = await openai.chat.completions.create({
@@ -404,6 +467,25 @@ export class GeminiOpenRouterProvider implements ModelProvider {
     this.rotator = new DynamicKeyRotator('openrouter', apiKey);
   }
 
+  private ensureJsonInMessages(messages: any[]) {
+    if (!messages || messages.length === 0) return;
+    const lastMessage = messages[messages.length - 1];
+    const jsonRequirement = " (Your response MUST be a valid JSON object. Ensure the word 'json' is present in your internal reasoning if applicable, and the output is strictly JSON.)";
+    
+    if (typeof lastMessage.content === 'string') {
+      if (!lastMessage.content.toLowerCase().includes('json')) {
+        lastMessage.content += jsonRequirement;
+      }
+    } else if (Array.isArray(lastMessage.content)) {
+      const hasJson = lastMessage.content.some((part: any) => 
+        part.type === 'text' && part.text.toLowerCase().includes('json')
+      );
+      if (!hasJson) {
+        lastMessage.content.push({ type: 'text', text: jsonRequirement });
+      }
+    }
+  }
+
   async generate(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean }): Promise<ModelResponse> {
     return retry(async () => {
       const apiKey = await this.rotator.getNextKey();
@@ -415,6 +497,10 @@ export class GeminiOpenRouterProvider implements ModelProvider {
           "X-Title": "UniAce Learning App",
         }
       });
+
+      if (options.jsonMode) {
+        this.ensureJsonInMessages(messages);
+      }
 
       try {
         const response = await openai.chat.completions.create({
@@ -495,10 +581,33 @@ export class MistralProvider implements ModelProvider {
     this.rotator = new DynamicKeyRotator('mistral_direct', apiKey);
   }
 
+  private ensureJsonInMessages(messages: any[]) {
+    if (!messages || messages.length === 0) return;
+    const lastMessage = messages[messages.length - 1];
+    const jsonRequirement = " (Your response MUST be a valid JSON object. Ensure the word 'json' is present in your internal reasoning if applicable, and the output is strictly JSON.)";
+    
+    if (typeof lastMessage.content === 'string') {
+      if (!lastMessage.content.toLowerCase().includes('json')) {
+        lastMessage.content += jsonRequirement;
+      }
+    } else if (Array.isArray(lastMessage.content)) {
+      const hasJson = lastMessage.content.some((part: any) => 
+        part.type === 'text' && part.text.toLowerCase().includes('json')
+      );
+      if (!hasJson) {
+        lastMessage.content.push({ type: 'text', text: jsonRequirement });
+      }
+    }
+  }
+
   async generate(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean }): Promise<ModelResponse> {
     return retry(async () => {
       const apiKey = await this.rotator.getNextKey();
       const mistral = new Mistral({ apiKey: apiKey });
+
+      if (options.jsonMode) {
+        this.ensureJsonInMessages(messages);
+      }
 
       try {
         const response = await mistral.chat.complete({
@@ -571,6 +680,25 @@ export class GroqProvider implements ModelProvider {
     this.rotator = new DynamicKeyRotator('groq', apiKey);
   }
 
+  private ensureJsonInMessages(messages: any[]) {
+    if (!messages || messages.length === 0) return;
+    const lastMessage = messages[messages.length - 1];
+    const jsonRequirement = " (Your response MUST be a valid JSON object. Ensure the word 'json' is present in your internal reasoning if applicable, and the output is strictly JSON.)";
+    
+    if (typeof lastMessage.content === 'string') {
+      if (!lastMessage.content.toLowerCase().includes('json')) {
+        lastMessage.content += jsonRequirement;
+      }
+    } else if (Array.isArray(lastMessage.content)) {
+      const hasJson = lastMessage.content.some((part: any) => 
+        part.type === 'text' && part.text.toLowerCase().includes('json')
+      );
+      if (!hasJson) {
+        lastMessage.content.push({ type: 'text', text: jsonRequirement });
+      }
+    }
+  }
+
   async generate(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean }): Promise<ModelResponse> {
     return retry(async () => {
       const apiKey = await this.rotator.getNextKey();
@@ -579,6 +707,10 @@ export class GroqProvider implements ModelProvider {
       // Truncate messages for Groq to avoid TPM limits (especially for 8b model)
       const maxTokens = options.complexity === 'high' ? 5000 : 3000;
       const truncatedMessages = this.truncateMessages(messages, maxTokens);
+
+      if (options.jsonMode) {
+        this.ensureJsonInMessages(truncatedMessages);
+      }
 
       try {
         const response = await groq.chat.completions.create({
@@ -691,11 +823,34 @@ export class CohereProvider implements ModelProvider {
     this.rotator = new DynamicKeyRotator('cohere', apiKey);
   }
 
+  private ensureJsonInMessages(messages: any[]) {
+    if (!messages || messages.length === 0) return;
+    const lastMessage = messages[messages.length - 1];
+    const jsonRequirement = " (Your response MUST be a valid JSON object. Ensure the word 'json' is present in your internal reasoning if applicable, and the output is strictly JSON.)";
+    
+    if (typeof lastMessage.content === 'string') {
+      if (!lastMessage.content.toLowerCase().includes('json')) {
+        lastMessage.content += jsonRequirement;
+      }
+    } else if (Array.isArray(lastMessage.content)) {
+      const hasJson = lastMessage.content.some((part: any) => 
+        part.type === 'text' && part.text.toLowerCase().includes('json')
+      );
+      if (!hasJson) {
+        lastMessage.content.push({ type: 'text', text: jsonRequirement });
+      }
+    }
+  }
+
   async generate(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean }): Promise<ModelResponse> {
     return retry(async () => {
       const apiKey = await this.rotator.getNextKey();
       const cohere = new CohereClient({ token: apiKey });
       
+      if (options.jsonMode) {
+        this.ensureJsonInMessages(messages);
+      }
+
       const chatHistory = messages.slice(0, -1).map(m => ({
         role: m.role === 'assistant' ? 'CHATBOT' : (m.role === 'system' ? 'SYSTEM' : 'USER'),
         message: m.content

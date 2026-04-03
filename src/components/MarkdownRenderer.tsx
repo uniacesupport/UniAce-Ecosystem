@@ -13,6 +13,15 @@ interface MarkdownRendererProps {
 }
 
 export default function MarkdownRenderer({ content, className = '' }: MarkdownRendererProps) {
+  // Pre-process content to ensure LaTeX delimiters are correctly handled
+  // AI often uses $...$ for inline math, but remark-math sometimes needs a little help
+  // We also ensure there's a space before/after inline math if it's touching text
+  const processedContent = content
+    .replace(/\\\[/g, '$$$$')
+    .replace(/\\\]/g, '$$$$')
+    .replace(/\\\(/g, '$')
+    .replace(/\\\)/g, '$');
+
   const components = {
     code({ node, inline, className, children, ...props }: any) {
       const match = /language-(\w+)/.exec(className || '');
@@ -40,7 +49,7 @@ export default function MarkdownRenderer({ content, className = '' }: MarkdownRe
           [rehypeHighlight, { ignoreMissing: true }]
         ]}
       >
-        {content}
+        {processedContent}
       </Markdown>
     </div>
   );

@@ -49,9 +49,8 @@ export function sanitizeLatex(content: string): string {
   sanitized = sanitized.replace(/\\\\([a-zA-Z]+)/g, '\\$1');
 
   // 4. Ensure math blocks have newlines around them for better rendering
-  sanitized = sanitized.replace(/\$\$([^\$]+)\$\$/g, (match, p1) => {
-    return `\n\n$$\n${p1.trim()}\n$$\n\n`;
-  });
+  // But only if they are not already surrounded by newlines
+  sanitized = sanitized.replace(/([^\n])\n?\$\$\n?([^\$]+)\n?\$\$([^\n])/g, '$1\n\n$$\n$2\n$$\n\n$3');
 
   return sanitized;
 }
