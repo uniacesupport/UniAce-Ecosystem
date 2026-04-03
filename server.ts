@@ -3070,6 +3070,8 @@ app.post('/api/admin/test-api-key', verifyAuth, async (req, res) => {
       case 'mistral_direct': testProvider = new MistralProvider(key); break;
       case 'groq': testProvider = new GroqProvider(key); break;
       case 'openrouter': testProvider = new GeminiOpenRouterProvider(key); break;
+      case 'cohere': testProvider = new CohereProvider(key); break;
+      case 'huggingface': testProvider = new HuggingFaceProvider(key); break;
       default: throw new Error('Unsupported provider for testing');
     }
 

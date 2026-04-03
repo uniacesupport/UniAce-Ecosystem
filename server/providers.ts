@@ -287,7 +287,7 @@ export class GeminiDirectProvider implements ModelProvider {
       }
 
       const model = ai.models.generateContent({
-        model: "gemini-2.5-flash-preview",
+        model: "gemini-3-flash-preview",
         contents,
         config: {
           systemInstruction,
@@ -319,7 +319,7 @@ export class GeminiDirectProvider implements ModelProvider {
       const { contents, systemInstruction } = this.transformMessagesToGemini(messages);
 
       const result = await ai.models.generateContentStream({
-        model: "gemini-2.5-flash-preview",
+        model: "gemini-3-flash-preview",
         contents,
         config: {
           systemInstruction,
@@ -504,7 +504,7 @@ export class GeminiOpenRouterProvider implements ModelProvider {
 
       try {
         const response = await openai.chat.completions.create({
-          model: 'google/gemini-2.5-flash',
+          model: 'google/gemini-flash-1.5-8b',
           messages: messages,
           max_tokens: 8192,
           temperature: 0.5,
@@ -543,7 +543,7 @@ export class GeminiOpenRouterProvider implements ModelProvider {
 
       try {
         const stream = await openai.chat.completions.create({
-          model: 'google/gemini-2.5-flash',
+          model: 'google/gemini-flash-1.5-8b',
           messages: messages,
           max_tokens: 8192,
           temperature: 0.5,

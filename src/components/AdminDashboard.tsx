@@ -12,6 +12,7 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { doc, setDoc, getDoc, collection, getDocs, deleteDoc, query, where, limit, writeBatch, serverTimestamp, orderBy } from 'firebase/firestore';
 import AdminSeeder from './AdminSeeder';
 import AdminQuestionBank from './AdminQuestionBank';
+import { ApiDebuggerPage } from './ApiDebuggerPage';
 import CourseEditModal from './CourseEditModal';
 import CourseCreateModal from './CourseCreateModal';
 import ApiKeyManagerModal from './ApiKeyManagerModal';
@@ -92,7 +93,7 @@ export default function AdminDashboard() {
   const [isIngesting, setIsIngesting] = useState(false);
   const [ingestionStatus, setIngestionStatus] = useState('');
   const [kbStats, setKbStats] = useState({ totalChunks: 0 });
-  const [activeTab, setActiveTab] = useState<'overview' | 'courses' | 'users' | 'rag' | 'communications' | 'settings' | 'logs' | 'question-bank' | 'curriculum-health' | 'curriculum-manager'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'courses' | 'users' | 'rag' | 'communications' | 'settings' | 'logs' | 'question-bank' | 'curriculum-health' | 'curriculum-manager' | 'api-debugger'>('overview');
 
   useEffect(() => {
     // Redirect if current tab is not allowed for the role
@@ -2880,6 +2881,10 @@ export default function AdminDashboard() {
 
       {activeTab === 'curriculum-health' && renderCurriculumHealth()}
 
+      {activeTab === 'api-debugger' && (
+        <ApiDebuggerPage onBack={() => setActiveTab('overview')} showToast={showToast} />
+      )}
+
       {activeTab === 'users' && (
         <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700">
           <div className="flex items-center justify-between mb-6">
@@ -3629,76 +3634,14 @@ export default function AdminDashboard() {
                   <Key className="text-indigo-500" size={24} />
                   API Key Debugger
                 </h3>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Select Provider</label>
-                    <select 
-                      value={testKeyProvider}
-                      onChange={(e) => setTestKeyProvider(e.target.value)}
-                      className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-700 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-                    >
-                      <option value="gemini_direct">Gemini (Direct)</option>
-                      <option value="mistral_direct">Mistral (Direct)</option>
-                      <option value="groq">Groq</option>
-                      <option value="openrouter">OpenRouter (Gemini 2.5 Flash)</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">API Key to Test</label>
-                    <div className="relative">
-                      <input 
-                        type="password"
-                        value={testKeyInput}
-                        onChange={(e) => setTestKeyInput(e.target.value)}
-                        placeholder="Enter key to validate..."
-                        className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-700 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none pr-10"
-                      />
-                      <Key className="absolute right-3 top-2.5 text-slate-400" size={16} />
-                    </div>
-                  </div>
-                  <button 
-                    onClick={handleTestApiKey}
-                    disabled={isTestingKey}
-                    className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/20"
-                  >
-                    {isTestingKey ? <Loader2 className="animate-spin" size={18} /> : <Zap size={18} />}
-                    {isTestingKey ? 'Testing Key...' : 'Test & Debug Key'}
-                  </button>
-
-                  {testKeyResult && (
-                    <motion.div 
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className={`p-4 rounded-2xl border ${testKeyResult.success ? 'bg-emerald-50 border-emerald-100 dark:bg-emerald-900/20 dark:border-emerald-800' : 'bg-rose-50 border-rose-100 dark:bg-rose-900/20 dark:border-rose-800'}`}
-                    >
-                      <div className="flex items-center gap-2 mb-2">
-                        {testKeyResult.success ? <CheckCircle className="text-emerald-500" size={16} /> : <AlertCircle className="text-rose-500" size={16} />}
-                        <span className={`text-xs font-bold ${testKeyResult.success ? 'text-emerald-700' : 'text-rose-700'}`}>
-                          {testKeyResult.success ? 'Success' : 'Failed'}
-                        </span>
-                        {testKeyResult.latency && <span className="text-[10px] text-slate-400 ml-auto">Latency: {testKeyResult.latency}</span>}
-                      </div>
-                      {testKeyResult.success ? (
-                        <p className="text-xs text-emerald-600 dark:text-emerald-400 line-clamp-2 italic">"{testKeyResult.message}"</p>
-                      ) : (
-                        <div className="space-y-1">
-                          <p className="text-xs text-rose-600 dark:text-rose-400 font-bold">{testKeyResult.error}</p>
-                          <p className="text-[10px] text-rose-500/70 truncate">{testKeyResult.details}</p>
-                        </div>
-                      )}
-                    </motion.div>
-                  )}
-                  
-                  <div className="p-4 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-100 dark:border-slate-700">
-                    <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Best Practices</h4>
-                    <ul className="text-[10px] text-slate-500 space-y-1 list-disc pl-4">
-                      <li>Use Gemini 2.5 Flash for free-tier compatibility.</li>
-                      <li>Rotate keys if you encounter rate limits (429 errors).</li>
-                      <li>Groq is recommended for "Fast Mode" interactions.</li>
-                      <li>Never share your API keys in logs or screenshots.</li>
-                    </ul>
-                  </div>
-                </div>
+                <p className="text-slate-500 text-sm mb-6">Test and validate API keys for various AI providers before adding them to the system.</p>
+                <button 
+                  onClick={() => setActiveTab('api-debugger')}
+                  className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/20"
+                >
+                  <Zap size={18} />
+                  Open API Debugger
+                </button>
               </div>
 
               {/* System Event Logs */}
