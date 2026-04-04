@@ -220,8 +220,6 @@ FORMATTING RULES:
 - ALWAYS use LaTeX for ALL mathematical expressions and variables (e.g., $x$). 
 - Use $ ... $ for inline math and $$ ... $$ for block math.
 - Avoid long dense paragraphs.
-- MERMAID DIAGRAMS: Use \`\`\`mermaid ... \`\`\` for diagrams. 
-  CRITICAL: Always wrap node text containing punctuation or spaces in double quotes (e.g., A["Text with spaces"]).
 
 ENGAGEMENT RULE:
 Always end with a helpful, dynamic offer or a follow-up question that keeps the student thinking. For example: "Want to try a practice problem on this?", "Should we break down that last step?", or "Would you like to see how this applies to a real-world scenario?"
@@ -287,6 +285,7 @@ SECURITY RULES:
     learningProfile?: any,
     level?: string,
     department?: string,
+    studentName?: string,
     signal?: AbortSignal
   ) {
     let prompt = '';
@@ -313,9 +312,11 @@ CONTENT CONTEXT: ${truncatedContent}
 ${profileStr}
 
 The student is currently studying the topic above. You are their proactive AI tutor.
-Write a short, engaging check-in message (2-3 sentences max).
+STRICTLY write a short, engaging check-in message that is exactly 2-3 sentences long.
 CRITICAL: Calibrate the tone and complexity to the student's level (${level || 'University Level'}).
 CRITICAL: Your message MUST be about the CURRENT STUDY TOPIC (${subTopic.title}). 
+CRITICAL: You MUST acknowledge the topic in your VERY FIRST sentence. For example: "Hey! I see you're diving into ${subTopic.title}—how's it going?" or "Ready to master ${subTopic.title}? I'm here if you need a hand!"
+Do NOT provide an explanation of the topic. Do NOT include LaTeX formulas.
 Do NOT discuss the NUC, CCMAS, or university administration unless the topic itself is about them.
 - If the topic relates to their weaknesses, gently offer to explain it differently or provide a simpler analogy.
 - If it relates to their strengths, suggest a quick challenge or quiz.
@@ -333,6 +334,7 @@ Content Context: ${truncatedContent}
 The student has been reading this for a while and might be stuck. 
 Explain this concept AS SIMPLY AS POSSIBLE. 
 CRITICAL: Calibrate the explanation to the student's level (${level || 'University Level'}).
+CRITICAL: You MUST acknowledge the topic in your VERY FIRST sentence.
 - Use a real-world analogy.
 - Keep it under 3 short paragraphs.
 - Focus only on the absolute core idea.
@@ -368,34 +370,38 @@ Generate a structured mini-lesson following this exact format:
 - 2 practice questions for the student to solve.
 
 CRITICAL: Calibrate the depth and complexity to the student's level (${level || 'University Level'}).
+CRITICAL: You MUST acknowledge the topic in your VERY FIRST sentence.
 Format the output beautifully using Markdown and LaTeX for math.
       `;
     }
 
     const systemInstruction = `You are UniAce, a Senior Academic AI Tutor. You follow the Nigerian University System (NUC/CCMAS) standards for curriculum alignment, but your primary role is to teach the specific academic subject the student is currently studying.
 
-VOICE-OPTIMIZED COMMUNICATION STYLE:
-- Speak naturally, warmly, and conversationally.
-- DO NOT use Markdown formatting (no asterisks, hashes, or bullet points).
-- Keep sentences relatively short and easy to digest when spoken.
-- Use transitional phrases ("Now, let's look at...", "Imagine if...", "Here's the tricky part...").
-- Pause naturally between concepts.
+[CURRENT STUDY CONTEXT]
+Topic: ${subTopic.title}
+Module: ${module.title}
+Level: ${level || 'University Level'}
+Department: ${department || 'General Academic'}
+Student Name: ${studentName || 'Student'}
+
+CRITICAL: Use the student's actual name provided above. NEVER use placeholders like "[Student Name]" or "[Name]". If the name is unknown, just say "Student" or "there".
 
 YOUR TEACHING STRATEGY:
-1. SUBJECT FOCUS: Your primary goal is to explain the current academic topic (e.g., Science, Math, Engineering).
+1. SUBJECT FOCUS: Your primary goal is to explain the current academic topic: "${subTopic.title}".
 2. NUC ALIGNMENT: Use NUC/CCMAS standards to ensure the content is exam-ready for Nigerian universities.
 3. UNIACE TUTOR STYLE: 
    - Use simple, relatable analogies.
-   - Highlight common exam pitfalls (e.g., "A common mistake students make here is...").
+   - Highlight common exam pitfalls.
    - Break down complex processes step-by-step.
+   - Format the output beautifully using Markdown and LaTeX for math.
 
 CRITICAL: Do NOT discuss university administration, the NUC, or CCMAS organizations unless the student's current topic is specifically about them. Use these standards as a background framework, not as the subject of conversation.
 
 ENGAGEMENT:
-- Always end your spoken response by asking a direct, engaging question to check the student's understanding.
+- Always end your response by asking a direct, engaging question to check the student's understanding.
 
 MATH & EQUATIONS:
-- ALWAYS use LaTeX for ALL mathematical formulas and variables (e.g., use $x$ instead of just x). The TTS engine is configured to read LaTeX properly.`;
+- ALWAYS use LaTeX for ALL mathematical formulas and variables (e.g., use $x$ instead of just x).`;
 
     const token = await getAuthToken();
     const controller = new AbortController();
@@ -466,16 +472,18 @@ MATH & EQUATIONS:
     adaptive: boolean = false,
     userSkillLevel: number = 3,
     level?: string,
-    department?: string
+    department?: string,
+    studentName?: string
   ): Promise<QuizQuestion[]> => {
     const contextInfo = subTopic 
       ? `Generate a quiz for the specific subtopic: "${subTopic.title}" within the module "${module.title}". 
-         The content for this subtopic is: ${subTopic.content}`
+         The content for this subtopic is: ${subTopic.content ? subTopic.content.substring(0, 12000) : ''}`
       : `Generate a quiz for the entire module: "${module.title}". 
          The content for this module includes the following subtopics and their detailed content:
-         ${module.subTopics.map(st => `--- Subtopic: ${st.title} ---\n${st.content}`).join('\n\n')}`;
+         ${module.subTopics.map(st => `--- Subtopic: ${st.title} ---\n${st.content ? st.content.substring(0, 3000) : ''}`).join('\n\n')}`;
 
     const studentContext = `
+    Student Name: ${studentName || 'Student'}
     Student Level: ${level || 'University Level'}
     Department: ${department || 'General Academic'}
     `;
@@ -743,12 +751,10 @@ MATH & EQUATIONS:
     1. DO NOT SUMMARIZE. Provide the full depth expected in a 2-hour university lecture.
     2. Use Markdown for structure (headings, sub-headings, lists, bold text).
     3. Use LaTeX for ALL mathematical formulas and variables (e.g., $E=mc^2$). Ensure all derivations are shown step-by-step.
-    4. If there is a process, cycle, or system, include a detailed Mermaid.js diagram using \`\`\`mermaid ... \`\`\`. 
-       CRITICAL: Always wrap node text containing punctuation or spaces in double quotes (e.g., A["Text with spaces"]).
-    5. The content MUST be approximately 1500-2500 words. Be extremely detailed.
-    6. Include historical context, theoretical foundations, complex examples, and modern real-world applications.
-    7. Include a "Deep Dive" section for advanced concepts related to the topic.
-    8. End with a "Comprehensive Summary" and "Review Questions".
+    4. The content MUST be approximately 1500-2500 words. Be extremely detailed.
+    5. Include historical context, theoretical foundations, complex examples, and modern real-world applications.
+    6. Include a "Deep Dive" section for advanced concepts related to the topic.
+    7. End with a "Comprehensive Summary" and "Review Questions".
     
     Output ONLY the markdown content. Do not include any other text or conversational filler.`;
 

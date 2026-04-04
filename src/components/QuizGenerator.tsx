@@ -149,7 +149,8 @@ export default function QuizGenerator({
         isAdaptive, 
         userSkillLevel,
         profile?.academic_level,
-        profile?.department
+        profile?.department,
+        profile?.displayName
       );
       
       if (!data || data.length === 0) {

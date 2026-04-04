@@ -272,7 +272,7 @@ export default function ChatBot({
           activeCourseId && `Course: ${activeCourseId}`,
           activeModule && `Module: ${activeModule}`,
           activeSubTopic && `Topic: ${activeSubTopic}`,
-          subTopicContent && `Content: ${subTopicContent}`
+          subTopicContent && `Content: ${subTopicContent.substring(0, 1000)}...`
         ].filter(Boolean).join(', ') || 'General Chat',
         complexity: isProMode ? 'high' : 'standard',
         isHintRequest,
@@ -330,7 +330,7 @@ export default function ChatBot({
             activeCourseId && `Course: ${activeCourseId}`,
             activeModule && `Module: ${activeModule}`,
             activeSubTopic && `Topic: ${activeSubTopic}`,
-            subTopicContent && `Content: ${subTopicContent}`
+            subTopicContent && `Content: ${subTopicContent.substring(0, 1000)}...`
           ].filter(Boolean).join(', ') || 'General Chat',
           complexity: isProMode ? 'high' : 'standard',
           isHintRequest,

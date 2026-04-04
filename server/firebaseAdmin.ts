@@ -26,8 +26,8 @@ try {
     
     let databaseId = '(default)';
     try {
-      // Look for config in the root directory (one level up from this file)
-      const configPath = path.join(__dirname, '..', 'firebase-applet-config.json');
+      // Look for config in the root directory
+      const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
       if (fs.existsSync(configPath)) {
         const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
         if (config.firestoreDatabaseId) {

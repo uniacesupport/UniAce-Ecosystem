@@ -5,14 +5,13 @@ import rehypeKatex from 'rehype-katex';
 import rehypeHighlight from 'rehype-highlight';
 import 'katex/dist/katex.min.css';
 import 'highlight.js/styles/github-dark.css';
-import Mermaid from './Mermaid';
 
 interface MarkdownRendererProps {
-  content: string;
+  content?: string;
   className?: string;
 }
 
-export default function MarkdownRenderer({ content, className = '' }: MarkdownRendererProps) {
+export default function MarkdownRenderer({ content = '', className = '' }: MarkdownRendererProps) {
   // Pre-process content to ensure LaTeX delimiters are correctly handled
   // AI often uses $...$ for inline math, but remark-math sometimes needs a little help
   // We also ensure there's a space before/after inline math if it's touching text
@@ -24,13 +23,6 @@ export default function MarkdownRenderer({ content, className = '' }: MarkdownRe
 
   const components = {
     code({ node, inline, className, children, ...props }: any) {
-      const match = /language-(\w+)/.exec(className || '');
-      const language = match ? match[1] : '';
-      
-      if (!inline && language === 'mermaid') {
-        return <Mermaid chart={String(children).replace(/\n$/, '')} />;
-      }
-      
       return (
         <code className={className} {...props}>
           {children}

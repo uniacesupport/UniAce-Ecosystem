@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, FileText, Plus, CheckCircle, Loader2, BookOpen, AlertCircle, Settings, Trash2, Users, Activity, Database, Search, Zap, Trophy, Star, Bot, Shield, BarChart3, Globe, Edit2, RefreshCw, Clock, FileQuestion, MessageSquare, ArrowLeft, HeartPulse, X, ArrowRight, Layers, Key, Cpu, Share2, Download, Filter } from 'lucide-react';
+import { Upload, FileText, Plus, CheckCircle, Loader2, BookOpen, AlertCircle, Settings, Trash2, Users, Activity, Database, Search, Zap, Trophy, Star, Bot, Shield, BarChart3, Globe, Edit2, RefreshCw, Clock, FileQuestion, MessageSquare, ArrowLeft, HeartPulse, X, ArrowRight, Layers, Key, Cpu, Share2, Download, Filter, Send, ChevronLeft, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -9,7 +9,7 @@ import { useCourses } from '../context/CourseContext';
 import { useAuth } from '../context/AuthContext';
 import { db, storage, auth } from '../firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { doc, setDoc, getDoc, collection, getDocs, deleteDoc, query, where, limit, writeBatch, serverTimestamp, orderBy } from 'firebase/firestore';
+import { doc, setDoc, getDoc, collection, getDocs, deleteDoc, query, where, limit, writeBatch, serverTimestamp, orderBy, addDoc } from 'firebase/firestore';
 import AdminSeeder from './AdminSeeder';
 import AdminQuestionBank from './AdminQuestionBank';
 import { ApiDebuggerPage } from './ApiDebuggerPage';
@@ -986,6 +986,22 @@ export default function AdminDashboard() {
       });
 
       if (res.ok) {
+        // Send notification to user
+        if (db) {
+          try {
+            await addDoc(collection(db, 'notifications'), {
+              userId: targetUserId,
+              title: 'Role Updated',
+              message: `Your account role has been updated to ${newRole}. Please refresh or re-login to see changes.`,
+              type: 'info',
+              read: false,
+              createdAt: serverTimestamp()
+            });
+          } catch (notifErr) {
+            console.error("Failed to send role update notification:", notifErr);
+          }
+        }
+        
         showToast(`User role updated to ${newRole}`, 'success');
         LogService.log('warning', 'admin', `Updated user role for ${targetUserId} to ${newRole}`);
         fetchUsers();
@@ -1104,6 +1120,33 @@ export default function AdminDashboard() {
 
   const [emailDebugInfo, setEmailDebugInfo] = useState<any>(null);
   const [isDebuggingEmail, setIsDebuggingEmail] = useState(false);
+  const [isSendingTestEmail, setIsSendingTestEmail] = useState(false);
+
+  const handleSendTestEmail = async (toEmail: string) => {
+    setIsSendingTestEmail(true);
+    try {
+      const idToken = await auth.currentUser?.getIdToken();
+      const res = await fetch('/api/admin/test-email', {
+        method: 'POST',
+        headers: { 
+          'Authorization': `Bearer ${idToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ to: toEmail })
+      });
+      if (res.ok) {
+        showToast("Test email sent successfully!", "success");
+      } else {
+        const data = await res.json();
+        showToast(`Failed to send test email: ${data.error || 'Unknown error'}`, "error");
+      }
+    } catch (error: any) {
+      console.error("Error sending test email:", error);
+      showToast(`Error sending test email: ${error.message}`, "error");
+    } finally {
+      setIsSendingTestEmail(false);
+    }
+  };
 
   const handleDebugEmail = async () => {
     setIsDebuggingEmail(true);
@@ -1131,16 +1174,42 @@ export default function AdminDashboard() {
     }
   };
 
+  const [userStats, setUserStats] = useState({
+    total: 0,
+    students: 0,
+    tutors: 0,
+    admins: 0,
+    moderators: 0
+  });
+
   const fetchUsers = async () => {
     if (!db) return;
     setIsLoadingUsers(true);
     try {
       const querySnapshot = await getDocs(collection(db, 'users'));
       const userList: any[] = [];
+      const stats = {
+        total: 0,
+        students: 0,
+        tutors: 0,
+        admins: 0,
+        moderators: 0
+      };
+
       querySnapshot.forEach((doc) => {
-        userList.push({ id: doc.id, ...doc.data() });
+        const data = doc.data();
+        userList.push({ id: doc.id, ...data });
+        
+        stats.total++;
+        const role = data.role || 'student';
+        if (role === 'student') stats.students++;
+        else if (role === 'tutor') stats.tutors++;
+        else if (role === 'admin') stats.admins++;
+        else if (role === 'moderator') stats.moderators++;
       });
+      
       setUsers(userList);
+      setUserStats(stats);
     } catch (error) {
       console.error("Error fetching users:", error);
     } finally {
@@ -1286,7 +1355,7 @@ export default function AdminDashboard() {
         Extract the full course syllabus and content into a structured JSON format.
 
         CRITICAL INSTRUCTIONS FOR DIAGRAMS AND IMAGES:
-        1. If you encounter a flowchart, system architecture, graph, or structural diagram, convert it into valid Mermaid.js code and embed it in the markdown content using \`\`\`mermaid ... \`\`\`.
+        1. If you encounter a flowchart, system architecture, graph, or structural diagram, describe it in detail using text or a structured list.
         2. If you encounter a complex photograph or highly detailed illustration (e.g., biology anatomy, real-world photos) that cannot be coded, simply ignore it or replace it with a descriptive placeholder like "[Complex Image: Admin to insert manually]".
 
         The output must strictly follow this JSON structure:
@@ -1303,7 +1372,7 @@ export default function AdminDashboard() {
                 {
                   "id": "subtopic_id",
                   "title": "Subtopic Title",
-                  "content": "The full educational content. Use Markdown. IMPORTANT: Wrap all math formulas in LaTeX using $ for inline (e.g., $x^2$) and $$ for block (e.g., $$ \\int x dx $$). Use Mermaid.js for flowcharts."
+                  "content": "The full educational content. Use Markdown. IMPORTANT: Wrap all math formulas in LaTeX using $ for inline (e.g., $x^2$) and $$ for block (e.g., $$ \\int x dx $$)."
                 }
               ]
             }
@@ -2886,93 +2955,231 @@ export default function AdminDashboard() {
       )}
 
       {activeTab === 'users' && (
-        <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <Users className="text-blue-500" size={24} />
-              Registered Users
-            </h2>
-            <div className="flex items-center gap-4">
-              <input
-                type="text"
-                placeholder="Search users..."
-                value={userSearchTerm}
-                onChange={(e) => { setUserSearchTerm(e.target.value); setUserCurrentPage(1); }}
-                className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <button onClick={fetchUsers} className="text-sm font-bold text-blue-600 dark:text-blue-400 hover:underline">
-                Refresh List
-              </button>
-            </div>
+        <div className="space-y-8">
+          {/* User Stats Overview */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            {[
+              { label: 'Total Users', value: userStats.total, color: 'blue', icon: Users },
+              { label: 'Students', value: userStats.students, color: 'emerald', icon: BookOpen },
+              { label: 'Tutors', value: userStats.tutors, color: 'purple', icon: Trophy },
+              { label: 'Admins', value: userStats.admins, color: 'rose', icon: Shield },
+              { label: 'Moderators', value: userStats.moderators, color: 'amber', icon: Zap },
+            ].map((stat, idx) => (
+              <div key={idx} className="bg-white dark:bg-slate-800 p-6 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700">
+                <div className={`w-10 h-10 rounded-2xl bg-${stat.color}-100 dark:bg-${stat.color}-500/20 flex items-center justify-center mb-4`}>
+                  <stat.icon className={`text-${stat.color}-600 dark:text-${stat.color}-400`} size={20} />
+                </div>
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">{stat.label}</p>
+                <p className="text-2xl font-bold text-slate-900 dark:text-white">{stat.value}</p>
+              </div>
+            ))}
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="border-b border-slate-200 dark:border-slate-700">
-                  <th className="pb-3 text-xs font-bold text-slate-500 uppercase tracking-wider">User ID</th>
-                  <th className="pb-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Email</th>
-                  <th className="pb-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Level</th>
-                  <th className="pb-3 text-xs font-bold text-slate-500 uppercase tracking-wider">XP</th>
-                  <th className="pb-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Streak</th>
-                  <th className="pb-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Last Active</th>
-                  <th className="pb-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Role</th>
-                  <th className="pb-3 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="text-sm">
-                {isLoadingUsers ? (
-                  <tr>
-                    <td colSpan={8} className="py-8 text-center text-slate-500">Loading users...</td>
+          <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
+              <div>
+                <h2 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <Users className="text-blue-500" size={28} />
+                  User Directory
+                </h2>
+                <p className="text-slate-500 mt-1">Manage platform access, roles, and account statuses.</p>
+              </div>
+              
+              <div className="flex items-center gap-4">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                  <input
+                    type="text"
+                    placeholder="Search by name or email..."
+                    value={userSearchTerm}
+                    onChange={(e) => { setUserSearchTerm(e.target.value); setUserCurrentPage(1); }}
+                    className="pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-64"
+                  />
+                </div>
+                <button 
+                  onClick={fetchUsers} 
+                  className="p-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
+                  title="Refresh List"
+                >
+                  <RefreshCw size={20} className={isLoadingUsers ? "animate-spin" : ""} />
+                </button>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="border-b border-slate-200 dark:border-slate-700">
+                    <th className="pb-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Student</th>
+                    <th className="pb-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Academic Info</th>
+                    <th className="pb-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Progress</th>
+                    <th className="pb-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Last Active</th>
+                    <th className="pb-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Role</th>
+                    <th className="pb-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Actions</th>
                   </tr>
-                ) : users.length > 0 ? (
-                  users
-                    .filter(u => u.email.toLowerCase().includes(userSearchTerm.toLowerCase()) || u.id.includes(userSearchTerm))
-                    .slice((userCurrentPage - 1) * usersPerPage, userCurrentPage * usersPerPage)
-                    .map((user) => (
-                    <tr key={user.id} className="border-b border-slate-100 dark:border-slate-700/50 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
-                      <td className="py-3 font-mono text-xs text-slate-500">{user.id.substring(0, 8)}...</td>
-                      <td className="py-3 text-slate-600 dark:text-slate-300 font-medium">{user.email || 'No Email'}</td>
-                      <td className="py-3 font-bold text-slate-900 dark:text-white">{user.level || 1}</td>
-                      <td className="py-3 text-slate-600 dark:text-slate-300">{user.xp || 0}</td>
-                      <td className="py-3">
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-xs font-bold">
-                          {user.streak || 0} 🔥
-                        </span>
-                      </td>
-                      <td className="py-3 text-slate-500 text-xs">
-                        {user.lastStudyDate ? new Date(user.lastStudyDate).toLocaleDateString() : 'Never'}
-                      </td>
-                      <td className="py-3">
-                        <select 
-                          value={user.role || 'student'} 
-                          onChange={(e) => handleUpdateRole(user.id, e.target.value)}
-                          disabled={!isAdmin}
-                          className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-xs font-bold text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          <option value="student">Student</option>
-                          <option value="tutor">Tutor</option>
-                          <option value="moderator">Moderator</option>
-                          <option value="admin">Admin</option>
-                        </select>
-                      </td>
-                      <td className="py-3 text-right">
-                        <button 
-                          onClick={() => handleResetSparks(user.id)}
-                          className="text-xs font-bold text-amber-600 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300"
-                        >
-                          Reset Sparks
-                        </button>
+                </thead>
+                <tbody className="text-sm">
+                  {isLoadingUsers ? (
+                    <tr>
+                      <td colSpan={6} className="py-20 text-center">
+                        <div className="flex flex-col items-center gap-3">
+                          <Loader2 className="animate-spin text-blue-500" size={32} />
+                          <p className="text-slate-500 font-medium">Synchronizing user directory...</p>
+                        </div>
                       </td>
                     </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={8} className="py-8 text-center text-slate-500">No users found.</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+                  ) : users.length > 0 ? (
+                    (() => {
+                      const filteredUsers = users.filter(u => 
+                        (u.email?.toLowerCase() || '').includes(userSearchTerm.toLowerCase()) || 
+                        (u.displayName?.toLowerCase() || '').includes(userSearchTerm.toLowerCase()) ||
+                        u.id.includes(userSearchTerm)
+                      );
+                      const totalPages = Math.ceil(filteredUsers.length / usersPerPage);
+                      const currentUsers = filteredUsers.slice((userCurrentPage - 1) * usersPerPage, userCurrentPage * usersPerPage);
+
+                      return (
+                        <>
+                          {currentUsers.map((user) => (
+                            <tr key={user.id} className="border-b border-slate-100 dark:border-slate-700/50 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors group">
+                              <td className="py-4">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-500/20 flex items-center justify-center text-blue-600 dark:text-blue-400 font-bold text-sm">
+                                    {user.displayName?.charAt(0) || user.email?.charAt(0) || '?'}
+                                  </div>
+                                  <div>
+                                    <div className="font-bold text-slate-900 dark:text-white">{user.displayName || 'Anonymous Student'}</div>
+                                    <div className="text-xs text-slate-500 font-mono">{user.email || 'No Email'}</div>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="py-4">
+                                <div className="text-xs">
+                                  <div className="font-bold text-slate-700 dark:text-slate-300">{user.department || 'No Department'}</div>
+                                  <div className="text-slate-500">{user.academic_level || 'Level N/A'}</div>
+                                </div>
+                              </td>
+                              <td className="py-4">
+                                <div className="flex flex-col gap-1">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs font-bold text-slate-900 dark:text-white">Lvl {user.level || 1}</span>
+                                    <span className="text-[10px] text-slate-500">{user.xp || 0} XP</span>
+                                  </div>
+                                  <div className="w-24 h-1 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                                    <div 
+                                      className="h-full bg-blue-500" 
+                                      style={{ width: `${Math.min(100, ((user.xp || 0) % 1000) / 10)}%` }}
+                                    />
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="py-4">
+                                <div className="text-xs text-slate-500">
+                                  {user.lastStudyDate ? new Date(user.lastStudyDate).toLocaleDateString() : 'Never'}
+                                </div>
+                              </td>
+                              <td className="py-4">
+                                <select 
+                                  value={user.role || 'student'} 
+                                  onChange={(e) => handleUpdateRole(user.id, e.target.value)}
+                                  disabled={!isAdmin}
+                                  className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  <option value="student">Student</option>
+                                  <option value="tutor">Tutor</option>
+                                  <option value="moderator">Moderator</option>
+                                  <option value="admin">Admin</option>
+                                </select>
+                              </td>
+                              <td className="py-4 text-right">
+                                <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <button 
+                                    onClick={() => handleResetSparks(user.id)}
+                                    className="p-2 text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-lg transition-colors"
+                                    title="Reset Sparks"
+                                  >
+                                    <Zap size={18} />
+                                  </button>
+                                  <button 
+                                    onClick={() => {/* View Details */}}
+                                    className="p-2 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                                    title="View Details"
+                                  >
+                                    <Search size={18} />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                          
+                          {/* Pagination Controls */}
+                          {filteredUsers.length > usersPerPage && (
+                            <tr>
+                              <td colSpan={6} className="pt-8">
+                                <div className="flex items-center justify-between">
+                                  <p className="text-xs text-slate-500">
+                                    Showing <span className="font-bold text-slate-900 dark:text-white">{(userCurrentPage - 1) * usersPerPage + 1}</span> to <span className="font-bold text-slate-900 dark:text-white">{Math.min(userCurrentPage * usersPerPage, filteredUsers.length)}</span> of <span className="font-bold text-slate-900 dark:text-white">{filteredUsers.length}</span> users
+                                  </p>
+                                  <div className="flex items-center gap-2">
+                                    <button 
+                                      onClick={() => setUserCurrentPage(prev => Math.max(1, prev - 1))}
+                                      disabled={userCurrentPage === 1}
+                                      className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 disabled:opacity-30 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all"
+                                    >
+                                      <ChevronLeft size={20} />
+                                    </button>
+                                    <div className="flex items-center gap-1">
+                                      {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                                        let pageNum = userCurrentPage;
+                                        if (userCurrentPage <= 3) pageNum = i + 1;
+                                        else if (userCurrentPage >= totalPages - 2) pageNum = totalPages - 4 + i;
+                                        else pageNum = userCurrentPage - 2 + i;
+                                        
+                                        if (pageNum < 1 || pageNum > totalPages) return null;
+
+                                        return (
+                                          <button
+                                            key={pageNum}
+                                            onClick={() => setUserCurrentPage(pageNum)}
+                                            className={`w-10 h-10 rounded-xl font-bold text-sm transition-all ${
+                                              userCurrentPage === pageNum 
+                                                ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' 
+                                                : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'
+                                            }`}
+                                          >
+                                            {pageNum}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                    <button 
+                                      onClick={() => setUserCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                                      disabled={userCurrentPage === totalPages}
+                                      className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 disabled:opacity-30 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all"
+                                    >
+                                      <ChevronRight size={20} />
+                                    </button>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </>
+                      );
+                    })()
+                  ) : (
+                    <tr>
+                      <td colSpan={6} className="py-20 text-center">
+                        <div className="flex flex-col items-center gap-3">
+                          <Users className="text-slate-300" size={48} />
+                          <p className="text-slate-500 font-medium">No users found matching your criteria.</p>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
@@ -3986,20 +4193,31 @@ export default function AdminDashboard() {
 
       {activeTab === 'communications' && (
         <div className="space-y-8">
-          <div className="flex items-center gap-4 bg-white dark:bg-slate-800 p-2 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 w-fit">
-            {(['broadcast', 'email', 'history'] as const).map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveCommTab(tab)}
-                className={`px-6 py-2 rounded-xl font-bold capitalize transition-all ${
-                  activeCommTab === tab 
-                    ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-500/30' 
-                    : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700'
-                }`}
-              >
-                {tab}
-              </button>
-            ))}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-4 bg-white dark:bg-slate-800 p-2 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 w-fit">
+              {(['broadcast', 'email', 'history'] as const).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setActiveCommTab(tab)}
+                  className={`px-6 py-2 rounded-xl font-bold capitalize transition-all ${
+                    activeCommTab === tab 
+                      ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-500/30' 
+                      : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  {tab}
+                </button>
+              ))}
+            </div>
+            
+            <button 
+              onClick={handleDebugEmail}
+              disabled={isDebuggingEmail}
+              className="flex items-center justify-center gap-2 px-6 py-3 rounded-2xl font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all border border-slate-200 dark:border-slate-700 shadow-sm active:scale-95 disabled:opacity-50"
+            >
+              {isDebuggingEmail ? <Loader2 size={18} className="animate-spin" /> : <Activity size={18} />}
+              Email Diagnostic
+            </button>
           </div>
 
           {activeCommTab === 'broadcast' && (
@@ -4152,6 +4370,34 @@ export default function AdminDashboard() {
                     </div>
                   )}
                 </div>
+              </div>
+
+              <div className="mt-8 pt-8 border-t border-slate-100 dark:border-slate-700">
+                <h4 className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-4">Send Diagnostic Test Email</h4>
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <input 
+                    type="email"
+                    id="test-email-recipient"
+                    placeholder="recipient@example.com"
+                    defaultValue={auth.currentUser?.email || ''}
+                    className="flex-grow bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                  <button 
+                    onClick={() => {
+                      const email = (document.getElementById('test-email-recipient') as HTMLInputElement).value;
+                      if (email) handleSendTestEmail(email);
+                      else showToast("Please enter a recipient email", "error");
+                    }}
+                    disabled={isSendingTestEmail}
+                    className="px-6 py-3 rounded-xl font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-500/30 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {isSendingTestEmail ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
+                    Send Test Email
+                  </button>
+                </div>
+                <p className="text-xs text-slate-500 mt-3 italic">
+                  This will send a system health check email using the current SMTP configuration.
+                </p>
               </div>
             </div>
           )}

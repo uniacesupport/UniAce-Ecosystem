@@ -81,7 +81,6 @@ export default function ContentArea({
     "Consulting academic sources...",
     "Writing university-level content...",
     "Formatting LaTeX formulas...",
-    "Drawing Mermaid diagrams...",
     "Adding real-world examples...",
     "Finalizing your personalized lesson..."
   ];

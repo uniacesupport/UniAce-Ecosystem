@@ -169,6 +169,10 @@ function AppContent() {
 
   const handleModuleSelect = (id: string) => {
     setActiveModuleId(id);
+    const module = syllabus.find(m => m.id === id);
+    if (module && module.subTopics.length > 0) {
+      setActiveSubTopicId(module.subTopics[0].id);
+    }
     setActiveView('module-topics');
     if (window.innerWidth < 1024) {
       setIsSidebarOpen(false);

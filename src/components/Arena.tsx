@@ -253,7 +253,11 @@ export default function Arena({ activeCourseId }: ArenaProps) {
           undefined, // No specific subtopic, cover the module
           5, // 5 questions per battle
           'multiple-choice',
-          false
+          false,
+          3,
+          profile?.academic_level,
+          profile?.department,
+          profile?.displayName
         );
         
         if (questions && questions.length > 0) {

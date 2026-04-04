@@ -65,6 +65,7 @@ export default function MiniTeacherModal({ isOpen, onClose, onAction, module, su
         progress?.learningProfile,
         profile?.academic_level,
         profile?.department,
+        profile?.displayName,
         signal
       );
       for await (const chunk of stream) {

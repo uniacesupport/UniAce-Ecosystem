@@ -398,8 +398,7 @@ export async function generateLessonContent(
       "content": "The raw markdown content...",
       "metadata": {
         "hasMath": boolean,
-        "hasCode": boolean,
-        "hasMermaid": boolean
+        "hasCode": boolean
       }
     }
     CRITICAL: Do NOT wrap the JSON in markdown blocks. Output raw JSON only.
@@ -407,7 +406,6 @@ export async function generateLessonContent(
     8. CRITICAL: Ensure the lesson is COMPLETE and does not cut off abruptly. Provide a clear conclusion or summary at the end.
     9. CRITICAL: The content must be academically rigorous and align with the Hybrid Approach (NUC structure + International depth).
     10. CRITICAL: Calibrate the depth and complexity to the student's level (${level || 'University Level'}).
-    11. CRITICAL [MERMAID DIRECTIVE]: If you include Mermaid diagrams, you MUST ONLY use supported Mermaid.js syntax. Allowed types are: flowchart, sequenceDiagram, classDiagram, stateDiagram, pie, mindmap. Do NOT use unsupported types like vennDiagram or barChart. Always wrap node text containing punctuation or special characters in double quotes (e.g., B["TLD Servers (.com, .org)"]).
   `;
 
   const result = await callGenerateAPI(lessonPrompt, 'lesson', provider);
