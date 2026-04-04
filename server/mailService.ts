@@ -36,12 +36,23 @@ export class MailService {
         host,
         port,
         secure: port === 465, // true for 465, false for other ports
-        family: 4, // Force IPv4 to prevent ENETUNREACH on platforms lacking IPv6 support
         auth: {
           user,
           pass,
         },
-      });
+        // Force IPv4 to prevent ENETUNREACH on platforms lacking IPv6 support
+        // Some environments (like Cloud Run) have issues with IPv6 outbound
+        connectionTimeout: 10000, // 10 seconds
+        greetingTimeout: 10000,
+        socketTimeout: 10000,
+        dnsTimeout: 10000,
+        family: 4, 
+        tls: {
+          // Do not fail on invalid certs, and ensure we use the correct servername for SNI
+          rejectUnauthorized: false,
+          servername: host
+        }
+      } as any); // Use 'as any' to avoid type issues with some nodemailer versions/types
     }
     return this.transporter;
   }
@@ -50,6 +61,8 @@ export class MailService {
    * Verifies the SMTP connection.
    */
   static async verifyConnection() {
+    // Clear the transporter to force a re-initialization with potentially new env vars
+    this.transporter = null;
     const transporter = this.getTransporter();
     if (!transporter) {
       return { success: false, message: 'Email service not configured. Please set SMTP environment variables.' };

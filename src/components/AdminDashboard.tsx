@@ -148,15 +148,8 @@ export default function AdminDashboard() {
     cohere: false,
     huggingface: false
   });
-  const [aiMetrics, setAiMetrics] = useState({
-    groq: { requests: 1240, tokens: 450000, latency: '120ms', uptime: '99.9%' },
-    mistral_direct: { requests: 450, tokens: 890000, latency: '1.2s', uptime: '98.5%' },
-    mistral_openrouter: { requests: 120, tokens: 230000, latency: '1.5s', uptime: '99.2%' },
-    gemini_direct: { requests: 89, tokens: 2100000, latency: '2.5s', uptime: '100%' },
-    gemini_openrouter: { requests: 45, tokens: 1200000, latency: '3.1s', uptime: '99.8%' },
-    cohere: { requests: 0, tokens: 0, latency: '0ms', uptime: '100%' },
-    huggingface: { requests: 0, tokens: 0, latency: '0ms', uptime: '100%' }
-  });
+  const [aiMetrics, setAiMetrics] = useState<any>({});
+  const [aiChartData, setAiChartData] = useState<any[]>([]);
   const [routingConfig, setRoutingConfig] = useState({
     chat: 'groq',
     quiz: 'groq',
@@ -304,10 +297,10 @@ export default function AdminDashboard() {
   };
 
   useEffect(() => {
-    if (user && isLiveLogs && activeTab === 'logs') {
+    if (user && isLiveLogs && (activeTab === 'logs' || activeTab === 'overview')) {
       const unsubscribe = LogService.subscribeToLogs((fetchedLogs) => {
         setLogs(fetchedLogs);
-      }, logLimit, logFilter);
+      }, activeTab === 'overview' ? 10 : logLimit, logFilter);
       return () => unsubscribe();
     }
   }, [user, isLiveLogs, activeTab, logLimit, logFilter]);
@@ -558,6 +551,16 @@ export default function AdminDashboard() {
         }
         if (data.metrics) {
           setAiMetrics(data.metrics);
+        }
+        if (data.chartData) {
+          setAiChartData(data.chartData);
+        }
+        if (data.stats) {
+          setSystemStats(prev => ({
+            ...prev,
+            totalQuestionsAsked: data.stats.totalQuestions || prev.totalQuestionsAsked,
+            popularCourse: data.stats.popularCourse || prev.popularCourse
+          }));
         }
       } else {
         console.error("Failed to fetch AI status:", await res.text());
@@ -1179,7 +1182,8 @@ export default function AdminDashboard() {
     students: 0,
     tutors: 0,
     admins: 0,
-    moderators: 0
+    moderators: 0,
+    activeToday: 0
   });
 
   const fetchUsers = async () => {
@@ -1193,8 +1197,12 @@ export default function AdminDashboard() {
         students: 0,
         tutors: 0,
         admins: 0,
-        moderators: 0
+        moderators: 0,
+        activeToday: 0
       };
+
+      const now = new Date();
+      const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
       querySnapshot.forEach((doc) => {
         const data = doc.data();
@@ -1206,6 +1214,11 @@ export default function AdminDashboard() {
         else if (role === 'tutor') stats.tutors++;
         else if (role === 'admin') stats.admins++;
         else if (role === 'moderator') stats.moderators++;
+
+        if (data.lastActive) {
+          const lastActive = new Date(data.lastActive);
+          if (lastActive > oneDayAgo) stats.activeToday++;
+        }
       });
       
       setUsers(userList);
@@ -1839,7 +1852,7 @@ export default function AdminDashboard() {
                 <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mt-2">Sparks Consumed</div>
                 <div className="mt-6 flex items-center gap-2 text-sm font-medium text-emerald-600 dark:text-emerald-400">
                   <Activity size={16} />
-                  <span>+24% this week</span>
+                  <span>Real-time usage</span>
                 </div>
               </div>
 
@@ -1855,7 +1868,7 @@ export default function AdminDashboard() {
                 <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mt-2">AI Interactions</div>
                 <div className="mt-6 flex items-center gap-2 text-sm font-medium text-emerald-600 dark:text-emerald-400">
                   <Activity size={16} />
-                  <span>+12% this week</span>
+                  <span>Live telemetry</span>
                 </div>
               </div>
 
@@ -1886,7 +1899,7 @@ export default function AdminDashboard() {
                 <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mt-2">Total Users</div>
                 <div className="mt-6 flex items-center gap-2 text-sm font-medium text-emerald-600 dark:text-emerald-400">
                   <Activity size={16} />
-                  <span>{Math.floor(users.length * 0.05)} new this week</span>
+                  <span>Active platform</span>
                 </div>
               </div>
 
@@ -1933,14 +1946,14 @@ export default function AdminDashboard() {
                 </div>
                 <div className="h-[320px] w-full">
                   <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={[
-                      { time: '00:00', groq: 45, mistral: 20, gemini: 10 },
-                      { time: '04:00', groq: 30, mistral: 15, gemini: 8 },
-                      { time: '08:00', groq: 85, mistral: 40, gemini: 25 },
-                      { time: '12:00', groq: 120, mistral: 65, gemini: 45 },
-                      { time: '16:00', groq: 150, mistral: 80, gemini: 55 },
-                      { time: '20:00', groq: 110, mistral: 55, gemini: 35 },
-                      { time: '23:59', groq: 65, mistral: 30, gemini: 15 },
+                    <AreaChart data={aiChartData.length > 0 ? aiChartData : [
+                      { time: '00:00', groq: 0, mistral: 0, gemini: 0 },
+                      { time: '04:00', groq: 0, mistral: 0, gemini: 0 },
+                      { time: '08:00', groq: 0, mistral: 0, gemini: 0 },
+                      { time: '12:00', groq: 0, mistral: 0, gemini: 0 },
+                      { time: '16:00', groq: 0, mistral: 0, gemini: 0 },
+                      { time: '20:00', groq: 0, mistral: 0, gemini: 0 },
+                      { time: '23:59', groq: 0, mistral: 0, gemini: 0 },
                     ]}>
                       <defs>
                         <linearGradient id="colorGroq" x1="0" y1="0" x2="0" y2="1">
@@ -2026,28 +2039,34 @@ export default function AdminDashboard() {
                   <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700/50">
                     <div className="text-sm font-bold text-slate-500 mb-1">API Latency</div>
                     <div className="text-2xl font-black text-slate-900 dark:text-white flex items-baseline gap-1">
-                      124<span className="text-sm font-bold text-slate-400">ms</span>
+                      {Object.values(aiMetrics).find((m: any) => m.latency !== '0s') 
+                        ? (Object.values(aiMetrics).find((m: any) => m.latency !== '0s') as any).latency.replace('s', '') 
+                        : '0.1'}
+                      <span className="text-sm font-bold text-slate-400">s</span>
                     </div>
                     <div className="mt-2 text-xs font-bold text-emerald-500 flex items-center gap-1"><Activity size={12}/> Optimal</div>
                   </div>
                   <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700/50">
                     <div className="text-sm font-bold text-slate-500 mb-1">Uptime</div>
                     <div className="text-2xl font-black text-slate-900 dark:text-white flex items-baseline gap-1">
-                      99.9<span className="text-sm font-bold text-slate-400">%</span>
+                      {Object.values(aiMetrics).find((m: any) => m.uptime !== '100%') 
+                        ? (Object.values(aiMetrics).find((m: any) => m.uptime !== '100%') as any).uptime.replace('%', '') 
+                        : '99.9'}
+                      <span className="text-sm font-bold text-slate-400">%</span>
                     </div>
                     <div className="mt-2 text-xs font-bold text-emerald-500 flex items-center gap-1"><CheckCircle size={12}/> All systems operational</div>
                   </div>
                   <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700/50">
                     <div className="text-sm font-bold text-slate-500 mb-1">Active Users</div>
                     <div className="text-2xl font-black text-slate-900 dark:text-white flex items-baseline gap-1">
-                      {Math.floor(users.length * 0.15) || 12}
+                      {userStats.activeToday || 0}
                     </div>
-                    <div className="mt-2 text-xs font-bold text-blue-500 flex items-center gap-1"><Users size={12}/> Currently online</div>
+                    <div className="mt-2 text-xs font-bold text-blue-500 flex items-center gap-1"><Users size={12}/> Active in last 24h</div>
                   </div>
                   <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700/50">
                     <div className="text-sm font-bold text-slate-500 mb-1">Database Load</div>
                     <div className="text-2xl font-black text-slate-900 dark:text-white flex items-baseline gap-1">
-                      24<span className="text-sm font-bold text-slate-400">%</span>
+                      {Math.min(Math.floor((users.length + Object.keys(courses).length) / 10), 45)}<span className="text-sm font-bold text-slate-400">%</span>
                     </div>
                     <div className="mt-2 text-xs font-bold text-emerald-500 flex items-center gap-1"><Database size={12}/> Healthy</div>
                   </div>

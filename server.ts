@@ -1316,8 +1316,32 @@ app.get('/api/admin/ai-status', verifyAuth, async (req, res) => {
     };
     
     const metrics = telemetry.getMetrics();
+    const chartData = telemetry.getChartData();
+    
+    // Get real counts from Firestore for overview stats
+    const db = admin.firestore();
+    const chatSnapshot = await db.collection('chat_analytics').count().get();
+    const totalQuestions = chatSnapshot.data().count;
+    
+    // Get popular course from struggle analytics
+    const struggleSnapshot = await db.collection('struggle_analytics').limit(100).get();
+    const courseCounts: Record<string, number> = {};
+    struggleSnapshot.docs.forEach(doc => {
+      const data = doc.data();
+      const course = data.moduleTitle || 'GST 111';
+      courseCounts[course] = (courseCounts[course] || 0) + 1;
+    });
+    const popularCourse = Object.entries(courseCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'GST 111';
 
-    res.json({ status, metrics });
+    res.json({ 
+      status, 
+      metrics, 
+      chartData,
+      stats: {
+        totalQuestions,
+        popularCourse
+      }
+    });
   } catch (error) {
     res.status(500).json({ error: 'Failed to check AI status' });
   }
