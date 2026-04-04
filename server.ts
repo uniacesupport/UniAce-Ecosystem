@@ -27,6 +27,7 @@ import { initializeVectorStore, findRelevantContentSemantic, addVectorItem, remo
 import { GeminiOpenRouterProvider, GeminiDirectProvider, MistralProvider, MistralOpenRouterProvider, GroqProvider, CohereProvider, HuggingFaceProvider, CircuitBreaker } from './server/providers';
 import { getCachedResponse, setCachedResponse } from './server/cache';
 import { MailService } from './server/mailService';
+import { telemetry } from './server/telemetry';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -48,6 +49,21 @@ const globalMistralOpenRouterBreaker = new CircuitBreaker(globalMistralOpenRoute
 const globalGroqBreaker = new CircuitBreaker(globalGroqProvider);
 const globalCohereBreaker = new CircuitBreaker(globalCohereProvider);
 const globalHuggingFaceBreaker = new CircuitBreaker(globalHuggingFaceProvider);
+
+// --- Telemetry Helper ---
+async function generateWithTelemetry(provider: CircuitBreaker, messages: any[], options: any) {
+  const start = Date.now();
+  try {
+    const response = await provider.generate(messages, options);
+    const latency = Date.now() - start;
+    telemetry.record(provider.name, response.usage?.totalTokens || 0, latency, false);
+    return response;
+  } catch (error) {
+    const latency = Date.now() - start;
+    telemetry.record(provider.name, 0, latency, true);
+    throw error;
+  }
+}
 
 // Global Error Handlers for the process
 process.on('uncaughtException', (err) => {
@@ -805,7 +821,7 @@ app.get('/api/chat/nudge', verifyAuth, async (req, res) => {
 
     for (const provider of providers) {
       try {
-        const response = await provider.generate([{ role: 'user', content: prompt }], { complexity: 'standard' });
+        const response = await generateWithTelemetry(provider, [{ role: 'user', content: prompt }], { complexity: 'standard' });
         if (response.text) {
           message = response.text;
           break;
@@ -1130,7 +1146,7 @@ app.post('/api/chat', verifyAuth, async (req, res) => {
       
       for (const provider of providers) {
         try {
-          aiResponse = await provider.generate(messages, { complexity });
+          aiResponse = await generateWithTelemetry(provider, messages, { complexity });
           if (aiResponse) {
             const validation = validateAIResponse(aiResponse.text);
             if (validation.isValid) {
@@ -1298,17 +1314,8 @@ app.get('/api/admin/ai-status', verifyAuth, async (req, res) => {
       cohere: hasKey('cohere', process.env.COHERE_API_KEY),
       huggingface: hasKey('huggingface', process.env.HUGGINGFACE_API_KEY)
     };
-
-    // Mock metrics for the Command Center
-    const metrics = {
-      gemini_direct: { requests: 1200, tokens: '3.4M', latency: '1.1s', uptime: '99.9%' },
-      gemini_openrouter: { requests: 600, tokens: '2.0M', latency: '1.5s', uptime: '99.8%' },
-      groq: { requests: 8560, tokens: '12.8M', latency: '0.4s', uptime: '99.8%' },
-      mistral_direct: { requests: 2420, tokens: '5.1M', latency: '0.8s', uptime: '99.9%' },
-      mistral_openrouter: { requests: 1000, tokens: '3.0M', latency: '1.2s', uptime: '99.7%' },
-      cohere: { requests: 210, tokens: '0.5M', latency: '0.9s', uptime: '99.9%' },
-      huggingface: { requests: 150, tokens: '0.3M', latency: '1.1s', uptime: '99.5%' }
-    };
+    
+    const metrics = telemetry.getMetrics();
 
     res.json({ status, metrics });
   } catch (error) {
@@ -1539,7 +1546,7 @@ app.post('/api/openrouter/generate', verifyAuth, async (req, res) => {
 
     for (const provider of providers) {
       try {
-        aiResponse = await provider.generate(messages, { 
+        aiResponse = await generateWithTelemetry(provider, messages, { 
           complexity: complexity === 'quiz' ? 'high' : 'high', // Use high for quality
           jsonMode: responseFormat === 'json'
         });
@@ -1809,7 +1816,7 @@ app.post('/api/course/generate', verifyAuth, async (req, res) => {
         const complexity = 'high';
         const jsonMode = type !== 'lesson';
         console.log(`Attempting ${type} generation with provider: ${provider.constructor.name}`);
-        const response = await provider.generate(messages, { complexity, jsonMode });
+        const response = await generateWithTelemetry(provider, messages, { complexity, jsonMode });
         aiResponseText = response.text;
         if (aiResponseText) {
           console.log(`Successfully generated ${type} with ${provider.constructor.name}`);
@@ -1905,7 +1912,7 @@ app.post('/api/study-architect/generate-plan', verifyAuth, async (req, res) => {
 
     for (const provider of providers) {
       try {
-        response = await provider.generate([
+        response = await generateWithTelemetry(provider, [
           { role: 'system', content: systemInstruction },
           { role: 'user', content: prompt }
         ], { complexity: 'standard', jsonMode: true });
@@ -1995,7 +2002,7 @@ app.post('/api/vision-to-quiz', verifyAuth, async (req, res) => {
 
     for (const provider of providers) {
       try {
-        response = await provider.generate([
+        response = await generateWithTelemetry(provider, [
           { role: 'system', content: systemInstruction },
           { 
             role: 'user', 
@@ -2080,7 +2087,7 @@ app.post('/api/admin/extract-course', verifyAuth, async (req, res) => {
 
     for (const provider of providers) {
       try {
-        response = await provider.generate([
+        response = await generateWithTelemetry(provider, [
           { 
             role: 'user', 
             content: [
@@ -3249,7 +3256,7 @@ async function analyzeAndUpdateLearningProfile(userMessage: string, aiResponse: 
     let response;
     for (const provider of providers) {
       try {
-        response = await provider.generate([
+        response = await generateWithTelemetry(provider, [
           { role: 'user', content: prompt }
         ], { complexity: 'standard', jsonMode: true });
         break; // Success
@@ -3286,6 +3293,10 @@ async function analyzeAndUpdateLearningProfile(userMessage: string, aiResponse: 
 
 async function startServer() {
   console.log('Starting server... NODE_ENV:', process.env.NODE_ENV);
+  
+  // Initialize Telemetry
+  await telemetry.initialize();
+
   if (process.env.NODE_ENV !== 'production') {
     console.log('Starting Vite in middleware mode...');
     try {

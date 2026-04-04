@@ -14,6 +14,7 @@ export interface ModelResponse {
 }
 
 export interface ModelProvider {
+  readonly name: string;
   generate(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean }): Promise<ModelResponse>;
   stream(messages: any[], options: { complexity: 'high' | 'standard' }, onChunk: (chunk: string) => void): Promise<ModelResponse>;
 }
@@ -208,6 +209,7 @@ export class DynamicKeyRotator {
 
 export class GeminiDirectProvider implements ModelProvider {
   private rotator: DynamicKeyRotator;
+  public readonly name = 'gemini_direct';
 
   constructor(apiKey: string = '') {
     this.rotator = new DynamicKeyRotator('gemini_direct', apiKey);
@@ -303,9 +305,9 @@ export class GeminiDirectProvider implements ModelProvider {
       return {
         text: response.text,
         usage: {
-          promptTokens: 0,
-          completionTokens: 0,
-          totalTokens: 0
+          promptTokens: response.usageMetadata?.promptTokenCount || 0,
+          completionTokens: response.usageMetadata?.candidatesTokenCount || 0,
+          totalTokens: response.usageMetadata?.totalTokenCount || 0
         },
         finishReason: 'stop'
       };
@@ -348,6 +350,7 @@ export class GeminiDirectProvider implements ModelProvider {
 
 export class MistralOpenRouterProvider implements ModelProvider {
   private rotator: DynamicKeyRotator;
+  public readonly name = 'mistral_openrouter';
 
   constructor(apiKey: string = '') {
     this.rotator = new DynamicKeyRotator('openrouter', apiKey);
@@ -462,6 +465,7 @@ export class MistralOpenRouterProvider implements ModelProvider {
 
 export class GeminiOpenRouterProvider implements ModelProvider {
   private rotator: DynamicKeyRotator;
+  public readonly name = 'gemini_openrouter';
 
   constructor(apiKey: string = '') {
     this.rotator = new DynamicKeyRotator('openrouter', apiKey);
@@ -576,6 +580,7 @@ export class GeminiOpenRouterProvider implements ModelProvider {
 
 export class MistralProvider implements ModelProvider {
   private rotator: DynamicKeyRotator;
+  public readonly name = 'mistral_direct';
 
   constructor(apiKey: string = '') {
     this.rotator = new DynamicKeyRotator('mistral_direct', apiKey);
@@ -675,6 +680,7 @@ export class MistralProvider implements ModelProvider {
 
 export class GroqProvider implements ModelProvider {
   private rotator: DynamicKeyRotator;
+  public readonly name = 'groq';
 
   constructor(apiKey: string = '') {
     this.rotator = new DynamicKeyRotator('groq', apiKey);
@@ -818,6 +824,7 @@ export class GroqProvider implements ModelProvider {
 
 export class CohereProvider implements ModelProvider {
   private rotator: DynamicKeyRotator;
+  public readonly name = 'cohere';
 
   constructor(apiKey: string = '') {
     this.rotator = new DynamicKeyRotator('cohere', apiKey);
@@ -927,6 +934,7 @@ export class CohereProvider implements ModelProvider {
 
 export class HuggingFaceProvider implements ModelProvider {
   private rotator: DynamicKeyRotator;
+  public readonly name = 'huggingface';
 
   constructor(apiKey: string = '') {
     this.rotator = new DynamicKeyRotator('huggingface', apiKey);
@@ -1007,6 +1015,10 @@ export class CircuitBreaker {
   private readonly resetTimeout = 60000; // 1 minute
 
   constructor(private provider: ModelProvider) {}
+
+  get name() {
+    return this.provider.name;
+  }
 
   async generate(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean }): Promise<ModelResponse> {
     if (this.isOpen()) {
