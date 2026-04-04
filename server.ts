@@ -1472,23 +1472,26 @@ app.post('/api/admin/test-email', verifyAuth, async (req, res) => {
   
   if (!isAdmin) return res.status(403).json({ error: 'Forbidden' });
   
-  const { to } = req.body;
+  const { to, template } = req.body;
   if (!to) return res.status(400).json({ error: 'Recipient email is required' });
 
   try {
-    const html = `
-      <div style="font-family: sans-serif; padding: 20px; color: #1e293b;">
-        <h1 style="color: #10b981;">UniAce System Health Check</h1>
-        <p>This is a test email sent from the UniAce Admin Diagnostic Tool.</p>
-        <div style="background: #f1f5f9; padding: 15px; border-radius: 10px; margin: 20px 0;">
-          <p style="margin: 0; font-size: 14px;"><strong>Timestamp:</strong> ${new Date().toISOString()}</p>
-          <p style="margin: 5px 0 0; font-size: 14px;"><strong>Status:</strong> SMTP Connection Verified</p>
+    if (template === 'welcome') {
+      await MailService.sendWelcomeEmail(to, to.split('@')[0]);
+    } else {
+      const html = `
+        <div style="font-family: sans-serif; padding: 20px; color: #1e293b;">
+          <h1 style="color: #10b981;">UniAce System Health Check</h1>
+          <p>This is a test email sent from the UniAce Admin Diagnostic Tool.</p>
+          <div style="background: #f1f5f9; padding: 15px; border-radius: 10px; margin: 20px 0;">
+            <p style="margin: 0; font-size: 14px;"><strong>Timestamp:</strong> ${new Date().toISOString()}</p>
+            <p style="margin: 5px 0 0; font-size: 14px;"><strong>Status:</strong> SMTP Connection Verified</p>
+          </div>
+          <p style="font-size: 12px; color: #64748b;">If you received this, your email delivery system is working correctly.</p>
         </div>
-        <p style="font-size: 12px; color: #64748b;">If you received this, your email delivery system is working correctly.</p>
-      </div>
-    `;
-
-    await MailService.sendEmail(to, 'UniAce System Health Check 🛡️', html);
+      `;
+      await MailService.sendEmail(to, 'UniAce System Health Check 🛡️', html);
+    }
 
     // Log the activity
     await getAdminApp().firestore().collection('system_logs').add({

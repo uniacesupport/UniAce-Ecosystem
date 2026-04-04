@@ -245,6 +245,7 @@ export const ApiDebuggerPage = ({ onBack, showToast }: { onBack: () => void, sho
   };
 
   const presets = [
+    { name: 'Welcome Email', method: 'POST', url: '/api/admin/test-email', body: '{\n  "to": "uniace.support@gmail.com",\n  "template": "welcome"\n}' },
     { name: 'AI Status', method: 'GET', url: '/api/admin/ai-status' },
     { name: 'System Config', method: 'GET', url: '/api/admin/system-config' },
     { name: 'Debug Email', method: 'GET', url: '/api/admin/debug-email' },
@@ -285,7 +286,11 @@ export const ApiDebuggerPage = ({ onBack, showToast }: { onBack: () => void, sho
                 {presets.map(p => (
                   <button 
                     key={p.name}
-                    onClick={() => { setMethod(p.method); setUrl(p.url); }}
+                    onClick={() => { 
+                      setMethod(p.method); 
+                      setUrl(p.url); 
+                      if ((p as any).body) setRequestBody((p as any).body);
+                    }}
                     className="text-[10px] font-bold px-2 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-500 hover:text-blue-500 hover:border-blue-200 transition-all"
                   >
                     {p.name}
