@@ -28,6 +28,7 @@ export const ApiDebuggerPage = ({ onBack, showToast }: { onBack: () => void, sho
   const [requestHeaders, setRequestHeaders] = useState([{ key: 'Content-Type', value: 'application/json' }]);
   const [requestBody, setRequestBody] = useState('{\n  "test": true\n}');
   const [activeRequestTab, setActiveRequestTab] = useState<'body' | 'headers' | 'auth'>('body');
+  const [activeResponseTab, setActiveResponseTab] = useState<'pretty' | 'raw'>('pretty');
   
   const [isExecuting, setIsExecuting] = useState(false);
   const [response, setResponse] = useState<{ status: number; data: any; headers: any; duration: number } | null>(null);
@@ -177,6 +178,61 @@ export const ApiDebuggerPage = ({ onBack, showToast }: { onBack: () => void, sho
     showToast("Loaded from history", "info");
   };
 
+  const renderPrettyResponse = (data: any) => {
+    if (!data) return <p className="text-slate-400 italic">Empty response</p>;
+
+    if (typeof data !== 'object') {
+      return <p className="text-slate-700 dark:text-slate-300 font-mono">{String(data)}</p>;
+    }
+
+    const renderValue = (val: any): React.ReactNode => {
+      if (val === null) return <span className="text-slate-400 italic">null</span>;
+      if (typeof val === 'boolean') return <span className={val ? 'text-emerald-500' : 'text-rose-500'}>{String(val)}</span>;
+      if (typeof val === 'number') return <span className="text-amber-500">{val}</span>;
+      if (typeof val === 'string') {
+        if (val.startsWith('http')) return <a href={val} target="_blank" rel="noreferrer" className="text-indigo-500 hover:underline break-all">{val}</a>;
+        return <span className="text-slate-700 dark:text-slate-300 break-all">{val}</span>;
+      }
+      if (Array.isArray(val)) {
+        return (
+          <div className="space-y-1">
+            {val.map((item, i) => (
+              <div key={i} className="pl-3 border-l-2 border-slate-100 dark:border-slate-800">
+                {renderValue(item)}
+              </div>
+            ))}
+          </div>
+        );
+      }
+      if (typeof val === 'object') {
+        return (
+          <div className="grid grid-cols-1 gap-1">
+            {Object.entries(val).map(([k, v]) => (
+              <div key={k} className="flex flex-col sm:flex-row sm:items-start gap-1 py-1 border-b border-slate-50 dark:border-slate-800/50 last:border-0">
+                <span className="text-[10px] font-black text-slate-400 uppercase min-w-[100px]">{k}</span>
+                <div className="text-xs flex-grow">{renderValue(v)}</div>
+              </div>
+            ))}
+          </div>
+        );
+      }
+      return String(val);
+    };
+
+    return (
+      <div className="space-y-4">
+        {Object.entries(data).map(([key, value]) => (
+          <div key={key} className="bg-white dark:bg-slate-800/30 rounded-xl p-4 border border-slate-100 dark:border-slate-800 shadow-sm">
+            <h5 className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-2">{key}</h5>
+            <div className="text-sm">
+              {renderValue(value)}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   const clearHistory = () => {
     setHistory([]);
     localStorage.removeItem('uniace_api_history');
@@ -190,7 +246,7 @@ export const ApiDebuggerPage = ({ onBack, showToast }: { onBack: () => void, sho
 
   const presets = [
     { name: 'AI Status', method: 'GET', url: '/api/admin/ai-status' },
-    { name: 'System Config', method: 'GET', url: '/api/admin/config' },
+    { name: 'System Config', method: 'GET', url: '/api/admin/system-config' },
     { name: 'Debug Email', method: 'GET', url: '/api/admin/debug-email' },
     { name: 'AI Mode', method: 'GET', url: '/api/admin/ai-mode' },
     { name: 'RAG Content', method: 'GET', url: '/api/admin/rag-content' },
@@ -447,18 +503,38 @@ export const ApiDebuggerPage = ({ onBack, showToast }: { onBack: () => void, sho
               {response ? (
                 <div className="flex-grow flex flex-col space-y-4 overflow-hidden">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Body</span>
+                    <div className="flex items-center gap-4 border-b border-slate-100 dark:border-slate-700 flex-grow">
+                      {(['pretty', 'raw'] as const).map(t => (
+                        <button
+                          key={t}
+                          onClick={() => setActiveResponseTab(t)}
+                          className={`pb-2 text-[10px] font-bold uppercase tracking-widest transition-all relative ${activeResponseTab === t ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400 hover:text-slate-600'}`}
+                        >
+                          {t}
+                          {activeResponseTab === t && <motion.div layoutId="resTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600 dark:bg-indigo-400" />}
+                        </button>
+                      ))}
+                    </div>
                     <button 
                       onClick={() => copyToClipboard(JSON.stringify(response.data, null, 2))}
-                      className="flex items-center gap-1 text-[10px] text-indigo-500 hover:underline font-bold"
+                      className="flex items-center gap-1 text-[10px] text-indigo-500 hover:underline font-bold ml-4"
                     >
                       <Copy size={12} /> Copy JSON
                     </button>
                   </div>
-                  <div className="flex-grow bg-slate-900 rounded-2xl p-4 overflow-auto font-mono text-xs custom-scrollbar">
-                    <pre className="text-emerald-400">
-                      {typeof response.data === 'object' ? JSON.stringify(response.data, null, 2) : response.data}
-                    </pre>
+
+                  <div className="flex-grow overflow-auto custom-scrollbar">
+                    {activeResponseTab === 'pretty' ? (
+                      <div className="p-1">
+                        {renderPrettyResponse(response.data)}
+                      </div>
+                    ) : (
+                      <div className="bg-slate-900 rounded-2xl p-4 font-mono text-xs h-full">
+                        <pre className="text-emerald-400 whitespace-pre-wrap break-all">
+                          {typeof response.data === 'object' ? JSON.stringify(response.data, null, 2) : response.data}
+                        </pre>
+                      </div>
+                    )}
                   </div>
                   
                   <div className="space-y-2">

@@ -1323,6 +1323,47 @@ app.get('/api/admin/ai-status', verifyAuth, async (req, res) => {
   }
 });
 
+// 1.8 System Config Endpoint
+app.get('/api/admin/system-config', verifyAuth, async (req, res) => {
+  try {
+    const uid = (req as any).user.uid;
+    const app = getAdminApp();
+    const userDoc = await app.firestore().collection('users').doc(uid).get();
+    if (userDoc.data()?.role !== 'admin') {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    const config = {
+      environment: process.env.NODE_ENV || 'development',
+      node_version: process.version,
+      platform: process.platform,
+      memory_usage: process.memoryUsage(),
+      uptime: process.uptime(),
+      rate_limits: {
+        standard: '100 requests per 15 minutes',
+        admin: 'Unlimited (with exceptions)',
+        support_emails: ['uniace.support@gmail.com']
+      },
+      active_features: {
+        telemetry: true,
+        circuit_breaker: true,
+        key_rotation: true,
+        caching: true
+      },
+      provider_config: {
+        gemini: { model: 'gemini-3-flash-preview', retry_limit: 3 },
+        groq: { model: 'llama-3.3-70b-versatile', retry_limit: 2 },
+        mistral: { model: 'mistral-large-latest', retry_limit: 2 }
+      }
+    };
+
+    res.json(config);
+  } catch (error) {
+    console.error('System Config Error:', error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
 // Update User Role Endpoint
 app.post('/api/admin/update-user-role', verifyAuth, async (req, res) => {
   try {
