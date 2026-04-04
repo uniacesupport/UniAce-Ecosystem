@@ -1,5 +1,5 @@
 import { db, auth } from '../firebase';
-import { collection, addDoc, serverTimestamp, query, orderBy, limit, getDocs, where, onSnapshot } from 'firebase/firestore';
+import { collection, doc, setDoc, serverTimestamp, query, orderBy, limit, getDocs, where, onSnapshot } from 'firebase/firestore';
 
 export type LogLevel = 'info' | 'warning' | 'error' | 'success';
 export type LogCategory = 'user' | 'admin' | 'system' | 'ai';
@@ -20,7 +20,10 @@ export const LogService = {
     try {
       const user = auth.currentUser;
       if (!user) return; // Only log when authenticated
-      const logEntry: Omit<SystemLog, 'id'> = {
+      
+      const logRef = doc(collection(db, 'system_logs'));
+      const logEntry: SystemLog = {
+        id: logRef.id,
         level,
         category,
         message,
@@ -30,7 +33,7 @@ export const LogService = {
         timestamp: serverTimestamp(),
       };
 
-      await addDoc(collection(db, 'system_logs'), logEntry);
+      await setDoc(logRef, logEntry);
     } catch (error) {
       if (error instanceof Error && error.message.includes('insufficient permissions')) {
         const errInfo = {

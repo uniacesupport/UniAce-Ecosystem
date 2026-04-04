@@ -137,7 +137,7 @@ export class DynamicKeyRotator {
 
   async getNextKey(): Promise<string> {
     await this.fetchKeys();
-    const allKeys = this.dbKeys.length > 0 ? this.dbKeys : this.fallbackKeys;
+    const allKeys = [...this.fallbackKeys, ...this.dbKeys];
     
     // Filter out obvious placeholders
     const activeKeys = allKeys.filter(k => 
@@ -508,7 +508,7 @@ export class GeminiOpenRouterProvider implements ModelProvider {
 
       try {
         const response = await openai.chat.completions.create({
-          model: 'google/gemini-flash-1.5-8b',
+          model: 'google/gemini-2.5-flash',
           messages: messages,
           max_tokens: 8192,
           temperature: 0.5,
@@ -547,7 +547,7 @@ export class GeminiOpenRouterProvider implements ModelProvider {
 
       try {
         const stream = await openai.chat.completions.create({
-          model: 'google/gemini-flash-1.5-8b',
+          model: 'google/gemini-2.5-flash',
           messages: messages,
           max_tokens: 8192,
           temperature: 0.5,
@@ -866,7 +866,7 @@ export class CohereProvider implements ModelProvider {
 
       try {
         const response = await cohere.chat({
-          model: options.complexity === 'high' ? 'command-r-plus' : 'command-r',
+          model: options.complexity === 'high' ? 'command-r-plus-08-2024' : 'command-r',
           message: lastMessage,
           chatHistory: chatHistory as any,
           temperature: 0.5,
@@ -903,7 +903,7 @@ export class CohereProvider implements ModelProvider {
 
       try {
         const stream = await cohere.chatStream({
-          model: options.complexity === 'high' ? 'command-r-plus' : 'command-r',
+          model: options.complexity === 'high' ? 'command-r-plus-08-2024' : 'command-r',
           message: lastMessage,
           chatHistory: chatHistory as any,
           temperature: 0.5,

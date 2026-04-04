@@ -25,7 +25,7 @@ import { PipelineMetadata } from '../types';
 const getAuthToken = async () => {
   try {
     const { auth } = await import('../firebase');
-    return await auth?.currentUser?.getIdToken();
+    return await auth?.currentUser?.getIdToken(true);
   } catch (e) {
     return null;
   }
