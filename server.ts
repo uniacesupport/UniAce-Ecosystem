@@ -1881,7 +1881,7 @@ app.post('/api/course/generate', verifyAuth, async (req, res) => {
     const cohereBreaker = globalCohereBreaker;
     const huggingFaceBreaker = globalHuggingFaceBreaker;
 
-    const routingDoc = await appAdmin.firestore().collection('system_config').doc('routing').get();
+    const routingDoc = await app.firestore().collection('system_config').doc('routing').get();
     const routingConfig = routingDoc.data() || {};
     
     const TASK_ROUTING_TABLE: Record<string, { primary: string, fallbacks: string[] }> = {

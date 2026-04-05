@@ -27,7 +27,7 @@ export const LogService = {
         level,
         category,
         message,
-        details: details || null,
+        details: details ? JSON.parse(JSON.stringify(details)) : null,
         userId: user.uid,
         userEmail: user.email || 'anonymous',
         timestamp: serverTimestamp(),
