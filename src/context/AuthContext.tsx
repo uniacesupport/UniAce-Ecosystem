@@ -196,7 +196,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.error("Error updating user active status:", err);
       }
 
-      LogService.log('info', 'user', `User logged in: ${profileData.displayName}`, { uid: profileData.uid, email: profileData.email });
+      LogService.log('info', 'user', `User logged in: ${profileData.displayName}`, { uid: profileData.uid, email: profileData.email }).catch(console.error);
 
       setProfile(profileData);
       console.log("AuthContext: Profile synced successfully");
@@ -394,7 +394,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const userEmail = user?.email;
       const userDisplayName = profile?.displayName;
       await signOut(auth);
-      LogService.log('info', 'user', `User logged out: ${userDisplayName || userEmail || 'Unknown'}`);
+      LogService.log('info', 'user', `User logged out: ${userDisplayName || userEmail || 'Unknown'}`).catch(console.error);
     } catch (error) {
       console.error("Error signing out", error);
     }

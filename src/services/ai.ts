@@ -519,7 +519,7 @@ MATH & EQUATIONS:
       }
     ]`;
 
-    const response = await callAI(prompt, undefined, 'json', 2500, 'quiz');
+    const response = await callAI(prompt, undefined, 'json', 2500, 'quiz', 'quiz');
     try {
       const data = extractJSON(response.text || "[]");
       const questions = ensureArray(data);
@@ -563,7 +563,7 @@ MATH & EQUATIONS:
       "hint": "string"
     }`;
 
-    const response = await callAI(prompt, undefined, 'json', 1000, 'quiz');
+    const response = await callAI(prompt, undefined, 'json', 1000, 'quiz', 'quiz');
     try {
       const q = extractJSON(response.text || "{}");
       return {
@@ -586,7 +586,7 @@ MATH & EQUATIONS:
     Provide a "progressive hint" that guides them one step closer to the solution without revealing the answer. 
     Focus on the logic or a specific formula they should use. Be encouraging.`;
 
-    const response = await callAI(prompt);
+    const response = await callAI(prompt, undefined, undefined, undefined, 'standard', 'chat');
     return response.text || "Try breaking the problem into smaller parts.";
   },
 
@@ -616,7 +616,7 @@ MATH & EQUATIONS:
       "subTopicId": "${subTopic ? subTopic.id : ''}"
     }`;
 
-    const response = await callAI(prompt, undefined, 'json', 2000, 'quiz');
+    const response = await callAI(prompt, undefined, 'json', 2000, 'standard', 'flashcard');
     try {
       const data = extractJSON(response.text || "[]");
       const cards = ensureArray(data);
@@ -667,7 +667,7 @@ MATH & EQUATIONS:
       "type": "review" | "new" | "mastery"
     }`;
 
-    const response = await callAI(prompt, undefined, 'json', undefined, 'quiz');
+    const response = await callAI(prompt, undefined, 'json', undefined, 'standard', 'recommendation');
     try {
       return extractJSON(response.text || "null");
     } catch (e) {
@@ -731,7 +731,7 @@ MATH & EQUATIONS:
       "weakestArea": "The topic they need to focus on most to improve their chances."
     }`;
 
-    const response = await callAI(prompt, undefined, 'json', undefined, 'quiz');
+    const response = await callAI(prompt, undefined, 'json', undefined, 'standard', 'recommendation');
     try {
       return extractJSON(response.text || "null");
     } catch (e) {
@@ -758,7 +758,7 @@ MATH & EQUATIONS:
     
     Output ONLY the markdown content. Do not include any other text or conversational filler.`;
 
-    const response = await callAI(prompt, undefined, undefined, 4000);
+    const response = await callAI(prompt, undefined, undefined, 4000, 'high', 'lesson');
     return sanitizeLatex(response.text || "Failed to generate lesson content.");
   },
 
@@ -813,7 +813,7 @@ MATH & EQUATIONS:
       "tips": ["Tip 1", "Tip 2"]
     }`;
 
-    const response = await callAI(prompt, undefined, 'json', undefined, 'quiz');
+    const response = await callAI(prompt, undefined, 'json', undefined, 'standard', 'recommendation');
     try {
       return extractJSON(response.text || "null");
     } catch (e) {

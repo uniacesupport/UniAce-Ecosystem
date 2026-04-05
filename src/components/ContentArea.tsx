@@ -200,7 +200,7 @@ export default function ContentArea({
         courseTitle,
         module.title,
         activeSubTopic.title,
-        'mistral',
+        undefined,
         profile?.academic_level,
         profile?.department
       );

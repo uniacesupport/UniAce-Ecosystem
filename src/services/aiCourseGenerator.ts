@@ -48,10 +48,6 @@ export function sanitizeLatex(content: string): string {
   // Most common: \\frac -> \frac
   sanitized = sanitized.replace(/\\\\([a-zA-Z]+)/g, '\\$1');
 
-  // 4. Ensure math blocks have newlines around them for better rendering
-  // But only if they are not already surrounded by newlines
-  sanitized = sanitized.replace(/([^\n])\n?\$\$\n?([^\$]+)\n?\$\$([^\n])/g, '$1\n\n$$\n$2\n$$\n\n$3');
-
   return sanitized;
 }
 
@@ -195,7 +191,7 @@ async function callGenerateAPI(prompt: string, type: 'skeleton' | 'module' | 'le
 export async function generateCourseFormulas(
   courseName: string,
   courseDescription: string,
-  provider: string = 'mistral'
+  provider?: string
 ): Promise<any> {
   const formulaPrompt = `
     You are an expert university professor. Generate a comprehensive list of essential formulas, equations, and theorems for the following course, ensuring they meet the NUC (National Universities Commission) curriculum standards, or dynamically adapt to the most relevant global academic benchmarks for this subject.
@@ -239,7 +235,7 @@ export async function generateCourseSkeleton(
   courseName: string, 
   courseDescription: string, 
   outline?: string,
-  provider: string = 'mistral',
+  provider?: string,
   existingModuleTitles: string[] = [],
   level?: string,
   semester?: string,
@@ -369,7 +365,7 @@ export async function generateLessonContent(
   courseName: string,
   moduleTitle: string,
   lessonTitle: string,
-  provider: string = 'mistral',
+  provider?: string,
   level?: string,
   department?: string
 ): Promise<{ title: string, content: string, metadata: PipelineMetadata }> {
@@ -420,7 +416,7 @@ export async function generateModuleQuiz(
   courseName: string,
   moduleTitle: string,
   quizTopics: string[],
-  provider: string = 'groq',
+  provider?: string,
   level?: string,
   department?: string
 ): Promise<any> {
@@ -499,7 +495,7 @@ export async function generateModuleQuiz(
 export async function generateModuleContent(
   courseName: string,
   moduleSkeleton: any,
-  provider: string = 'mistral',
+  provider?: string,
   onProgress?: (message: string) => void,
   checkCancelled?: () => boolean
 ): Promise<any> {
@@ -528,7 +524,7 @@ export async function generateCourseContent(
   courseName: string, 
   courseDescription: string, 
   outline?: string,
-  provider: string = 'mistral',
+  provider?: string,
   onProgress?: (progress: number, message: string) => void
 ): Promise<GeneratedCourse> {
   

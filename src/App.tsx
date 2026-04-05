@@ -403,7 +403,7 @@ function AppContent() {
               try {
                 // 1. Generate full skeleton (10 modules)
                 const existingTitlesForAI = syllabus.map(m => m.title);
-                const fullSkeleton = await generateCourseSkeleton(activeCourse.title, activeCourse.description, undefined, 'mistral', existingTitlesForAI);
+                const fullSkeleton = await generateCourseSkeleton(activeCourse.title, activeCourse.description, undefined, undefined, existingTitlesForAI);
                 setRegenerationProgress(15);
                 
                 // 2. Identify tasks: New modules or Repairs
@@ -449,7 +449,7 @@ function AppContent() {
                     const isNew = task.type === 'new';
                     setRegenerationStatus(`${isNew ? 'Generating' : 'Repairing'}: ${task.skeleton.title}`);
                     
-                    const regeneratedModule = await generateModuleContent(activeCourse.title, task.skeleton, 'gemini', (msg) => console.log(msg));
+                    const regeneratedModule = await generateModuleContent(activeCourse.title, task.skeleton, undefined, (msg) => console.log(msg));
                     
                     if (isNew) {
                       // Add new module document with a fresh ID

@@ -234,7 +234,7 @@ export function useUserProgress() {
             ai_sparks: increment(totalSparksReward)
           });
           import('../services/logService').then(({ LogService }) => {
-            LogService.log('success', 'user', `Awarded ${totalSparksReward} AI Sparks for unlocking badges!`);
+            LogService.log('success', 'user', `Awarded ${totalSparksReward} AI Sparks for unlocking badges!`).catch(console.error);
           });
         } catch (err) {
           console.error("Error awarding sparks:", err);
@@ -316,7 +316,7 @@ export function useUserProgress() {
       if (score > currentMastery) {
         // Log mastery improvement
         import('../services/logService').then(({ LogService }) => {
-          LogService.log('success', 'user', `Improved mastery for ${topicId}: ${currentMastery}% -> ${score}%`);
+          LogService.log('success', 'user', `Improved mastery for ${topicId}: ${currentMastery}% -> ${score}%`).catch(console.error);
         });
       }
 
@@ -397,7 +397,7 @@ export function useUserProgress() {
       
       // Log enrollment
       import('../services/logService').then(({ LogService }) => {
-        LogService.log('info', 'user', `Enrolled in course: ${courseTitle || courseId}`);
+        LogService.log('info', 'user', `Enrolled in course: ${courseTitle || courseId}`).catch(console.error);
       });
 
       return {
@@ -435,7 +435,7 @@ export function useUserProgress() {
       
       // Log unenrollment
       import('../services/logService').then(({ LogService }) => {
-        LogService.log('info', 'user', `Unenrolled from course: ${courseId}`);
+        LogService.log('info', 'user', `Unenrolled from course: ${courseId}`).catch(console.error);
       });
 
       return {

@@ -153,8 +153,11 @@ export default function AdminDashboard() {
   const [routingConfig, setRoutingConfig] = useState({
     chat: 'groq',
     quiz: 'groq',
-    lesson: 'mistral_direct',
-    rag: 'gemini_direct',
+    lesson: 'gemini_openrouter',
+    skeleton: 'cohere',
+    recommendation: 'cohere',
+    flashcard: 'huggingface',
+    rag: 'gemini_openrouter',
     vision: 'gemini_direct',
     past_questions: 'gemini_direct'
   });
@@ -392,7 +395,7 @@ export default function AdminDashboard() {
       const docRef = doc(db, 'system_config', 'routing');
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
-        setRoutingConfig(docSnap.data() as any);
+        setRoutingConfig(prev => ({ ...prev, ...docSnap.data() }));
       }
     } catch (error) {
       console.error("Error fetching routing config:", error);
@@ -3930,10 +3933,13 @@ export default function AdminDashboard() {
                 {[
                   { id: 'chat', label: 'Student Chat (Q&A)', icon: Bot, recommended: 'groq', desc: 'Real-time conversational assistance.' },
                   { id: 'quiz', label: 'Quiz Generation', icon: Trophy, recommended: 'groq', desc: 'Creating assessments and practice questions.' },
-                  { id: 'lesson', label: 'Lesson Content', icon: BookOpen, recommended: 'mistral', desc: 'Writing detailed educational modules.' },
-                  { id: 'rag', label: 'Knowledge Retrieval', icon: Database, recommended: 'gemini', desc: 'Searching and summarizing internal documents.' },
-                  { id: 'vision', label: 'Vision Processing', icon: Search, recommended: 'gemini', desc: 'Analyzing images and handwritten notes.' },
-                  { id: 'past_questions', label: 'Past Questions Extraction', icon: FileText, recommended: 'gemini', desc: 'Extracting questions from uploaded PDFs.' }
+                  { id: 'lesson', label: 'Lesson Content', icon: BookOpen, recommended: 'mistral_openrouter', desc: 'Writing detailed educational modules.' },
+                  { id: 'skeleton', label: 'Course Skeletons', icon: Layers, recommended: 'cohere', desc: 'Structuring curriculum outlines and hierarchies.' },
+                  { id: 'recommendation', label: 'Smart Recommendations', icon: Star, recommended: 'cohere', desc: 'Analyzing student data for study plans.' },
+                  { id: 'flashcard', label: 'Flashcard Generation', icon: FileText, recommended: 'huggingface', desc: 'Fast, repetitive text extraction for study aids.' },
+                  { id: 'rag', label: 'Knowledge Retrieval', icon: Database, recommended: 'gemini_openrouter', desc: 'Searching and summarizing internal documents.' },
+                  { id: 'vision', label: 'Vision Processing', icon: Search, recommended: 'gemini_direct', desc: 'Analyzing images and handwritten notes.' },
+                  { id: 'past_questions', label: 'Past Questions Extraction', icon: FileText, recommended: 'gemini_direct', desc: 'Extracting questions from uploaded PDFs.' }
                 ].map((task) => (
                   <div key={task.id} className="flex flex-col md:flex-row md:items-center justify-between p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 gap-4">
                     <div className="flex items-center gap-4">
