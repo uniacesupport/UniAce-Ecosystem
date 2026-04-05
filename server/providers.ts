@@ -65,7 +65,7 @@ async function retry<T>(fn: () => Promise<T>, providerName: string, retries = 3,
   try {
     return await fn();
   } catch (error: any) {
-    const statusCode = error.statusCode || (error.message?.match(/\b(\d{3})\b/)?.[1] ? parseInt(error.message.match(/\b(\d{3})\b/)[1]) : undefined);
+    const statusCode = error.statusCode || error.status || (error.message?.match(/\b(\d{3})\b/)?.[1] ? parseInt(error.message.match(/\b(\d{3})\b/)[1]) : undefined);
     
     // Non-retryable errors
     const isUnauthorized = statusCode === 401 || 
@@ -288,29 +288,37 @@ export class GeminiDirectProvider implements ModelProvider {
         this.ensureJsonInMessages(messages);
       }
 
-      const model = ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents,
-        config: {
-          systemInstruction,
-          responseMimeType: options.jsonMode ? "application/json" : "text/plain",
-          temperature: 0.5,
-          maxOutputTokens: 8192,
+      try {
+        const model = ai.models.generateContent({
+          model: "gemini-3-flash-preview",
+          contents,
+          config: {
+            systemInstruction,
+            responseMimeType: options.jsonMode ? "application/json" : "text/plain",
+            temperature: 0.5,
+            maxOutputTokens: 8192,
+          }
+        });
+
+        const response = await model;
+        if (!response.text) throw new Error('Empty response from Gemini');
+
+        return {
+          text: response.text,
+          usage: {
+            promptTokens: response.usageMetadata?.promptTokenCount || 0,
+            completionTokens: response.usageMetadata?.candidatesTokenCount || 0,
+            totalTokens: response.usageMetadata?.totalTokenCount || 0
+          },
+          finishReason: 'stop'
+        };
+      } catch (error: any) {
+        const status = error.status || error.statusCode;
+        if (status === 401 || status === 403 || status === 429) {
+          this.rotator.markKeyExhausted(apiKey);
         }
-      });
-
-      const response = await model;
-      if (!response.text) throw new Error('Empty response from Gemini');
-
-      return {
-        text: response.text,
-        usage: {
-          promptTokens: response.usageMetadata?.promptTokenCount || 0,
-          completionTokens: response.usageMetadata?.candidatesTokenCount || 0,
-          totalTokens: response.usageMetadata?.totalTokenCount || 0
-        },
-        finishReason: 'stop'
-      };
+        throw error;
+      }
     }, 'GeminiDirect');
   }
 
@@ -320,30 +328,38 @@ export class GeminiDirectProvider implements ModelProvider {
       const ai = new GoogleGenAI({ apiKey });
       const { contents, systemInstruction } = this.transformMessagesToGemini(messages);
 
-      const result = await ai.models.generateContentStream({
-        model: "gemini-3-flash-preview",
-        contents,
-        config: {
-          systemInstruction,
-          temperature: 0.5,
-          maxOutputTokens: 8192,
-        }
-      });
+      try {
+        const result = await ai.models.generateContentStream({
+          model: "gemini-3-flash-preview",
+          contents,
+          config: {
+            systemInstruction,
+            temperature: 0.5,
+            maxOutputTokens: 8192,
+          }
+        });
 
-      let fullText = '';
-      for await (const chunk of result) {
-        const text = chunk.text;
-        if (text) {
-          fullText += text;
-          onChunk(text);
+        let fullText = '';
+        for await (const chunk of result) {
+          const text = chunk.text;
+          if (text) {
+            fullText += text;
+            onChunk(text);
+          }
         }
+
+        return {
+          text: fullText,
+          usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+          finishReason: 'stop'
+        };
+      } catch (error: any) {
+        const status = error.status || error.statusCode;
+        if (status === 401 || status === 403 || status === 429) {
+          this.rotator.markKeyExhausted(apiKey);
+        }
+        throw error;
       }
-
-      return {
-        text: fullText,
-        usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
-        finishReason: 'stop'
-      };
     }, 'GeminiDirect');
   }
 }
@@ -950,7 +966,9 @@ export class HuggingFaceProvider implements ModelProvider {
           model: 'mistralai/Mistral-7B-Instruct-v0.3',
           messages: messages,
           max_tokens: 4096,
-          temperature: 0.5
+          temperature: 0.5,
+          // @ts-ignore - wait_for_model is supported by the API to handle model loading
+          wait_for_model: true
         });
 
         return {
@@ -963,7 +981,8 @@ export class HuggingFaceProvider implements ModelProvider {
           finishReason: response.choices[0]?.finish_reason || 'stop'
         };
       } catch (error: any) {
-        if (error.status === 401 || error.status === 403 || error.status === 429) {
+        const status = error.status || error.statusCode;
+        if (status === 401 || status === 403 || status === 429) {
           this.rotator.markKeyExhausted(apiKey);
         }
         throw error;
@@ -981,7 +1000,9 @@ export class HuggingFaceProvider implements ModelProvider {
           model: 'mistralai/Mistral-7B-Instruct-v0.3',
           messages: messages,
           max_tokens: 4096,
-          temperature: 0.5
+          temperature: 0.5,
+          // @ts-ignore
+          wait_for_model: true
         });
 
         let fullText = '';
@@ -999,7 +1020,8 @@ export class HuggingFaceProvider implements ModelProvider {
           finishReason: 'stop'
         };
       } catch (error: any) {
-        if (error.status === 401 || error.status === 403 || error.status === 429) {
+        const status = error.status || error.statusCode;
+        if (status === 401 || status === 403 || status === 429) {
           this.rotator.markKeyExhausted(apiKey);
         }
         throw error;

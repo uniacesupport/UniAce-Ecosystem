@@ -48,6 +48,21 @@ export function sanitizeLatex(content: string): string {
   // Most common: \\frac -> \frac
   sanitized = sanitized.replace(/\\\\([a-zA-Z]+)/g, '\\$1');
 
+  // 4. Fix carriage return issues specifically for LaTeX macros like \right
+  // If \r was interpreted as a carriage return, it will be a raw \r character (0x0D)
+  // We want to turn it back into \right if it's followed by "ight"
+  sanitized = sanitized.replace(/\r(ight|eft|ho|ho|ho)/g, '\\$1');
+  
+  // 5. General cleanup for common escape characters that break LaTeX
+  // These are often introduced during JSON parsing/repairing
+  sanitized = sanitized.replace(/\r/g, ' '); // Replace remaining carriage returns with space
+  sanitized = sanitized.replace(/\t/g, ' '); // Replace tabs with space
+  
+  // 6. Fix literal \n and \t strings (backslash + n/t) that should be actual characters
+  // This happens when AI double-escapes or when JSON parsing preserves the escape
+  sanitized = sanitized.replace(/\\n/g, '\n');
+  sanitized = sanitized.replace(/\\t/g, '\t');
+
   return sanitized;
 }
 
@@ -218,7 +233,7 @@ export async function generateCourseFormulas(
       ]
     }
     CRITICAL: Do NOT wrap the JSON in markdown blocks. Output raw JSON only.
-    CRITICAL: Escape all backslashes in LaTeX strings (e.g., "\\\\frac{a}{b}").
+    CRITICAL: You are outputting data to a JSON parser. You MUST double-escape all LaTeX commands. For example, output \\\\frac instead of \\frac, and \\\\right) instead of \\right).
     CRITICAL: Ensure all double quotes inside strings are properly escaped (e.g., \\"word\\").
   `;
 
@@ -240,7 +255,10 @@ export async function generateCourseSkeleton(
   level?: string,
   semester?: string,
   department?: string,
-  ccmasCore?: any // New parameter for the 70% core
+  ccmasCore?: any, // New parameter for the 70% core
+  tone: string = 'academic',
+  depth: string = 'standard',
+  sourceContext?: string
 ): Promise<any> {
   // Robust regex to detect if the target is a specific course code (e.g., MAT 101, PHY102, GNS 111)
   const isCourseCode = courseName.trim().match(/^[A-Z]{2,4}\s?\d{3}[A-Z]?$/i);
@@ -269,13 +287,17 @@ export async function generateCourseSkeleton(
     CRITICAL: You MUST use a "Hybrid Approach" to ensure the course is both exam-relevant and deeply educational:
     1. Structure: Strictly follow the NUC (National Universities Commission) curriculum outline (weeks, topics order, what to cover) to ensure exam readiness.
     2. Depth: Use international-style depth for the content breakdown (step-by-step teaching, more examples, better breakdowns) to ensure true understanding.
+    3. Pedagogical Framework: Apply Bloom's Taxonomy. Ensure the progression moves from "Remembering" to "Creating".
     
     Target: ${courseName}
     Description: ${courseDescription}
+    Tone: ${tone} (e.g., academic, engaging, technical)
+    Depth: ${depth} (e.g., introductory, standard, deep-dive)
     ${level ? `Level: ${level}` : ''}
     ${semester ? `Semester: ${semester}` : ''}
     ${department ? `Department: ${department}` : ''}
     ${outline ? `Course Outline / Syllabus:\n${outline}` : ''}
+    ${sourceContext ? `Source Context (Prioritize this information for the structure):\n${sourceContext}` : ''}
     ${existingModuleTitles.length > 0 ? `Current Existing Modules: ${existingModuleTitles.join(', ')}` : ''}
     
     The output must be a detailed JSON object containing:
@@ -285,6 +307,7 @@ export async function generateCourseSkeleton(
     4. Each module should have a list of topics that will be covered in the quiz.
     
     CRITICAL: You must return ONLY valid JSON.
+    CRITICAL: You are outputting data to a JSON parser. You MUST double-escape all LaTeX commands (e.g., \\\\frac, \\\\right).
     CRITICAL: Ensure all double quotes inside strings are properly escaped (e.g., \\"word\\").
     CRITICAL: If generating electives for a curriculum, ensure they do not overlap with the core courses: ${ccmasCore?.coreCourses.map((c: any) => c.code).join(', ') || 'None'}.
     CRITICAL: Ensure the curriculum is robust, academically rigorous, and follows the Hybrid Approach (NUC structure + International depth).
@@ -367,7 +390,10 @@ export async function generateLessonContent(
   lessonTitle: string,
   provider?: string,
   level?: string,
-  department?: string
+  department?: string,
+  tone: string = 'academic',
+  depth: string = 'standard',
+  sourceContext?: string
 ): Promise<{ title: string, content: string, metadata: PipelineMetadata }> {
   const lessonPrompt = `
     You are an expert university professor. Generate a detailed, exhaustive lecture note for ONE specific lesson.
@@ -375,23 +401,31 @@ export async function generateLessonContent(
     CRITICAL: You MUST use the "Hybrid Approach" to ensure the content is deeply educational:
     1. Structure: Follow the NUC curriculum outline for the topic.
     2. Depth: Use international-style depth (step-by-step teaching, more examples, better breakdowns) to ensure true understanding.
+    3. Pedagogical Framework: Apply Bloom's Taxonomy. Every lesson MUST include:
+       - Learning Objectives (What will the student know?)
+       - Key Vocabulary (Definitions of core terms)
+       - Active Learning (3 "Quick Check" questions at the end of the lesson).
     
     Course: ${courseName}
     Module: ${moduleTitle}
     Lesson: ${lessonTitle}
+    Tone: ${tone}
+    Depth: ${depth}
     ${level ? `Level: ${level}` : ''}
     ${department ? `Department: ${department}` : ''}
+    ${sourceContext ? `Source Context (Prioritize this information):\n${sourceContext}` : ''}
     
     Requirements:
     1. Write a CONCISE, high-impact, university-level lecture note in Markdown format.
-    2. Target length: 600-900 words. Focus on core concepts, key derivations, and practical examples. Avoid unnecessary filler content.
-    3. Use a professional, academic tone suitable for a top-tier university.
+    2. Target length: 800-1200 words. Focus on core concepts, key derivations, and practical examples.
+    3. Use a professional, academic tone suitable for a top-tier university, but adapted to the requested Tone: ${tone}.
     4. Ensure all concepts are explained clearly and logically, using step-by-step breakdowns and multiple examples to ensure deep understanding.
     5. Use LaTeX for ALL mathematical equations, variables, and scientific notation.
-    6. CRITICAL: Use $ ... $ for inline math and $$ ... $$ for block math. Ensure LaTeX commands are properly formatted (e.g., use \\frac{a}{b} not frac{a}{b}).
+    6. CRITICAL: Use $ ... $ for inline math and $$ ... $$ for block math. Ensure LaTeX commands are properly formatted (e.g., use \\\\frac{a}{b} not frac{a}{b}).
+    CRITICAL: You are outputting data to a JSON parser. You MUST double-escape all LaTeX commands. For example, output \\\\frac instead of \\frac, and \\\\right) instead of \\right).
     7. CRITICAL: Output ONLY valid JSON matching this structure:
     {
-      "content": "The raw markdown content...",
+      "content": "The raw markdown content including Learning Objectives, Key Vocabulary, Body, and Quick Check questions...",
       "metadata": {
         "hasMath": boolean,
         "hasCode": boolean
@@ -401,7 +435,7 @@ export async function generateLessonContent(
     CRITICAL: Ensure all double quotes inside the "content" string are properly escaped (e.g., \\"word\\").
     8. CRITICAL: Ensure the lesson is COMPLETE and does not cut off abruptly. Provide a clear conclusion or summary at the end.
     9. CRITICAL: The content must be academically rigorous and align with the Hybrid Approach (NUC structure + International depth).
-    10. CRITICAL: Calibrate the depth and complexity to the student's level (${level || 'University Level'}).
+    10. CRITICAL: Calibrate the depth and complexity to the student's level (${level || 'University Level'}) and requested Depth: ${depth}.
   `;
 
   const result = await callGenerateAPI(lessonPrompt, 'lesson', provider);
@@ -442,6 +476,7 @@ export async function generateModuleQuiz(
     6. CRITICAL: Do NOT include any conversational text, self-corrections, or "thinking out loud" inside the JSON fields. 
     7. CRITICAL: The "explanation" field must provide a detailed academic justification for the correct answer and why other options are incorrect.
     8. CRITICAL: Ensure all double quotes inside strings are properly escaped (e.g., \\"word\\").
+    CRITICAL: You are outputting data to a JSON parser. You MUST double-escape all LaTeX commands (e.g., \\\\frac, \\\\right).
     9. CRITICAL: For LaTeX in JSON strings, use double backslashes (e.g., "\\\\mathbf"). Do NOT use triple backslashes.
     10. CRITICAL: Ensure the quiz meets the academic standards set by NUC or relevant global guidelines, following the Hybrid Approach.
     11. Return ONLY valid JSON:
@@ -497,7 +532,10 @@ export async function generateModuleContent(
   moduleSkeleton: any,
   provider?: string,
   onProgress?: (message: string) => void,
-  checkCancelled?: () => boolean
+  checkCancelled?: () => boolean,
+  tone: string = 'academic',
+  depth: string = 'standard',
+  sourceContext?: string
 ): Promise<any> {
   if (onProgress) onProgress(`Generating Module: ${moduleSkeleton.title}...`);
 
@@ -505,7 +543,7 @@ export async function generateModuleContent(
   for (const lessonTitle of moduleSkeleton.lessonTitles) {
     if (checkCancelled && checkCancelled()) throw new Error('Generation cancelled by user.');
     if (onProgress) onProgress(`Generating Lesson: ${lessonTitle}...`);
-    const lesson = await generateLessonContent(courseName, moduleSkeleton.title, lessonTitle, provider);
+    const lesson = await generateLessonContent(courseName, moduleSkeleton.title, lessonTitle, provider, undefined, undefined, tone, depth, sourceContext);
     lessons.push(lesson);
   }
 
@@ -525,12 +563,15 @@ export async function generateCourseContent(
   courseDescription: string, 
   outline?: string,
   provider?: string,
-  onProgress?: (progress: number, message: string) => void
+  onProgress?: (progress: number, message: string) => void,
+  tone: string = 'academic',
+  depth: string = 'standard',
+  sourceContext?: string
 ): Promise<GeneratedCourse> {
   
   if (onProgress) onProgress(10, "Generating course skeleton...");
 
-  const skeleton = await generateCourseSkeleton(courseName, courseDescription, outline, provider);
+  const skeleton = await generateCourseSkeleton(courseName, courseDescription, outline, provider, [], undefined, undefined, undefined, undefined, tone, depth, sourceContext);
   
   if (!skeleton || !skeleton.modules || !Array.isArray(skeleton.modules)) {
     throw new Error("Failed to generate a valid course skeleton.");
@@ -555,7 +596,7 @@ export async function generateCourseContent(
 
     try {
       const chunkPromises = chunk.map(async (moduleSkeleton: any, idx: number) => {
-        const moduleContent = await generateModuleContent(courseName, moduleSkeleton, provider, undefined, () => false);
+        const moduleContent = await generateModuleContent(courseName, moduleSkeleton, provider, undefined, () => false, tone, depth, sourceContext);
         return { index: i + idx, content: moduleContent };
       });
 

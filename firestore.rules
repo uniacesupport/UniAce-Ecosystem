@@ -265,8 +265,7 @@ service cloud.firestore {
 
     match /system_logs/{logId} {
       allow read: if isAdmin();
-      allow create: if isAuthenticated();
-      allow update, delete: if false;
+      allow create, update, delete: if false;
     }
 
     match /knowledge_base/{docId} {

@@ -24,15 +24,16 @@ export default function CourseCreateModal({ onClose, onSave }: CourseCreateModal
   const [isSaving, setIsSaving] = useState(false);
 
   const handleSave = async () => {
-    if (!id || !title) {
+    const sanitizedId = id.replace(/\s+/g, '').toUpperCase();
+    if (!sanitizedId || !title) {
       alert("Please provide at least a Course ID and Title.");
       return;
     }
     setIsSaving(true);
     try {
-      const courseRef = doc(db, 'courses', id);
+      const courseRef = doc(db, 'courses', sanitizedId);
       await setDoc(courseRef, {
-        id,
+        id: sanitizedId,
         title,
         description,
         department,

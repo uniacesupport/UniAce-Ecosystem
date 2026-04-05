@@ -219,6 +219,7 @@ FORMATTING RULES:
 - Use Markdown ONLY when it improves readability.
 - ALWAYS use LaTeX for ALL mathematical expressions and variables (e.g., $x$). 
 - Use $ ... $ for inline math and $$ ... $$ for block math.
+- CRITICAL: You are outputting data to a JSON parser. You MUST double-escape all LaTeX commands. For example, output \\\\frac instead of \\frac, and \\\\right) instead of \\right).
 - Avoid long dense paragraphs.
 
 ENGAGEMENT RULE:
@@ -499,7 +500,8 @@ MATH & EQUATIONS:
     Ensure questions are technically accurate and mathematically rigorous for the given subject (Math, Physics, Zoology, GST, etc.).
     CRITICAL: Calibrate the difficulty and complexity to the student's level (${level || 'University Level'}).
     Include mathematical formulas in LaTeX format.
-    IMPORTANT: You are generating a JSON string. Use $ for inline LaTeX (e.g., $x$) and $$ for block LaTeX (e.g., $$x^2$$). For any LaTeX commands that use a backslash (e.g., \\mathbf), you MUST output them with double backslashes (e.g., \\\\mathbf).
+    IMPORTANT: You are generating a JSON string. Use $ for inline LaTeX (e.g., $x$) and $$ for block LaTeX (e.g., $$x^2$$). For any LaTeX commands that use a backslash (e.g., \\\\mathbf), you MUST output them with double backslashes (e.g., \\\\\\\\mathbf).
+    CRITICAL: You are outputting data to a JSON parser. You MUST double-escape all LaTeX commands. For example, output \\\\frac instead of \\frac, and \\\\right) instead of \\right).
     For multiple-choice, provide 4 options.
     For fill-in-the-blank, provide the exact correct string.
     Also provide a short "hint" for each question that guides the user without giving the answer.
@@ -551,7 +553,8 @@ MATH & EQUATIONS:
     CRITICAL: Calibrate the difficulty and complexity to the student's level (${level || 'University Level'}).
     Provide 4 options, the correct answer, and a short, helpful explanation.
     Return the response as a VALID JSON object.
-    IMPORTANT: You are generating a JSON string. Use $ for inline LaTeX (e.g., $x$) and $$ for block LaTeX (e.g., $$x^2$$). For any LaTeX commands that use a backslash (e.g., \\mathbf), you MUST output them with double backslashes (e.g., \\\\mathbf).
+    IMPORTANT: You are generating a JSON string. Use $ for inline LaTeX (e.g., $x$) and $$ for block LaTeX (e.g., $$x^2$$). For any LaTeX commands that use a backslash (e.g., \\\\mathbf), you MUST output them with double backslashes (e.g., \\\\\\\\mathbf).
+    CRITICAL: You are outputting data to a JSON parser. You MUST double-escape all LaTeX commands (e.g., \\\\frac, \\\\right).
     Structure:
     {
       "id": "quick-check-${subTopic.id}",
@@ -606,7 +609,8 @@ MATH & EQUATIONS:
     The "front" should be a clear, concise question, concept name, or formula prompt.
     The "back" should be the precise answer, definition, or formula.
     Use LaTeX formatting for mathematical expressions. 
-    IMPORTANT: Wrap all LaTeX expressions in $ for inline math (e.g., $E=mc^2$) or $$ for block math (e.g., $$ \\vec{v}_1 $$).
+    IMPORTANT: Wrap all LaTeX expressions in $ for inline math (e.g., $E=mc^2$) or $$ for block math (e.g., $$ \\\\vec{v}_1 $$).
+    CRITICAL: You are outputting data to a JSON parser. You MUST double-escape all LaTeX commands (e.g., \\\\frac, \\\\right).
     Return the response as a JSON array of objects with the following structure:
     {
       "id": "string (unique identifier)",
@@ -751,6 +755,7 @@ MATH & EQUATIONS:
     1. DO NOT SUMMARIZE. Provide the full depth expected in a 2-hour university lecture.
     2. Use Markdown for structure (headings, sub-headings, lists, bold text).
     3. Use LaTeX for ALL mathematical formulas and variables (e.g., $E=mc^2$). Ensure all derivations are shown step-by-step.
+    CRITICAL: You are outputting data to a JSON parser. You MUST double-escape all LaTeX commands (e.g., \\\\frac, \\\\right).
     4. The content MUST be approximately 1500-2500 words. Be extremely detailed.
     5. Include historical context, theoretical foundations, complex examples, and modern real-world applications.
     6. Include a "Deep Dive" section for advanced concepts related to the topic.

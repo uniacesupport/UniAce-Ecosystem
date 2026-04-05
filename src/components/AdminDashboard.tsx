@@ -10,7 +10,6 @@ import { useAuth } from '../context/AuthContext';
 import { db, storage, auth } from '../firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { doc, setDoc, getDoc, collection, getDocs, deleteDoc, query, where, limit, writeBatch, serverTimestamp, orderBy, addDoc } from 'firebase/firestore';
-import AdminSeeder from './AdminSeeder';
 import AdminQuestionBank from './AdminQuestionBank';
 import { ApiDebuggerPage } from './ApiDebuggerPage';
 import CourseEditModal from './CourseEditModal';
@@ -139,14 +138,14 @@ export default function AdminDashboard() {
     averageMastery: 0,
     popularCourse: 'N/A'
   });
-  const [aiProviderStatus, setAiProviderStatus] = useState({
-    gemini_direct: false,
-    gemini_openrouter: false,
-    groq: false,
-    mistral_direct: false,
-    mistral_openrouter: false,
-    cohere: false,
-    huggingface: false
+  const [aiProviderStatus, setAiProviderStatus] = useState<Record<string, { active: boolean; totalKeys: number; exhaustedKeys: number; usingEnv: boolean; usingDb: boolean }>>({
+    gemini_direct: { active: false, totalKeys: 0, exhaustedKeys: 0, usingEnv: false, usingDb: false },
+    gemini_openrouter: { active: false, totalKeys: 0, exhaustedKeys: 0, usingEnv: false, usingDb: false },
+    groq: { active: false, totalKeys: 0, exhaustedKeys: 0, usingEnv: false, usingDb: false },
+    mistral_direct: { active: false, totalKeys: 0, exhaustedKeys: 0, usingEnv: false, usingDb: false },
+    mistral_openrouter: { active: false, totalKeys: 0, exhaustedKeys: 0, usingEnv: false, usingDb: false },
+    cohere: { active: false, totalKeys: 0, exhaustedKeys: 0, usingEnv: false, usingDb: false },
+    huggingface: { active: false, totalKeys: 0, exhaustedKeys: 0, usingEnv: false, usingDb: false }
   });
   const [aiMetrics, setAiMetrics] = useState<any>({});
   const [aiChartData, setAiChartData] = useState<any[]>([]);
@@ -175,6 +174,8 @@ export default function AdminDashboard() {
   const [logStats, setLogStats] = useState<{ date: string; count: number }[]>([]);
   const [logCounts, setLogCounts] = useState({ error: 0, warning: 0, info: 0, success: 0 });
   const [isCheckingAI, setIsCheckingAI] = useState(false);
+  const [isLiveAIUpdate, setIsLiveAIUpdate] = useState(false);
+  const [lastAiUpdate, setLastAiUpdate] = useState<Date | null>(null);
   const [isRoleGuideOpen, setIsRoleGuideOpen] = useState(false);
   const [isCreateCourseModalOpen, setIsCreateCourseModalOpen] = useState(false);
   const [activeCommTab, setActiveCommTab] = useState<'broadcast' | 'email' | 'history'>('broadcast');
@@ -206,6 +207,11 @@ export default function AdminDashboard() {
   const [selectedFaculties, setSelectedFaculties] = useState<string[]>([]);
   const [selectedDepartments, setSelectedDepartments] = useState<Department[]>(['Mathematics']);
   const [quickCourseOutline, setQuickCourseOutline] = useState('');
+  const [quickTone, setQuickTone] = useState('academic');
+  const [quickDepth, setQuickDepth] = useState('standard');
+  const [sourceFile, setSourceFile] = useState<File | null>(null);
+  const [sourceText, setSourceText] = useState('');
+  const [isReadingFile, setIsReadingFile] = useState(false);
   const [generationProgress, setGenerationProgress] = useState(0);
   const [aiProvider, setAiProvider] = useState<'gemini_direct' | 'gemini_openrouter' | 'mistral_direct' | 'mistral_openrouter' | 'groq' | 'cohere' | 'huggingface'>('mistral_direct');
   const [globalAiMode, setGlobalAiMode] = useState<'normal' | 'fast'>('normal');
@@ -238,6 +244,46 @@ export default function AdminDashboard() {
       fetchIntegrityData();
     }
   }, [user]);
+
+  useEffect(() => {
+    let interval: any;
+    if (isLiveAIUpdate && activeTab === 'settings') {
+      interval = setInterval(() => {
+        checkAIStatus();
+      }, 30000); // Refresh every 30 seconds
+    }
+    return () => clearInterval(interval);
+  }, [isLiveAIUpdate, activeTab]);
+
+  const handleSourceFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    setSourceFile(file);
+    setIsReadingFile(true);
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      setSourceText(text);
+      setIsReadingFile(false);
+      showToast("Source file loaded successfully", "success");
+    };
+    reader.onerror = () => {
+      setIsReadingFile(false);
+      showToast("Failed to read source file", "error");
+    };
+    
+    if (file.type === 'application/pdf') {
+      showToast("PDF support is limited to text extraction. For best results, use .txt or .md files.", "info");
+      // In a real app, we'd use pdfjs here. For now, we'll just set the file and maybe use a server-side extraction or just inform the user.
+      // For this demo, we'll assume the user provides text or we'll just use the filename as context if we can't parse it.
+      setSourceText(`[Source: ${file.name}] (PDF content extraction would happen here)`);
+      setIsReadingFile(false);
+    } else {
+      reader.readAsText(file);
+    }
+  };
 
   const fetchIntegrityData = async () => {
     if (!db) return;
@@ -565,6 +611,7 @@ export default function AdminDashboard() {
             popularCourse: data.stats.popularCourse || prev.popularCourse
           }));
         }
+        setLastAiUpdate(new Date());
       } else {
         console.error("Failed to fetch AI status:", await res.text());
       }
@@ -598,7 +645,11 @@ export default function AdminDashboard() {
             [],
             quickLevel,
             quickSemester,
-            quickDepartment
+            quickDepartment,
+            undefined, // ccmasCore
+            quickTone,
+            quickDepth,
+            sourceText
           );
         } catch (err) {
           retries--;
@@ -692,11 +743,20 @@ export default function AdminDashboard() {
             
             while (retries > 0 && !moduleContent) {
               try {
-                moduleContent = await generateModuleContent(quickCourseName, moduleSkeleton, aiProvider, (msg) => {
-                  if (idx === 0) {
-                    setStatusMessage(`Modules ${i + 1}-${chunkEnd}/${totalModules}: ${msg}`);
-                  }
-                }, () => isCancelledRef.current);
+                moduleContent = await generateModuleContent(
+                  quickCourseName, 
+                  moduleSkeleton, 
+                  aiProvider, 
+                  (msg) => {
+                    if (idx === 0) {
+                      setStatusMessage(`Modules ${i + 1}-${chunkEnd}/${totalModules}: ${msg}`);
+                    }
+                  }, 
+                  () => isCancelledRef.current,
+                  quickTone,
+                  quickDepth,
+                  sourceText
+                );
               } catch (err) {
                 if (isCancelledRef.current) throw new Error('Generation cancelled by user.');
                 retries--;
@@ -1470,13 +1530,15 @@ export default function AdminDashboard() {
       return;
     }
 
+    const sanitizedId = finalCourseData.id.replace(/\s+/g, '').toUpperCase();
     setIsUploading(true);
     setStatusMessage('Saving course to database...');
     try {
       if (!db) throw new Error("Firestore not initialized");
 
-      await setDoc(doc(db, 'courses', finalCourseData.id), {
+      await setDoc(doc(db, 'courses', sanitizedId), {
         ...finalCourseData,
+        id: sanitizedId,
         scope: courseScope,
         faculties: courseScope === 'FACULTY' ? selectedFaculties : [],
         departments: courseScope === 'DEPARTMENT' ? selectedDepartments : [],
@@ -2118,9 +2180,6 @@ export default function AdminDashboard() {
 
         {activeTab === 'courses' && (
           <div className="space-y-8">
-            {/* Database Migration Section */}
-            <AdminSeeder onComplete={refreshCourses} />
-
             {/* Quick AI Generator Section */}
             <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700">
               <div className="flex items-center gap-4 mb-6">
@@ -2243,6 +2302,65 @@ export default function AdminDashboard() {
                         className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                       />
                     </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Tone & Style</label>
+                      <select 
+                        value={quickTone}
+                        onChange={(e) => setQuickTone(e.target.value)}
+                        className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      >
+                        <option value="academic">Strictly Academic</option>
+                        <option value="engaging">Engaging & Story-driven</option>
+                        <option value="technical">Highly Technical/Formal</option>
+                        <option value="simplified">Simplified for Beginners</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Content Depth</label>
+                      <select 
+                        value={quickDepth}
+                        onChange={(e) => setQuickDepth(e.target.value)}
+                        className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      >
+                        <option value="introductory">Introductory (Foundational)</option>
+                        <option value="standard">Standard (Comprehensive)</option>
+                        <option value="deep-dive">Deep Dive (Advanced/Analytical)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="mb-6">
+                    <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Source Grounding (Optional)</label>
+                    <div className="flex items-center gap-4">
+                      <button
+                        onClick={() => fileInputRef.current?.click()}
+                        className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 transition-all"
+                      >
+                        <Upload size={16} />
+                        {sourceFile ? sourceFile.name : 'Upload Syllabus/Textbook (.txt, .md)'}
+                      </button>
+                      {sourceFile && (
+                        <button 
+                          onClick={() => { setSourceFile(null); setSourceText(''); }}
+                          className="text-red-500 hover:text-red-600"
+                        >
+                          <X size={16} />
+                        </button>
+                      )}
+                      <input 
+                        type="file" 
+                        ref={fileInputRef}
+                        onChange={handleSourceFileChange}
+                        accept=".txt,.md"
+                        className="hidden"
+                      />
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-1 italic">
+                      {isReadingFile ? 'Reading file...' : sourceFile ? 'File loaded! AI will prioritize this content.' : 'Upload a file to ground the AI generation in specific source material.'}
+                    </p>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
@@ -3566,9 +3684,27 @@ export default function AdminDashboard() {
                   <Bot className="text-blue-500" size={28} />
                   AI Intelligence Hub
                 </h2>
-                <p className="text-slate-500 mt-1">Real-time health monitoring and provider performance metrics.</p>
+                <div className="flex items-center gap-2 mt-1">
+                  <p className="text-slate-500">Real-time health monitoring and provider performance metrics.</p>
+                  {lastAiUpdate && (
+                    <span className="text-[10px] font-mono text-slate-400 bg-slate-100 dark:bg-slate-900 px-2 py-0.5 rounded-full">
+                      Last Updated: {lastAiUpdate.toLocaleTimeString()}
+                    </span>
+                  )}
+                </div>
               </div>
               <div className="flex items-center gap-3">
+                <button 
+                  onClick={() => setIsLiveAIUpdate(!isLiveAIUpdate)}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    isLiveAIUpdate 
+                      ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800' 
+                      : 'bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800'
+                  }`}
+                >
+                  <div className={`w-2 h-2 rounded-full ${isLiveAIUpdate ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
+                  {isLiveAIUpdate ? 'Live Updates ON' : 'Live Updates OFF'}
+                </button>
                 <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 rounded-lg text-xs font-bold">
                   <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                   System Healthy
@@ -3585,24 +3721,26 @@ export default function AdminDashboard() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               {/* Groq Card */}
-              <div className={`p-6 rounded-3xl border-2 transition-all ${aiProviderStatus.groq ? 'border-emerald-500/20 bg-emerald-50/30 dark:bg-emerald-500/5' : 'border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50'}`}>
+              <div className={`p-6 rounded-3xl border-2 transition-all ${aiProviderStatus.groq?.active ? 'border-emerald-500/20 bg-emerald-50/30 dark:bg-emerald-500/5' : 'border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50'}`}>
                 <div className="flex items-center justify-between mb-4">
                   <div className="p-3 rounded-2xl bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400">
                     <Zap size={24} />
                   </div>
-                  <div className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${aiProviderStatus.groq ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}>
-                    {aiProviderStatus.groq ? 'Active' : 'Offline'}
+                  <div className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${aiProviderStatus.groq?.active ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}>
+                    {aiProviderStatus.groq?.active ? 'Active' : 'Offline'}
                   </div>
                 </div>
                 <h3 className="font-bold text-slate-900 dark:text-white">Groq (Llama 3)</h3>
                 <div className="mt-4 space-y-2">
                   <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
-                    <span>Latency</span>
-                    <span className="text-emerald-500">{aiMetrics.groq.latency}</span>
+                    <span>Keys</span>
+                    <span className="text-slate-900 dark:text-white">
+                      {aiProviderStatus.groq?.totalKeys || 0} ({aiProviderStatus.groq?.exhaustedKeys || 0} exhausted)
+                    </span>
                   </div>
                   <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
-                    <span>Requests</span>
-                    <span className="text-slate-900 dark:text-white">{aiMetrics.groq.requests.toLocaleString()}</span>
+                    <span>Latency</span>
+                    <span className="text-emerald-500">{aiMetrics.groq.latency}</span>
                   </div>
                   <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
                     <span>Uptime</span>
@@ -3612,24 +3750,26 @@ export default function AdminDashboard() {
               </div>
 
               {/* Mistral Direct Card */}
-              <div className={`p-6 rounded-3xl border-2 transition-all ${aiProviderStatus.mistral_direct ? 'border-emerald-500/20 bg-emerald-50/30 dark:bg-emerald-500/5' : 'border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50'}`}>
+              <div className={`p-6 rounded-3xl border-2 transition-all ${aiProviderStatus.mistral_direct?.active ? 'border-emerald-500/20 bg-emerald-50/30 dark:bg-emerald-500/5' : 'border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50'}`}>
                 <div className="flex items-center justify-between mb-4">
                   <div className="p-3 rounded-2xl bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400">
                     <Star size={24} />
                   </div>
-                  <div className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${aiProviderStatus.mistral_direct ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}>
-                    {aiProviderStatus.mistral_direct ? 'Active' : 'Offline'}
+                  <div className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${aiProviderStatus.mistral_direct?.active ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}>
+                    {aiProviderStatus.mistral_direct?.active ? 'Active' : 'Offline'}
                   </div>
                 </div>
                 <h3 className="font-bold text-slate-900 dark:text-white">Mistral (Direct)</h3>
                 <div className="mt-4 space-y-2">
                   <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
-                    <span>Latency</span>
-                    <span className="text-amber-500">{aiMetrics.mistral_direct.latency}</span>
+                    <span>Keys</span>
+                    <span className="text-slate-900 dark:text-white">
+                      {aiProviderStatus.mistral_direct?.totalKeys || 0} ({aiProviderStatus.mistral_direct?.exhaustedKeys || 0} exhausted)
+                    </span>
                   </div>
                   <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
-                    <span>Requests</span>
-                    <span className="text-slate-900 dark:text-white">{aiMetrics.mistral_direct.requests.toLocaleString()}</span>
+                    <span>Latency</span>
+                    <span className="text-amber-500">{aiMetrics.mistral_direct.latency}</span>
                   </div>
                   <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
                     <span>Uptime</span>
@@ -3639,24 +3779,26 @@ export default function AdminDashboard() {
               </div>
 
               {/* Mistral OpenRouter Card */}
-              <div className={`p-6 rounded-3xl border-2 transition-all ${aiProviderStatus.mistral_openrouter ? 'border-emerald-500/20 bg-emerald-50/30 dark:bg-emerald-500/5' : 'border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50'}`}>
+              <div className={`p-6 rounded-3xl border-2 transition-all ${aiProviderStatus.mistral_openrouter?.active ? 'border-emerald-500/20 bg-emerald-50/30 dark:bg-emerald-500/5' : 'border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50'}`}>
                 <div className="flex items-center justify-between mb-4">
                   <div className="p-3 rounded-2xl bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400">
                     <Share2 size={24} />
                   </div>
-                  <div className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${aiProviderStatus.mistral_openrouter ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}>
-                    {aiProviderStatus.mistral_openrouter ? 'Active' : 'Offline'}
+                  <div className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${aiProviderStatus.mistral_openrouter?.active ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}>
+                    {aiProviderStatus.mistral_openrouter?.active ? 'Active' : 'Offline'}
                   </div>
                 </div>
                 <h3 className="font-bold text-slate-900 dark:text-white">Mistral (OpenRouter)</h3>
                 <div className="mt-4 space-y-2">
                   <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
-                    <span>Latency</span>
-                    <span className="text-amber-500">{aiMetrics.mistral_openrouter.latency}</span>
+                    <span>Keys</span>
+                    <span className="text-slate-900 dark:text-white">
+                      {aiProviderStatus.mistral_openrouter?.totalKeys || 0} ({aiProviderStatus.mistral_openrouter?.exhaustedKeys || 0} exhausted)
+                    </span>
                   </div>
                   <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
-                    <span>Requests</span>
-                    <span className="text-slate-900 dark:text-white">{aiMetrics.mistral_openrouter.requests.toLocaleString()}</span>
+                    <span>Latency</span>
+                    <span className="text-amber-500">{aiMetrics.mistral_openrouter.latency}</span>
                   </div>
                   <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
                     <span>Uptime</span>
@@ -3666,24 +3808,26 @@ export default function AdminDashboard() {
               </div>
 
               {/* Gemini Direct Card */}
-              <div className={`p-6 rounded-3xl border-2 transition-all ${aiProviderStatus.gemini_direct ? 'border-emerald-500/20 bg-emerald-50/30 dark:bg-emerald-500/5' : 'border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50'}`}>
+              <div className={`p-6 rounded-3xl border-2 transition-all ${aiProviderStatus.gemini_direct?.active ? 'border-emerald-500/20 bg-emerald-50/30 dark:bg-emerald-500/5' : 'border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50'}`}>
                 <div className="flex items-center justify-between mb-4">
                   <div className="p-3 rounded-2xl bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">
                     <Shield size={24} />
                   </div>
-                  <div className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${aiProviderStatus.gemini_direct ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}>
-                    {aiProviderStatus.gemini_direct ? 'Active' : 'Offline'}
+                  <div className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${aiProviderStatus.gemini_direct?.active ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}>
+                    {aiProviderStatus.gemini_direct?.active ? 'Active' : 'Offline'}
                   </div>
                 </div>
                 <h3 className="font-bold text-slate-900 dark:text-white">Gemini (Direct)</h3>
                 <div className="mt-4 space-y-2">
                   <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
-                    <span>Latency</span>
-                    <span className="text-slate-500">{aiMetrics.gemini_direct.latency}</span>
+                    <span>Keys</span>
+                    <span className="text-slate-900 dark:text-white">
+                      {aiProviderStatus.gemini_direct?.totalKeys || 0} ({aiProviderStatus.gemini_direct?.exhaustedKeys || 0} exhausted)
+                    </span>
                   </div>
                   <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
-                    <span>Requests</span>
-                    <span className="text-slate-900 dark:text-white">{aiMetrics.gemini_direct.requests.toLocaleString()}</span>
+                    <span>Latency</span>
+                    <span className="text-slate-500">{aiMetrics.gemini_direct.latency}</span>
                   </div>
                   <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
                     <span>Uptime</span>
@@ -3693,24 +3837,26 @@ export default function AdminDashboard() {
               </div>
 
               {/* Gemini OpenRouter Card */}
-              <div className={`p-6 rounded-3xl border-2 transition-all ${aiProviderStatus.gemini_openrouter ? 'border-emerald-500/20 bg-emerald-50/30 dark:bg-emerald-500/5' : 'border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50'}`}>
+              <div className={`p-6 rounded-3xl border-2 transition-all ${aiProviderStatus.gemini_openrouter?.active ? 'border-emerald-500/20 bg-emerald-50/30 dark:bg-emerald-500/5' : 'border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50'}`}>
                 <div className="flex items-center justify-between mb-4">
                   <div className="p-3 rounded-2xl bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">
                     <Share2 size={24} />
                   </div>
-                  <div className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${aiProviderStatus.gemini_openrouter ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}>
-                    {aiProviderStatus.gemini_openrouter ? 'Active' : 'Offline'}
+                  <div className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${aiProviderStatus.gemini_openrouter?.active ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}>
+                    {aiProviderStatus.gemini_openrouter?.active ? 'Active' : 'Offline'}
                   </div>
                 </div>
                 <h3 className="font-bold text-slate-900 dark:text-white">Gemini (OpenRouter)</h3>
                 <div className="mt-4 space-y-2">
                   <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
-                    <span>Latency</span>
-                    <span className="text-slate-500">{aiMetrics.gemini_openrouter.latency}</span>
+                    <span>Keys</span>
+                    <span className="text-slate-900 dark:text-white">
+                      {aiProviderStatus.gemini_openrouter?.totalKeys || 0} ({aiProviderStatus.gemini_openrouter?.exhaustedKeys || 0} exhausted)
+                    </span>
                   </div>
                   <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
-                    <span>Requests</span>
-                    <span className="text-slate-900 dark:text-white">{aiMetrics.gemini_openrouter.requests.toLocaleString()}</span>
+                    <span>Latency</span>
+                    <span className="text-slate-500">{aiMetrics.gemini_openrouter.latency}</span>
                   </div>
                   <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
                     <span>Uptime</span>
@@ -3720,24 +3866,26 @@ export default function AdminDashboard() {
               </div>
 
               {/* Cohere Card */}
-              <div className={`p-6 rounded-3xl border-2 transition-all ${aiProviderStatus.cohere ? 'border-emerald-500/20 bg-emerald-50/30 dark:bg-emerald-500/5' : 'border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50'}`}>
+              <div className={`p-6 rounded-3xl border-2 transition-all ${aiProviderStatus.cohere?.active ? 'border-emerald-500/20 bg-emerald-50/30 dark:bg-emerald-500/5' : 'border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50'}`}>
                 <div className="flex items-center justify-between mb-4">
                   <div className="p-3 rounded-2xl bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400">
                     <Cpu size={24} />
                   </div>
-                  <div className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${aiProviderStatus.cohere ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}>
-                    {aiProviderStatus.cohere ? 'Active' : 'Offline'}
+                  <div className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${aiProviderStatus.cohere?.active ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}>
+                    {aiProviderStatus.cohere?.active ? 'Active' : 'Offline'}
                   </div>
                 </div>
                 <h3 className="font-bold text-slate-900 dark:text-white">Cohere</h3>
                 <div className="mt-4 space-y-2">
                   <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
-                    <span>Latency</span>
-                    <span className="text-slate-500">{aiMetrics.cohere.latency}</span>
+                    <span>Keys</span>
+                    <span className="text-slate-900 dark:text-white">
+                      {aiProviderStatus.cohere?.totalKeys || 0} ({aiProviderStatus.cohere?.exhaustedKeys || 0} exhausted)
+                    </span>
                   </div>
                   <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
-                    <span>Requests</span>
-                    <span className="text-slate-900 dark:text-white">{aiMetrics.cohere.requests.toLocaleString()}</span>
+                    <span>Latency</span>
+                    <span className="text-slate-500">{aiMetrics.cohere.latency}</span>
                   </div>
                   <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
                     <span>Uptime</span>
@@ -3747,24 +3895,26 @@ export default function AdminDashboard() {
               </div>
 
               {/* Hugging Face Card */}
-              <div className={`p-6 rounded-3xl border-2 transition-all ${aiProviderStatus.huggingface ? 'border-emerald-500/20 bg-emerald-50/30 dark:bg-emerald-500/5' : 'border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50'}`}>
+              <div className={`p-6 rounded-3xl border-2 transition-all ${aiProviderStatus.huggingface?.active ? 'border-emerald-500/20 bg-emerald-50/30 dark:bg-emerald-500/5' : 'border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50'}`}>
                 <div className="flex items-center justify-between mb-4">
                   <div className="p-3 rounded-2xl bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400">
                     <Zap size={24} />
                   </div>
-                  <div className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${aiProviderStatus.huggingface ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}>
-                    {aiProviderStatus.huggingface ? 'Active' : 'Offline'}
+                  <div className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${aiProviderStatus.huggingface?.active ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}>
+                    {aiProviderStatus.huggingface?.active ? 'Active' : 'Offline'}
                   </div>
                 </div>
                 <h3 className="font-bold text-slate-900 dark:text-white">Hugging Face</h3>
                 <div className="mt-4 space-y-2">
                   <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
-                    <span>Latency</span>
-                    <span className="text-slate-500">{aiMetrics.huggingface.latency}</span>
+                    <span>Keys</span>
+                    <span className="text-slate-900 dark:text-white">
+                      {aiProviderStatus.huggingface?.totalKeys || 0} ({aiProviderStatus.huggingface?.exhaustedKeys || 0} exhausted)
+                    </span>
                   </div>
                   <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
-                    <span>Requests</span>
-                    <span className="text-slate-900 dark:text-white">{aiMetrics.huggingface.requests.toLocaleString()}</span>
+                    <span>Latency</span>
+                    <span className="text-slate-500">{aiMetrics.huggingface.latency}</span>
                   </div>
                   <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
                     <span>Uptime</span>
@@ -4013,16 +4163,27 @@ export default function AdminDashboard() {
                       {provider.label}
                     </h3>
                     <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase ${
-                      aiProviderStatus[provider.id === 'openrouter' ? 'gemini_openrouter' : provider.id as keyof typeof aiProviderStatus] 
+                      aiProviderStatus[provider.id === 'openrouter' ? 'gemini_openrouter' : provider.id]?.active 
                         ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' 
                         : 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
                     }`}>
-                      {aiProviderStatus[provider.id === 'openrouter' ? 'gemini_openrouter' : provider.id as keyof typeof aiProviderStatus] ? 'Active' : 'Offline'}
+                      {aiProviderStatus[provider.id === 'openrouter' ? 'gemini_openrouter' : provider.id]?.active ? 'Active' : 'Offline'}
                     </span>
                   </div>
-                  <p className="text-xs text-slate-500 mb-4">
+                  <p className="text-xs text-slate-500 mb-2">
                     {provider.desc}
                   </p>
+                  <div className="mb-4 flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase">
+                    <span>Configured Keys:</span>
+                    <span className="text-slate-900 dark:text-white">
+                      {aiProviderStatus[provider.id === 'openrouter' ? 'gemini_openrouter' : provider.id]?.totalKeys || 0}
+                    </span>
+                    {aiProviderStatus[provider.id === 'openrouter' ? 'gemini_openrouter' : provider.id]?.exhaustedKeys > 0 && (
+                      <span className="text-rose-500">
+                        ({aiProviderStatus[provider.id === 'openrouter' ? 'gemini_openrouter' : provider.id]?.exhaustedKeys} exhausted)
+                      </span>
+                    )}
+                  </div>
                   <button 
                     onClick={() => setSelectedProviderForKeyManager(provider.id)}
                     className="w-full py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center justify-center gap-2"

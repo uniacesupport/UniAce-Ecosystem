@@ -19,45 +19,28 @@ export const LogService = {
   async log(level: LogLevel, category: LogCategory, message: string, details?: any) {
     try {
       const user = auth.currentUser;
-      if (!user) return; // Only log when authenticated
       
-      const logRef = doc(collection(db, 'system_logs'));
-      const logEntry: SystemLog = {
-        id: logRef.id,
-        level,
-        category,
-        message,
-        details: details ? JSON.parse(JSON.stringify(details)) : null,
-        userId: user.uid,
-        userEmail: user.email || 'anonymous',
-        timestamp: serverTimestamp(),
-      };
+      // Call backend API for logging
+      const response = await fetch('/api/logs', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          level,
+          category,
+          message,
+          details: details ? JSON.parse(JSON.stringify(details)) : null,
+          userId: user?.uid || 'system',
+          userEmail: user?.email || 'system'
+        })
+      });
 
-      await setDoc(logRef, logEntry);
-    } catch (error) {
-      if (error instanceof Error && error.message.includes('insufficient permissions')) {
-        const errInfo = {
-          error: error.message,
-          operationType: 'create',
-          path: 'system_logs',
-          authInfo: {
-            userId: auth.currentUser?.uid,
-            email: auth.currentUser?.email,
-            emailVerified: auth.currentUser?.emailVerified,
-            isAnonymous: auth.currentUser?.isAnonymous,
-            tenantId: auth.currentUser?.tenantId,
-            providerInfo: auth.currentUser?.providerData.map(provider => ({
-              providerId: provider.providerId,
-              displayName: provider.displayName,
-              email: provider.email,
-              photoUrl: provider.photoURL
-            })) || []
-          }
-        };
-        console.error('Firestore Error: ', JSON.stringify(errInfo));
-        throw new Error(JSON.stringify(errInfo));
+      if (!response.ok) {
+        throw new Error(`Failed to log: ${response.statusText}`);
       }
-      console.error('Failed to write system log:', error);
+    } catch (error) {
+      console.error('Failed to write system log via API:', error);
     }
   },
 

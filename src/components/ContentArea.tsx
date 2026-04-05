@@ -8,7 +8,7 @@ import MarkdownRenderer from './MarkdownRenderer';
 import PricingModal from './PricingModal';
 import MiniTeacherModal from './MiniTeacherModal';
 import { AIService } from '../services/ai';
-import { generateLessonContent } from '../services/aiCourseGenerator';
+import { generateLessonContent, sanitizeLatex } from '../services/aiCourseGenerator';
 import { LogService } from '../services/logService';
 import { db } from '../firebase';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
@@ -99,30 +99,46 @@ export default function ContentArea({
       
       // If it already has content (legacy courses), use it
       if (activeSubTopic.content) {
-        setFetchedLesson({ content: activeSubTopic.content, metadata: {} });
+        setFetchedLesson({ content: sanitizeLatex(activeSubTopic.content), metadata: {} });
         return;
       }
 
       setIsFetchingContent(true);
       try {
+        const lessonPath = `courses/${courseId}/modules/${module.id}/lessons/${activeSubTopic.id}`;
+        console.log(`[ContentArea] Fetching lesson from path: ${lessonPath}`);
+
         let lessonDoc = await getDoc(doc(db, `courses/${courseId}/modules/${module.id}/lessons`, activeSubTopic.id));
         
         // Fallback for legacy courses where lesson ID was just 'l1' instead of 'm1-l1'
         if (!lessonDoc.exists() && activeSubTopic.id.includes('-')) {
           const legacyId = activeSubTopic.id.split('-')[1];
           if (legacyId) {
+            console.log(`[ContentArea] Lesson not found at ${activeSubTopic.id}, trying legacy ID: ${legacyId}`);
             lessonDoc = await getDoc(doc(db, `courses/${courseId}/modules/${module.id}/lessons`, legacyId));
           }
         }
 
         if (lessonDoc.exists() && lessonDoc.data().content) {
           const data = lessonDoc.data();
-          setFetchedLesson({ content: data.content, metadata: data.metadata || {} });
-          onLessonContentChange?.(data.content);
+          console.log(`[ContentArea] Lesson found! Content length: ${data.content.length}`);
+          const sanitizedContent = sanitizeLatex(data.content);
+          setFetchedLesson({ content: sanitizedContent, metadata: data.metadata || {} });
+          onLessonContentChange?.(sanitizedContent);
         } else {
-          // Trigger generation if not found
+          console.log(`[ContentArea] Lesson NOT found at ${lessonPath}`);
+          // Trigger generation if not found AND user is admin
           setFetchedLesson(null);
-          handleGenerateLesson();
+          if (isAdmin) {
+            console.log(`[ContentArea] User is admin, triggering generation...`);
+            handleGenerateLesson();
+          } else {
+            console.log(`[ContentArea] User is NOT admin, cannot trigger generation.`);
+            setFetchedLesson({
+              content: "### Content Not Available\n\nThis lesson content hasn't been generated yet. Please contact your instructor or administrator to generate the course content.",
+              metadata: {}
+            });
+          }
         }
       } catch (error) {
         console.error("Error fetching lesson content:", error);
@@ -132,7 +148,7 @@ export default function ContentArea({
     };
 
     loadContent();
-  }, [activeSubTopic.id, courseId, module.id]);
+  }, [activeSubTopic.id, courseId, module.id, isAdmin]);
 
   useEffect(() => {
     if (!fetchedLesson || isGenerating || isFetchingContent) return;

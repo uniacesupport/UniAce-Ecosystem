@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Course } from '../types';
+import { Course, CourseId } from '../types';
 import { db } from '../firebase';
 import { collection, getDocs, onSnapshot } from 'firebase/firestore';
 import { useAuth } from './AuthContext';
@@ -95,33 +95,35 @@ export function CourseProvider({ children }: { children: React.ReactNode }) {
           const firestoreCourses: Record<string, Course> = {};
           querySnapshot.forEach((doc: any) => {
             const data = doc.data() as Course & { deleted?: boolean; department?: string };
-            if (data.id) {
-              if (!data.deleted) {
-                // Migration: Ensure scope, faculties, and departments are initialized
-                if (!data.scope) {
-                  data.scope = 'DEPARTMENT';
-                }
-                if (!data.faculties) {
-                  data.faculties = [];
-                }
-                if (!data.departments || data.departments.length === 0) {
-                  if ((data as any).department) {
-                    data.departments = [(data as any).department as any];
-                  } else {
-                    data.departments = [];
-                  }
-                }
-                
-                // Migration: Ensure level and semester are strings and have defaults
-                if (!data.level) {
-                  data.level = '100';
-                }
-                if (!data.semester) {
-                  data.semester = '1st Semester';
-                }
-                
-                firestoreCourses[data.id] = data;
+            // Use doc.id as the source of truth for the course ID
+            const courseId = doc.id;
+            data.id = courseId as CourseId;
+
+            if (!data.deleted) {
+              // Migration: Ensure scope, faculties, and departments are initialized
+              if (!data.scope) {
+                data.scope = 'DEPARTMENT';
               }
+              if (!data.faculties) {
+                data.faculties = [];
+              }
+              if (!data.departments || data.departments.length === 0) {
+                if ((data as any).department) {
+                  data.departments = [(data as any).department as any];
+                } else {
+                  data.departments = [];
+                }
+              }
+              
+              // Migration: Ensure level and semester are strings and have defaults
+              if (!data.level) {
+                data.level = '100';
+              }
+              if (!data.semester) {
+                data.semester = '1st Semester';
+              }
+              
+              firestoreCourses[courseId] = data;
             }
           });
           setCourses(firestoreCourses);

@@ -44,15 +44,25 @@ export default function ApiKeyManagerModal({ provider, onClose }: ApiKeyManagerM
   const handleAddKey = () => {
     if (!newKey.trim()) return;
     
-    // Check for duplicates
-    if (keys.some(k => k.key === newKey.trim())) {
-      setError('This key already exists.');
-      return;
+    const inputKeys = newKey.split(',').map(k => k.trim()).filter(k => k.length > 0);
+    const newKeysToAdd: { key: string; isExhausted: boolean; exhaustedAt?: number }[] = [];
+    let duplicateFound = false;
+
+    for (const k of inputKeys) {
+      if (keys.some(existing => existing.key === k)) {
+        duplicateFound = true;
+        continue;
+      }
+      newKeysToAdd.push({ key: k, isExhausted: false });
     }
 
-    setKeys([...keys, { key: newKey.trim(), isExhausted: false }]);
-    setNewKey('');
-    setError(null);
+    if (newKeysToAdd.length > 0) {
+      setKeys([...keys, ...newKeysToAdd]);
+      setNewKey('');
+      setError(duplicateFound ? 'Some keys were already present and skipped.' : null);
+    } else if (duplicateFound) {
+      setError('All provided keys already exist.');
+    }
   };
 
   const handleRemoveKey = (indexToRemove: number) => {
@@ -134,7 +144,7 @@ export default function ApiKeyManagerModal({ provider, onClose }: ApiKeyManagerM
                   value={newKey}
                   onChange={(e) => setNewKey(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleAddKey()}
-                  placeholder={`Enter new ${provider} API key...`}
+                  placeholder={`Enter ${provider} API key(s), separate multiple with commas...`}
                   className="flex-1 px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:text-white"
                 />
                 <button
