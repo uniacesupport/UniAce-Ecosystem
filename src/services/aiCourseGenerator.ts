@@ -53,22 +53,21 @@ export function sanitizeLatex(content: string): string {
   // Most common: \\frac -> \frac
   sanitized = sanitized.replace(/\\\\([a-zA-Z]+)/g, '\\$1');
 
-  // 4. Fix carriage return issues specifically for LaTeX macros like \right
-  // If \r was interpreted as a carriage return, it will be a raw \r character (0x0D)
-  // We want to turn it back into \right if it's followed by "ight"
-  sanitized = sanitized.replace(/\r(ight|eft|ho|ho|ho)/g, '\\$1');
-  
-  // 5. General cleanup for common escape characters that break LaTeX
-  // These are often introduced during JSON parsing/repairing
-  sanitized = sanitized.replace(/\r/g, ' '); // Replace remaining carriage returns with space
-  sanitized = sanitized.replace(/\t/g, ' '); // Replace tabs with space
-  
-  // 6. Fix literal \n and \t strings (backslash + n/t) that should be actual characters
-  // This happens when AI double-escapes or when JSON parsing preserves the escape
-  sanitized = sanitized.replace(/\\n/g, '\n');
-  sanitized = sanitized.replace(/\\t/g, '\t');
+  // 4. Fix JSON escape character collisions with LaTeX macros
+  // When AI fails to double-escape, JSON.parse turns \b, \f, \n, \r, \t into control characters.
+  // We need to recover these back into LaTeX commands.
+  sanitized = sanitized.replace(/\x08(egin|matrix|pmat|bmat|vmat|Bmat|Vmat)/g, '\\begin$1'); // \b -> \begin
+  sanitized = sanitized.replace(/\x0C(rac|orm)/g, '\\f$1'); // \f -> \frac
+  sanitized = sanitized.replace(/\x0A(abla|ewline|eg|u|i)/g, '\\n$1'); // \n -> \nabla, \newline, \neg, \nu, \ni
+  sanitized = sanitized.replace(/\x0D(ight|eft|ho|p)/g, '\\r$1'); // \r -> \right, \left, \rho, \rp
+  sanitized = sanitized.replace(/\x09(ext|heta|imes|an|au|o)/g, '\\t$1'); // \t -> \text, \theta, \times, \tan, \tau, \to
 
-  // 7. Ensure \begin{...} and \end{...} are wrapped in $$ if they aren't already
+  // 5. Fix literal \n and \t strings (backslash + n/t) ONLY if they are not part of a word
+  // This is safer than a global replace which breaks \nabla and \text
+  sanitized = sanitized.replace(/\\n(\s|$)/g, '\n$1');
+  sanitized = sanitized.replace(/\\t(\s|$)/g, '\t$1');
+  
+  // 6. Ensure \begin{...} and \end{...} are wrapped in $$ if they aren't already
   // This is a common issue where AI outputs raw LaTeX environments without markdown math delimiters
   const envs = ['align', 'equation', 'eqnarray', 'gather', 'multline', 'matrix', 'pmatrix', 'bmatrix', 'Bmatrix', 'vmatrix', 'Vmatrix'];
   const envPattern = envs.join('|');
@@ -260,7 +259,15 @@ export async function generateCourseFormulas(
       ]
     }
     CRITICAL: Do NOT wrap the JSON in markdown blocks. Output raw JSON only.
-    CRITICAL: You are outputting data to a JSON parser. You MUST double-escape all LaTeX commands. For example, output \\\\frac instead of \\frac, and \\\\right) instead of \\right).
+    CRITICAL LATEX INSTRUCTIONS:
+    1. You MUST use LaTeX for ALL mathematical formulas, variables, and equations.
+    2. Use $ ... $ for inline math and $$ ... $$ for block math.
+    3. You are outputting data to a JSON parser. You MUST double-escape all LaTeX backslashes. 
+       For example, output \\\\frac instead of \\frac, and \\\\begin instead of \\begin.
+    4. Do NOT use \\label{...} as it is not supported. Use \\tag{...} for equation numbering if needed.
+    5. Ensure all LaTeX environments (like align, matrix, etc.) are wrapped in $$ ... $$ delimiters.
+    6. Do NOT use non-standard LaTeX commands like \\ext. Use \\text{...} for plain text inside math mode.
+    7. Double check that every backslash in your LaTeX is escaped with another backslash (e.g., \\\\alpha, \\\\beta).
     CRITICAL: Ensure all double quotes inside strings are properly escaped (e.g., \\"word\\").
   `;
 
@@ -334,7 +341,15 @@ export async function generateCourseSkeleton(
     4. Each module should have a list of topics that will be covered in the quiz.
     
     CRITICAL: You must return ONLY valid JSON.
-    CRITICAL: You are outputting data to a JSON parser. You MUST double-escape all LaTeX commands (e.g., \\\\frac, \\\\right).
+    CRITICAL LATEX INSTRUCTIONS:
+    1. You MUST use LaTeX for ALL mathematical formulas, variables, and equations.
+    2. Use $ ... $ for inline math and $$ ... $$ for block math.
+    3. You are outputting data to a JSON parser. You MUST double-escape all LaTeX backslashes. 
+       For example, output \\\\frac instead of \\frac, and \\\\begin instead of \\begin.
+    4. Do NOT use \\label{...} as it is not supported. Use \\tag{...} for equation numbering if needed.
+    5. Ensure all LaTeX environments (like align, matrix, etc.) are wrapped in $$ ... $$ delimiters.
+    6. Do NOT use non-standard LaTeX commands like \\ext. Use \\text{...} for plain text inside math mode.
+    7. Double check that every backslash in your LaTeX is escaped with another backslash (e.g., \\\\alpha, \\\\beta).
     CRITICAL: Ensure all double quotes inside strings are properly escaped (e.g., \\"word\\").
     CRITICAL: If generating electives for a curriculum, ensure they do not overlap with the core courses: ${ccmasCore?.coreCourses.map((c: any) => c.code).join(', ') || 'None'}.
     CRITICAL: Ensure the curriculum is robust, academically rigorous, and follows the Hybrid Approach (NUC structure + International depth).
@@ -448,9 +463,16 @@ export async function generateLessonContent(
     3. Use a professional, academic tone suitable for a top-tier university, but adapted to the requested Tone: ${tone}.
     4. Ensure all concepts are explained clearly and logically, using step-by-step breakdowns and multiple examples to ensure deep understanding.
     5. Use LaTeX for ALL mathematical equations, variables, and scientific notation.
-    6. CRITICAL: Use $ ... $ for inline math and $$ ... $$ for block math. Ensure LaTeX commands are properly formatted (e.g., use \\\\frac{a}{b} not frac{a}{b}).
-    CRITICAL: You are outputting data to a JSON parser. You MUST double-escape all LaTeX commands. For example, output \\\\frac instead of \\frac, and \\\\right) instead of \\right).
-    7. CRITICAL: Output ONLY valid JSON matching this structure:
+    CRITICAL LATEX INSTRUCTIONS:
+    1. You MUST use LaTeX for ALL mathematical formulas, variables, and equations.
+    2. Use $ ... $ for inline math and $$ ... $$ for block math.
+    3. You are outputting data to a JSON parser. You MUST double-escape all LaTeX backslashes. 
+       For example, output \\\\frac instead of \\frac, and \\\\begin instead of \\begin.
+    4. Do NOT use \\label{...} as it is not supported. Use \\tag{...} for equation numbering if needed.
+    5. Ensure all LaTeX environments (like align, matrix, etc.) are wrapped in $$ ... $$ delimiters.
+    6. Do NOT use non-standard LaTeX commands like \\ext. Use \\text{...} for plain text inside math mode.
+    7. Double check that every backslash in your LaTeX is escaped with another backslash (e.g., \\\\alpha, \\\\beta).
+    6. CRITICAL: Output ONLY valid JSON matching this structure:
     {
       "content": "The raw markdown content including Learning Objectives, Key Vocabulary, Body, and Quick Check questions...",
       "metadata": {
@@ -460,9 +482,9 @@ export async function generateLessonContent(
     }
     CRITICAL: Do NOT wrap the JSON in markdown blocks. Output raw JSON only.
     CRITICAL: Ensure all double quotes inside the "content" string are properly escaped (e.g., \\"word\\").
-    8. CRITICAL: Ensure the lesson is COMPLETE and does not cut off abruptly. Provide a clear conclusion or summary at the end.
-    9. CRITICAL: The content must be academically rigorous and align with the Hybrid Approach (NUC structure + International depth).
-    10. CRITICAL: Calibrate the depth and complexity to the student's level (${level || 'University Level'}) and requested Depth: ${depth}.
+    7. CRITICAL: Ensure the lesson is COMPLETE and does not cut off abruptly. Provide a clear conclusion or summary at the end.
+    8. CRITICAL: The content must be academically rigorous and align with the Hybrid Approach (NUC structure + International depth).
+    9. CRITICAL: Calibrate the depth and complexity to the student's level (${level || 'University Level'}) and requested Depth: ${depth}.
   `;
 
   const result = await callGenerateAPI(lessonPrompt, 'lesson', provider);
@@ -503,7 +525,15 @@ export async function generateModuleQuiz(
     6. CRITICAL: Do NOT include any conversational text, self-corrections, or "thinking out loud" inside the JSON fields. 
     7. CRITICAL: The "explanation" field must provide a detailed academic justification for the correct answer and why other options are incorrect.
     8. CRITICAL: Ensure all double quotes inside strings are properly escaped (e.g., \\"word\\").
-    CRITICAL: You are outputting data to a JSON parser. You MUST double-escape all LaTeX commands (e.g., \\\\frac, \\\\right).
+    CRITICAL LATEX INSTRUCTIONS:
+    1. You MUST use LaTeX for ALL mathematical formulas, variables, and equations.
+    2. Use $ ... $ for inline math and $$ ... $$ for block math.
+    3. You are outputting data to a JSON parser. You MUST double-escape all LaTeX backslashes. 
+       For example, output \\\\frac instead of \\frac, and \\\\begin instead of \\begin.
+    4. Do NOT use \\label{...} as it is not supported. Use \\tag{...} for equation numbering if needed.
+    5. Ensure all LaTeX environments (like align, matrix, etc.) are wrapped in $$ ... $$ delimiters.
+    6. Do NOT use non-standard LaTeX commands like \\ext. Use \\text{...} for plain text inside math mode.
+    7. Double check that every backslash in your LaTeX is escaped with another backslash (e.g., \\\\alpha, \\\\beta).
     9. CRITICAL: For LaTeX in JSON strings, use double backslashes (e.g., "\\\\mathbf"). Do NOT use triple backslashes.
     10. CRITICAL: Ensure the quiz meets the academic standards set by NUC or relevant global guidelines, following the Hybrid Approach.
     11. Return ONLY valid JSON:
