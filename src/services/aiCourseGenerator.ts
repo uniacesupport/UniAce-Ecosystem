@@ -38,7 +38,12 @@ export function sanitizeLatex(content: string): string {
   let sanitized = content.replace(/^```(?:markdown)?\n([\s\S]*?)\n```$/g, '$1');
   
   // 1. Replace \[ ... \] with $$ ... $$ for block math
-  sanitized = sanitized.replace(/\\\[/g, '$$$$').replace(/\\\]/g, '$$$$');
+  sanitized = sanitized.replace(/\\\[/g, '\n$$$$\n').replace(/\\\]/g, '\n$$$$\n');
+  
+  // Ensure $$ is on its own line for remark-math to parse it correctly as block math
+  // This prevents unclosed block math from consuming the entire document and causing KaTeX errors
+  sanitized = sanitized.replace(/([^\n])\$\$/g, '$1\n$$$$');
+  sanitized = sanitized.replace(/\$\$([^\n])/g, '$$$$\n$1');
   
   // 2. Replace \( ... \) with $ ... $ for inline math
   sanitized = sanitized.replace(/\\\(/g, '$').replace(/\\\)/g, '$');
@@ -62,6 +67,28 @@ export function sanitizeLatex(content: string): string {
   // This happens when AI double-escapes or when JSON parsing preserves the escape
   sanitized = sanitized.replace(/\\n/g, '\n');
   sanitized = sanitized.replace(/\\t/g, '\t');
+
+  // 7. Ensure \begin{...} and \end{...} are wrapped in $$ if they aren't already
+  // This is a common issue where AI outputs raw LaTeX environments without markdown math delimiters
+  const envs = ['align', 'equation', 'eqnarray', 'gather', 'multline', 'matrix', 'pmatrix', 'bmatrix', 'Bmatrix', 'vmatrix', 'Vmatrix'];
+  const envPattern = envs.join('|');
+  
+  // First, strip existing $$ around these environments to avoid duplicates
+  const stripBeginRegex = new RegExp(`\\$\\$\\s*(\\\\begin\\{(?:${envPattern})\\*?\\})`, 'g');
+  sanitized = sanitized.replace(stripBeginRegex, '$1');
+  
+  const stripEndRegex = new RegExp(`(\\\\end\\{(?:${envPattern})\\*?\\})\\s*\\$\\$`, 'g');
+  sanitized = sanitized.replace(stripEndRegex, '$1');
+
+  // Then, wrap all of them in $$
+  const wrapBeginRegex = new RegExp(`(\\\\begin\\{(?:${envPattern})\\*?\\})`, 'g');
+  sanitized = sanitized.replace(wrapBeginRegex, '\n$$$$\n$1');
+  
+  const wrapEndRegex = new RegExp(`(\\\\end\\{(?:${envPattern})\\*?\\})`, 'g');
+  sanitized = sanitized.replace(wrapEndRegex, '$1\n$$$$\n');
+
+  // Clean up any excessive newlines created by the above replacements
+  sanitized = sanitized.replace(/\n{3,}/g, '\n\n');
 
   return sanitized;
 }

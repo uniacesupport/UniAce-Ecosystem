@@ -189,8 +189,8 @@ const courseGenerationLimiter = rateLimit({
 });
 
 app.use('/api/course/generate', courseGenerationLimiter);
-app.use('/api/openrouter/generate', aiGenerationLimiter);
-app.use('/api/openrouter/stream', aiGenerationLimiter);
+app.use('/api/ai/generate', aiGenerationLimiter);
+app.use('/api/ai/stream', aiGenerationLimiter);
 app.use('/api/chat', aiGenerationLimiter);
 
 app.use(express.json({
@@ -1536,8 +1536,8 @@ app.post('/api/admin/config', verifyAuth, async (req, res) => {
   res.json(systemConfig);
 });
 
-// 1.6 OpenRouter Generate Endpoint (Fallback for frontend AI tasks)
-app.post('/api/openrouter/generate', verifyAuth, async (req, res) => {
+// 1.6 AI Generate Endpoint (Fallback for frontend AI tasks)
+app.post('/api/ai/generate', verifyAuth, async (req, res) => {
   if (systemConfig.aiKillswitch) {
     return res.status(503).json({ error: 'AI services are currently disabled by administrator.' });
   }
@@ -1667,8 +1667,8 @@ app.post('/api/openrouter/generate', verifyAuth, async (req, res) => {
   }
 });
 
-// 1.7 OpenRouter Stream Endpoint (For Mini Teacher and Chat)
-app.post('/api/openrouter/stream', verifyAuth, async (req, res) => {
+// 1.7 AI Stream Endpoint (For Mini Teacher and Chat)
+app.post('/api/ai/stream', verifyAuth, async (req, res) => {
   if (systemConfig.aiKillswitch) {
     return res.status(503).json({ error: 'AI services are currently disabled by administrator.' });
   }

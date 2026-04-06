@@ -4,7 +4,7 @@ import { Swords, Trophy, Timer, Shield, Zap, Skull, Crown, User, Search, X, Hear
 import { useAuth } from '../context/AuthContext';
 import { useCourses } from '../context/CourseContext';
 import { db } from '../firebase';
-import { collection, addDoc, query, where, getDocs, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, query, where, getDocs, onSnapshot, doc, updateDoc, deleteDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { Battle, BattlePlayer, QuizQuestion, CourseId } from '../types';
 import { AIService } from '../services/ai';
 import Leaderboard from './Leaderboard';
@@ -106,7 +106,8 @@ export default function Arena({ activeCourseId }: ArenaProps) {
           topicId: activeCourseId
         };
 
-        const docRef = await addDoc(battlesRef, newBattle);
+        const docRef = doc(battlesRef);
+        await setDoc(docRef, newBattle, { merge: true });
         setBattleId(docRef.id);
         setMatchStatus('Waiting for a challenger...');
       }

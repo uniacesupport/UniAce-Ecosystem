@@ -13,7 +13,7 @@ const getAuthToken = async () => {
 
 export const callAI = async (prompt: any, systemInstruction?: string, responseFormat?: 'json', maxTokens?: number, complexity: 'standard' | 'high' | 'quiz' = 'standard', taskType: string = 'chat', preferredProvider?: string) => {
   const token = await getAuthToken();
-  const response = await fetch('/api/openrouter/generate', {
+  const response = await fetch('/api/ai/generate', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -408,7 +408,7 @@ MATH & EQUATIONS:
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout
 
-    const response = await fetch('/api/openrouter/stream', {
+    const response = await fetch('/api/ai/stream', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -646,7 +646,7 @@ MATH & EQUATIONS:
       return { title: topic?.title || id, score };
     });
 
-    const prompt = `As an expert academic advisor, analyze this student's progress and suggest the single most important "Daily Mission" (one specific topic to study).
+    const prompt = `As Cohere AI, an expert academic advisor, analyze this student's progress and suggest the single most important "Daily Mission" (one specific topic to study).
     
     Student Progress:
     - Mastery Levels: ${JSON.stringify(masteryData)}

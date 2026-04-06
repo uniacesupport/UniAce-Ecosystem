@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot, orderBy, doc, updateDoc, writeBatch, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, orderBy, doc, updateDoc, writeBatch, addDoc, setDoc, serverTimestamp, deleteDoc } from 'firebase/firestore';
 import { db, auth, messaging } from '../firebase';
 import { getToken } from 'firebase/messaging';
 import { useAuth } from '../context/AuthContext';
@@ -154,22 +154,60 @@ export function useNotifications() {
     }
   };
 
-  const sendNotification = async (title: string, message: string, type: 'info' | 'success' | 'warning' | 'error' = 'info') => {
+  const deleteNotification = async (notificationId: string) => {
+    setNotifications(prev => prev.filter(n => n.id !== notificationId));
+    setUnreadCount(prev => notifications.find(n => n.id === notificationId && !n.read) ? Math.max(0, prev - 1) : prev);
+    
+    try {
+      const notifRef = doc(db, 'notifications', notificationId);
+      await deleteDoc(notifRef);
+    } catch (error) {
+      console.error("useNotifications: Error deleting notification", error);
+    }
+  };
+
+  const clearAllNotifications = async () => {
+    if (notifications.length === 0) return;
+    
+    const notifsToDelete = [...notifications];
+    setNotifications([]);
+    setUnreadCount(0);
+    
+    try {
+      const batch = writeBatch(db);
+      let hasUpdates = false;
+      
+      notifsToDelete.forEach(notif => {
+        const ref = doc(db, 'notifications', notif.id);
+        batch.delete(ref);
+        hasUpdates = true;
+      });
+      
+      if (hasUpdates) {
+        await batch.commit();
+      }
+    } catch (error) {
+      console.error("useNotifications: Error clearing notifications", error);
+    }
+  };
+
+  const sendNotification = async (title: string, message: string, type: 'info' | 'success' | 'warning' | 'error' = 'info', customId?: string) => {
     if (!user) return;
 
     try {
-      await addDoc(collection(db, 'notifications'), {
+      const newNotifRef = customId ? doc(db, 'notifications', customId) : doc(collection(db, 'notifications'));
+      await setDoc(newNotifRef, {
         userId: user.uid,
         title,
         message,
         type,
         read: false,
         createdAt: serverTimestamp()
-      });
+      }, { merge: true });
     } catch (error) {
       console.error("useNotifications: Error sending notification", error);
     }
   };
 
-  return { notifications, unreadCount, markAsRead, markAllAsRead, sendNotification, permissionStatus, requestNotificationPermission };
+  return { notifications, unreadCount, markAsRead, markAllAsRead, deleteNotification, clearAllNotifications, sendNotification, permissionStatus, requestNotificationPermission };
 }

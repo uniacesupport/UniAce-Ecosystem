@@ -94,7 +94,7 @@ async function retry<T>(fn: () => Promise<T>, providerName: string, retries = 3,
     const jitter = Math.random() * 1000;
     const waitTime = (isRateLimit ? delay * 3 : (isTimeout ? 1000 : delay)) + jitter;
     
-    console.warn(`[${providerName}] Retrying AI request... (${retries} left) after ${Math.round(waitTime)}ms. Error: ${error.message}`);
+    console.warn(`[${providerName}] Retrying AI request... (${retries} left) after ${Math.round(waitTime)}ms. Error: ${error.message}${isUnauthorized ? ' (Check if your API key is valid)' : ''}`);
     
     await new Promise(resolve => setTimeout(resolve, waitTime));
     return retry(fn, providerName, retries - 1, waitTime * 1.5);

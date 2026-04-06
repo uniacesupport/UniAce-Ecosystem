@@ -1,12 +1,18 @@
 import { AlertTriangle, X } from 'lucide-react';
 import { useState } from 'react';
 import { usePremiumStatus } from '../hooks/usePremiumStatus';
+import { useAuth } from '../context/AuthContext';
 
 export const TrialExpirationBanner = () => {
   const { isTrialActive, daysRemaining, hoursRemaining } = usePremiumStatus();
+  const { user, profile } = useAuth();
   const [isVisible, setIsVisible] = useState(true);
 
-  if (!isTrialActive || daysRemaining > 2 || !isVisible) {
+  const isAdminEmail = user?.email === 'olalekan4565@gmail.com' || user?.email === 'uniace.support@gmail.com';
+  const isStaff = ['admin', 'moderator', 'tutor'].includes(profile?.role || '') || isAdminEmail;
+  const isFreePlan = profile?.plan_type === 'free';
+
+  if (!isTrialActive || daysRemaining > 2 || !isVisible || isStaff || !isFreePlan) {
     return null;
   }
 

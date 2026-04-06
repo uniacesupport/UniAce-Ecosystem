@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { X, Plus, Trash2, Key, Loader2, Save, AlertCircle } from 'lucide-react';
-import { db } from '../firebase';
+import { X, Plus, Trash2, Key, Loader2, Save, AlertCircle, Play, Check, AlertTriangle } from 'lucide-react';
+import { db, auth } from '../firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 interface ApiKeyManagerModalProps {
@@ -9,11 +9,12 @@ interface ApiKeyManagerModalProps {
 }
 
 export default function ApiKeyManagerModal({ provider, onClose }: ApiKeyManagerModalProps) {
-  const [keys, setKeys] = useState<{ key: string; isExhausted: boolean; exhaustedAt?: number }[]>([]);
+  const [keys, setKeys] = useState<{ key: string; isExhausted: boolean; exhaustedAt?: number; testStatus?: 'idle' | 'testing' | 'success' | 'error'; testError?: string }[]>([]);
   const [newKey, setNewKey] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isTestingAny, setIsTestingAny] = useState(false);
 
   useEffect(() => {
     fetchKeys();
@@ -74,6 +75,44 @@ export default function ApiKeyManagerModal({ provider, onClose }: ApiKeyManagerM
     newKeys[indexToReset].isExhausted = false;
     newKeys[indexToReset].exhaustedAt = undefined;
     setKeys(newKeys);
+  };
+
+  const handleTestKey = async (index: number) => {
+    const keyToTest = keys[index].key;
+    const newKeys = [...keys];
+    newKeys[index].testStatus = 'testing';
+    newKeys[index].testError = undefined;
+    setKeys(newKeys);
+    setIsTestingAny(true);
+
+    try {
+      const idToken = await auth.currentUser?.getIdToken();
+      const res = await fetch('/api/admin/test-api-key', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${idToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ provider, key: keyToTest })
+      });
+
+      const data = await res.json();
+      const updatedKeys = [...keys];
+      if (data.success) {
+        updatedKeys[index].testStatus = 'success';
+      } else {
+        updatedKeys[index].testStatus = 'error';
+        updatedKeys[index].testError = data.error || 'Test failed';
+      }
+      setKeys(updatedKeys);
+    } catch (err: any) {
+      const updatedKeys = [...keys];
+      updatedKeys[index].testStatus = 'error';
+      updatedKeys[index].testError = err.message || 'Network error';
+      setKeys(updatedKeys);
+    } finally {
+      setIsTestingAny(false);
+    }
   };
 
   const handleSave = async () => {
@@ -181,8 +220,30 @@ export default function ApiKeyManagerModal({ provider, onClose }: ApiKeyManagerM
                             </span>
                           )}
                         </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          {k.isExhausted && (
+                          <div className="flex items-center gap-2 shrink-0">
+                            {k.testStatus === 'testing' ? (
+                              <Loader2 size={16} className="text-indigo-500 animate-spin" />
+                            ) : k.testStatus === 'success' ? (
+                              <Check size={16} className="text-emerald-500" />
+                            ) : k.testStatus === 'error' ? (
+                              <div className="group relative">
+                                <AlertTriangle size={16} className="text-rose-500 cursor-help" />
+                                <div className="absolute bottom-full right-0 mb-2 w-48 p-2 bg-slate-900 text-white text-[10px] rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
+                                  {k.testError}
+                                </div>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => handleTestKey(index)}
+                                disabled={isTestingAny}
+                                className="p-1.5 text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-lg transition-colors"
+                                title="Test Key"
+                              >
+                                <Play size={14} />
+                              </button>
+                            )}
+
+                            {k.isExhausted && (
                             <button
                               onClick={() => handleResetExhaustion(index)}
                               className="px-3 py-1.5 text-xs font-bold text-amber-600 bg-amber-50 hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-400 dark:hover:bg-amber-900/40 rounded-lg transition-colors"

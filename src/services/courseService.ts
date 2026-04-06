@@ -2,14 +2,21 @@ import { db } from '../firebase';
 import { collection, doc, getDoc, getDocs, setDoc, query, where, orderBy, writeBatch } from 'firebase/firestore';
 import { Course, Module, SubTopic, Quiz, Formula, CourseId } from '../types';
 
-const sanitizeForFirestore = (obj: any): any => {
+export const sanitizeForFirestore = (obj: any): any => {
   if (obj === undefined) return null;
   if (obj === null) return null;
   if (typeof obj !== 'object') return obj;
   
   // Only process arrays and plain objects. Preserve special objects (Date, FieldValue, etc.)
   if (Array.isArray(obj)) {
-    return obj.map(item => sanitizeForFirestore(item));
+    // Check for nested arrays. Firestore does not support nested arrays.
+    // If we find an array inside an array, we stringify the inner array to preserve data.
+    return obj.map(item => {
+      if (Array.isArray(item)) {
+        return JSON.stringify(item);
+      }
+      return sanitizeForFirestore(item);
+    });
   }
   
   if (obj.constructor !== Object) {
@@ -21,6 +28,8 @@ const sanitizeForFirestore = (obj: any): any => {
     if (Object.prototype.hasOwnProperty.call(obj, key)) {
       const val = obj[key];
       if (val !== undefined) {
+        // If the value is a nested array (array within an object where the object is already inside an array)
+        // sanitizeForFirestore will be called recursively.
         sanitized[key] = sanitizeForFirestore(val);
       }
     }

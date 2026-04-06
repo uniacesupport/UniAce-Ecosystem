@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, MessageSquare, Ticket, CheckCircle2, Clock, User, Send, Search, Filter, MessageCircle, Bell, Megaphone, Sparkles, AlertTriangle, X, Info } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { db, auth } from '../firebase';
-import { collection, query, orderBy, onSnapshot, doc, updateDoc, addDoc, serverTimestamp, where, writeBatch, getDocs } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, doc, updateDoc, addDoc, setDoc, serverTimestamp, where, writeBatch, getDocs } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
 
 enum OperationType {
@@ -249,12 +249,13 @@ export default function AdminSupport({ onBack }: AdminSupportProps) {
     setNewMessage('');
 
     try {
-      await addDoc(collection(db, 'support_chats', selectedChat.id, 'messages'), {
+      const msgRef = doc(collection(db, 'support_chats', selectedChat.id, 'messages'));
+      await setDoc(msgRef, {
         senderId: user.uid,
         senderName: 'Support Team',
         text: msg,
         timestamp: serverTimestamp()
-      });
+      }, { merge: true });
 
       await updateDoc(doc(db, 'support_chats', selectedChat.id), {
         lastMessage: msg,

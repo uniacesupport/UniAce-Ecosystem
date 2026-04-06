@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { BookOpen, Sparkles, Globe, Search, Users, Calendar, ArrowRight, Loader2, Edit2, Clock } from 'lucide-react';
+import { BookOpen, Sparkles, Globe, Search, Users, Calendar, ArrowRight, Loader2, Edit2, Clock, GraduationCap } from 'lucide-react';
 import { useCourses } from '../context/CourseContext';
 import { CourseId, View, Course, UserProgress, Department, Semester } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -139,29 +139,40 @@ export default function CourseHub({ onSelectCourse, onProfileClick, onViewSelect
       <div className="w-full lg:w-72 flex-shrink-0 flex flex-col gap-8 relative z-20">
         <div className="sticky top-12 space-y-8">
           <div>
-            <h1 className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white mb-4 tracking-tight">
-              {profile?.displayName ? `Hello, ${profile.displayName.split(' ')[0]}!` : 'Welcome back!'}
-            </h1>
+            <div className="flex items-center gap-3 mb-6">
+              <h1 className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white tracking-tight">
+                {profile?.displayName ? `Hello, ${profile.displayName.split(' ')[0]}` : 'Welcome back'}
+              </h1>
+              <span className="text-3xl sm:text-4xl origin-bottom-right hover:animate-wave cursor-default">👋</span>
+            </div>
             
             {profile?.department && profile?.academic_level && profile?.semester ? (
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center gap-2">
-                  <div className="inline-flex items-center gap-2 bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 px-3 py-1.5 rounded-lg text-sm font-bold w-fit">
-                    {profile.department}
+              <div className="group relative bg-white/50 dark:bg-zinc-900/50 backdrop-blur-sm border border-slate-200/60 dark:border-zinc-800/60 p-4 rounded-2xl shadow-sm hover:shadow-md transition-all duration-300">
+                <div className="flex items-start justify-between gap-4 mb-3">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-zinc-500 mb-1">
+                      Current Program
+                    </p>
+                    <h2 className="text-lg font-bold text-slate-800 dark:text-zinc-100 leading-tight">
+                      {profile.department}
+                    </h2>
                   </div>
                   <button 
                     onClick={() => setShowEditProfile(true)}
-                    className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 rounded-lg transition-colors"
+                    className="p-2 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 bg-slate-100/50 dark:bg-zinc-800/50 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-xl transition-all duration-200 opacity-100 lg:opacity-0 lg:group-hover:opacity-100"
                     title="Edit Academic Profile"
                   >
-                    <Edit2 size={14} />
+                    <Edit2 size={16} />
                   </button>
                 </div>
+                
                 <div className="flex flex-wrap items-center gap-2">
-                  <div className="inline-flex items-center gap-2 bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300 px-3 py-1.5 rounded-lg text-sm font-bold w-fit">
+                  <div className="inline-flex items-center gap-1.5 bg-indigo-50/80 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-300 px-2.5 py-1 rounded-lg text-xs font-semibold border border-indigo-100/50 dark:border-indigo-800/50">
+                    <GraduationCap size={14} />
                     {profile.academic_level} Level
                   </div>
-                  <div className="inline-flex items-center gap-2 bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 px-3 py-1.5 rounded-lg text-sm font-bold w-fit">
+                  <div className="inline-flex items-center gap-1.5 bg-emerald-50/80 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300 px-2.5 py-1 rounded-lg text-xs font-semibold border border-emerald-100/50 dark:border-emerald-800/50">
+                    <Calendar size={14} />
                     {activeSemester}
                   </div>
                 </div>

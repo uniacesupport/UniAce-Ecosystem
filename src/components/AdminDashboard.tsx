@@ -18,7 +18,7 @@ import ApiKeyManagerModal from './ApiKeyManagerModal';
 import { CurriculumManager } from './CurriculumManager';
 import { AIService } from '../services/ai';
 import { generateCourseContent, generateCourseSkeleton, generateModuleContent, generateCourseFormulas } from '../services/aiCourseGenerator';
-import { CourseService } from '../services/courseService';
+import { CourseService, sanitizeForFirestore } from '../services/courseService';
 import { Course, UserProgress, CourseId, Department, Level, Semester, Subject, CourseScope } from '../types';
 import { FACULTIES, DEPARTMENT_TO_FACULTY, DEPARTMENTS, LEVELS, SEMESTERS } from '../constants';
 import { LogService, SystemLog } from '../services/logService';
@@ -827,10 +827,10 @@ export default function AdminDashboard() {
           generatedFormulas.forEach((formula: any, idx: number) => {
             const formulaId = `f${idx + 1}`;
             const formulaRef = doc(db, `courses/${courseId}/formulas`, formulaId);
-            batch.set(formulaRef, {
+            batch.set(formulaRef, sanitizeForFirestore({
               id: formulaId,
               ...formula
-            });
+            }));
           });
           await batch.commit();
           setStatusMessage('Formulas generated successfully!');
@@ -1055,14 +1055,15 @@ export default function AdminDashboard() {
         // Send notification to user
         if (db) {
           try {
-            await addDoc(collection(db, 'notifications'), {
+            const newNotifRef = doc(collection(db, 'notifications'));
+            await setDoc(newNotifRef, {
               userId: targetUserId,
               title: 'Role Updated',
               message: `Your account role has been updated to ${newRole}. Please refresh or re-login to see changes.`,
               type: 'info',
               read: false,
               createdAt: serverTimestamp()
-            });
+            }, { merge: true });
           } catch (notifErr) {
             console.error("Failed to send role update notification:", notifErr);
           }

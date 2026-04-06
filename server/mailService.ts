@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import dns from 'dns';
 
 /**
  * MailService handles sending emails using SMTP.
@@ -9,8 +10,8 @@ export class MailService {
 
   private static getTransporter() {
     if (!this.transporter) {
-      const host = process.env.SMTP_HOST?.trim();
-      const port = parseInt(process.env.SMTP_PORT || '587');
+      const host = process.env.SMTP_HOST?.trim() || 'smtp.gmail.com';
+      const port = parseInt(process.env.SMTP_PORT || '465');
       // Fallback to SMTP_FROM_EMAIL if SMTP_USER is missing
       const user = (process.env.SMTP_USER || process.env.SMTP_FROM_EMAIL)?.trim();
       let pass = process.env.SMTP_PASS?.trim();
@@ -40,19 +41,22 @@ export class MailService {
           user,
           pass,
         },
-        // Force IPv4 to prevent ENETUNREACH on platforms lacking IPv6 support
-        // Some environments (like Cloud Run) have issues with IPv6 outbound
-        connectionTimeout: 10000, // 10 seconds
-        greetingTimeout: 10000,
-        socketTimeout: 10000,
-        dnsTimeout: 10000,
-        family: 4, 
+        connectionTimeout: 15000,
+        greetingTimeout: 15000,
+        socketTimeout: 15000,
+        // THE ULTIMATE FIX FOR RENDER IPv6 ENETUNREACH:
+        // We intercept the DNS lookup and force it to ONLY return an IPv4 address.
+        // This completely bypasses Render's broken IPv6 outbound routing.
+        lookup: (hostname: string, options: any, callback: any) => {
+          dns.lookup(hostname, { family: 4 }, (err, address, family) => {
+            callback(err, address, family);
+          });
+        },
         tls: {
-          // Do not fail on invalid certs, and ensure we use the correct servername for SNI
           rejectUnauthorized: false,
           servername: host
         }
-      } as any); // Use 'as any' to avoid type issues with some nodemailer versions/types
+      } as any);
     }
     return this.transporter;
   }

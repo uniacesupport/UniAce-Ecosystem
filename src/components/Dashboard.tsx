@@ -60,13 +60,17 @@ export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSele
   const [isLoadingReviews, setIsLoadingReviews] = useState(false);
 
   useEffect(() => {
-    if (isTrialActive && daysRemaining <= 2) {
-      const hasNotification = notifications.some(n => n.title === 'Trial Ending Soon!');
+    const isStaffRole = ['admin', 'moderator', 'tutor'].includes(profile?.role || '');
+    const isStaff = isStaffRole || isAdmin;
+    if (!isStaff && profile?.plan_type === 'free' && isTrialActive && daysRemaining <= 2 && user) {
+      const today = new Date().toISOString().split('T')[0];
+      const notifId = `trial_ending_${user.uid}_${today}`;
+      const hasNotification = notifications.some(n => n.id === notifId || n.title === 'Trial Ending Soon!');
       if (!hasNotification) {
-        sendNotification('Trial Ending Soon!', `Your premium trial ends in ${daysRemaining} day${daysRemaining === 1 ? '' : 's'}. Upgrade now to keep your access.`, 'warning');
+        sendNotification('Trial Ending Soon!', `Your premium trial ends in ${daysRemaining} day${daysRemaining === 1 ? '' : 's'}. Upgrade now to keep your access.`, 'warning', notifId);
       }
     }
-  }, [isTrialActive, daysRemaining, notifications, sendNotification]);
+  }, [isTrialActive, daysRemaining, notifications, sendNotification, profile, isAdmin, user]);
 
   useEffect(() => {
     const fetchReviews = async () => {
@@ -226,31 +230,6 @@ export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSele
           </div>
         </header>
 
-        {/* Notification Permission Banner */}
-        {permissionStatus === 'default' && (
-          <motion.div 
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-2xl p-4 sm:p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
-          >
-            <div className="flex items-center gap-4">
-              <div className="bg-blue-100 dark:bg-blue-800 p-3 rounded-full text-blue-600 dark:text-blue-300 shrink-0">
-                <Bell size={24} />
-              </div>
-              <div>
-                <h3 className="font-bold text-slate-900 dark:text-white">Enable Push Notifications</h3>
-                <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">Receive timely updates, assignment reminders, and daily missions directly on your device.</p>
-              </div>
-            </div>
-            <button
-              onClick={requestNotificationPermission}
-              className="w-full sm:w-auto px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl transition-colors whitespace-nowrap shadow-lg shadow-blue-500/30"
-            >
-              Enable Now
-            </button>
-          </motion.div>
-        )}
-
         {/* Quick Access Grid */}
         <div className="flex flex-col gap-6">
           {/* Due Reviews Section */}
@@ -317,7 +296,7 @@ export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSele
               {isLoadingMission ? (
                 <div className="flex flex-col items-center justify-center py-12 space-y-4">
                   <Loader2 size={40} className="animate-spin text-blue-200" />
-                  <p className="text-blue-100 font-medium animate-pulse">AI is analyzing your progress...</p>
+                  <p className="text-blue-100 font-medium animate-pulse">Cohere AI is analyzing your progress...</p>
                 </div>
               ) : dailyMission ? (
                 <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-8">
@@ -325,6 +304,7 @@ export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSele
                     <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/20 backdrop-blur-md border border-white/30 text-xs font-bold uppercase tracking-widest">
                       <Sparkles size={14} className="text-amber-300" />
                       <span>{dailyMission.type === 'review' ? 'Critical Review' : dailyMission.type === 'mastery' ? 'Mastery Push' : 'New Challenge'}</span>
+                      <span className="ml-2 pl-2 border-l border-white/30 text-[10px] opacity-80">Powered by Cohere AI</span>
                     </div>
                     <div className="space-y-2">
                       <h3 className="text-xl sm:text-3xl font-black leading-tight">{dailyMission.title}</h3>
@@ -337,7 +317,6 @@ export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSele
                         if (missionCourseId && missionCourseId !== activeCourseId) {
                           onCourseSelect(missionCourseId);
                         }
-                        // Need a small delay to allow state to update before selecting subtopic
                         setTimeout(() => {
                           if (onSubTopicSelect) {
                             onSubTopicSelect(dailyMission.subTopicId);
@@ -362,13 +341,9 @@ export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSele
                 </div>
               ) : (
                 <div className="text-center py-12">
-                  <p className="text-blue-100 text-lg">No mission available. Start a course to get AI recommendations!</p>
+                  <p className="text-blue-100 text-lg">No mission available. Start a course to get Cohere AI recommendations!</p>
                 </div>
               )}
-
-              {/* Decorative background elements */}
-              <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -mr-32 -mt-32 blur-3xl" />
-              <div className="absolute bottom-0 left-0 w-64 h-64 bg-blue-400/10 rounded-full -ml-32 -mb-32 blur-3xl" />
             </motion.div>
           </section>
         </div>
@@ -628,9 +603,6 @@ export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSele
             </motion.div>
           </div>
         </section>
-
-
-
 
         {/* Tools & Resources */}
         <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

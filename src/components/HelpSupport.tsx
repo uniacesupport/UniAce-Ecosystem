@@ -169,12 +169,13 @@ export default function HelpSupport({ onBack }: HelpSupportProps) {
       }, { merge: true });
 
       // Add message
-      await addDoc(collection(db, 'support_chats', chatId, 'messages'), {
+      const msgRef = doc(collection(db, 'support_chats', chatId, 'messages'));
+      await setDoc(msgRef, {
         senderId: user.uid,
         senderName: user.displayName,
         text: msg,
         timestamp: serverTimestamp()
-      });
+      }, { merge: true });
     } catch (error) {
       console.error('Error sending message:', error);
     }
@@ -187,7 +188,8 @@ export default function HelpSupport({ onBack }: HelpSupportProps) {
     setFormStatus('sending');
     
     try {
-      await addDoc(collection(db, 'support_tickets'), {
+      const ticketRef = doc(collection(db, 'support_tickets'));
+      await setDoc(ticketRef, {
         userId: user.uid,
         name: formData.name,
         email: formData.email,
@@ -195,7 +197,7 @@ export default function HelpSupport({ onBack }: HelpSupportProps) {
         message: formData.message,
         status: 'open',
         createdAt: serverTimestamp()
-      });
+      }, { merge: true });
       
       setFormStatus('success');
       setFormData({ ...formData, subject: '', message: '' });
