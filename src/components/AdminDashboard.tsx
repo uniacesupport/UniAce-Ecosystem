@@ -3740,11 +3740,11 @@ export default function AdminDashboard() {
                   </div>
                   <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
                     <span>Latency</span>
-                    <span className="text-emerald-500">{aiMetrics.groq.latency}</span>
+                    <span className="text-emerald-500">{aiMetrics.groq?.latency || 'N/A'}</span>
                   </div>
                   <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
                     <span>Uptime</span>
-                    <span className="text-slate-900 dark:text-white">{aiMetrics.groq.uptime}</span>
+                    <span className="text-slate-900 dark:text-white">{aiMetrics.groq?.uptime || 'N/A'}</span>
                   </div>
                 </div>
               </div>
@@ -3769,11 +3769,11 @@ export default function AdminDashboard() {
                   </div>
                   <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
                     <span>Latency</span>
-                    <span className="text-amber-500">{aiMetrics.mistral_direct.latency}</span>
+                    <span className="text-amber-500">{aiMetrics.mistral_direct?.latency || 'N/A'}</span>
                   </div>
                   <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
                     <span>Uptime</span>
-                    <span className="text-slate-900 dark:text-white">{aiMetrics.mistral_direct.uptime}</span>
+                    <span className="text-slate-900 dark:text-white">{aiMetrics.mistral_direct?.uptime || 'N/A'}</span>
                   </div>
                 </div>
               </div>
@@ -3798,11 +3798,11 @@ export default function AdminDashboard() {
                   </div>
                   <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
                     <span>Latency</span>
-                    <span className="text-amber-500">{aiMetrics.mistral_openrouter.latency}</span>
+                    <span className="text-amber-500">{aiMetrics.mistral_openrouter?.latency || 'N/A'}</span>
                   </div>
                   <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
                     <span>Uptime</span>
-                    <span className="text-slate-900 dark:text-white">{aiMetrics.mistral_openrouter.uptime}</span>
+                    <span className="text-slate-900 dark:text-white">{aiMetrics.mistral_openrouter?.uptime || 'N/A'}</span>
                   </div>
                 </div>
               </div>
@@ -3827,11 +3827,11 @@ export default function AdminDashboard() {
                   </div>
                   <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
                     <span>Latency</span>
-                    <span className="text-slate-500">{aiMetrics.gemini_direct.latency}</span>
+                    <span className="text-slate-500">{aiMetrics.gemini_direct?.latency || 'N/A'}</span>
                   </div>
                   <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
                     <span>Uptime</span>
-                    <span className="text-slate-900 dark:text-white">{aiMetrics.gemini_direct.uptime}</span>
+                    <span className="text-slate-900 dark:text-white">{aiMetrics.gemini_direct?.uptime || 'N/A'}</span>
                   </div>
                 </div>
               </div>
@@ -3856,11 +3856,11 @@ export default function AdminDashboard() {
                   </div>
                   <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
                     <span>Latency</span>
-                    <span className="text-slate-500">{aiMetrics.gemini_openrouter.latency}</span>
+                    <span className="text-slate-500">{aiMetrics.gemini_openrouter?.latency || 'N/A'}</span>
                   </div>
                   <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
                     <span>Uptime</span>
-                    <span className="text-slate-900 dark:text-white">{aiMetrics.gemini_openrouter.uptime}</span>
+                    <span className="text-slate-900 dark:text-white">{aiMetrics.gemini_openrouter?.uptime || 'N/A'}</span>
                   </div>
                 </div>
               </div>
@@ -3885,11 +3885,11 @@ export default function AdminDashboard() {
                   </div>
                   <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
                     <span>Latency</span>
-                    <span className="text-slate-500">{aiMetrics.cohere.latency}</span>
+                    <span className="text-slate-500">{aiMetrics.cohere?.latency || 'N/A'}</span>
                   </div>
                   <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
                     <span>Uptime</span>
-                    <span className="text-slate-900 dark:text-white">{aiMetrics.cohere.uptime}</span>
+                    <span className="text-slate-900 dark:text-white">{aiMetrics.cohere?.uptime || 'N/A'}</span>
                   </div>
                 </div>
               </div>
@@ -3914,11 +3914,11 @@ export default function AdminDashboard() {
                   </div>
                   <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
                     <span>Latency</span>
-                    <span className="text-slate-500">{aiMetrics.huggingface.latency}</span>
+                    <span className="text-slate-500">{aiMetrics.huggingface?.latency || 'N/A'}</span>
                   </div>
                   <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
                     <span>Uptime</span>
-                    <span className="text-slate-900 dark:text-white">{aiMetrics.huggingface.uptime}</span>
+                    <span className="text-slate-900 dark:text-white">{aiMetrics.huggingface?.uptime || 'N/A'}</span>
                   </div>
                 </div>
               </div>
