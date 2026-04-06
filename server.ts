@@ -1124,21 +1124,10 @@ app.post('/api/chat', verifyAuth, async (req, res) => {
         // Force Gemini for multimodal tasks
         if (globalGeminiDirectBreaker) providers.push(globalGeminiDirectBreaker);
         if (geminiOpenRouterBreaker) providers.push(geminiOpenRouterBreaker);
-      } else if (complexity === 'high') {
-        if (mistralBreaker) providers.push(mistralBreaker);
-        if (globalGeminiDirectBreaker) providers.push(globalGeminiDirectBreaker);
-        if (geminiOpenRouterBreaker) providers.push(geminiOpenRouterBreaker);
-        if (groqBreaker) providers.push(groqBreaker);
-        if (cohereBreaker) providers.push(cohereBreaker);
-        if (huggingFaceBreaker) providers.push(huggingFaceBreaker);
       } else {
-        // Prioritize Mistral for reasoning and quality as per user request
-        if (mistralBreaker) providers.push(mistralBreaker);
+        // Only use Groq for AI chatbot and cohere as fallback
         if (groqBreaker) providers.push(groqBreaker);
-        if (globalGeminiDirectBreaker) providers.push(globalGeminiDirectBreaker);
-        if (geminiOpenRouterBreaker) providers.push(geminiOpenRouterBreaker);
         if (cohereBreaker) providers.push(cohereBreaker);
-        if (huggingFaceBreaker) providers.push(huggingFaceBreaker);
       }
 
       let lastError;
@@ -1298,8 +1287,46 @@ app.get('/api/admin/ai-status', verifyAuth, async (req, res) => {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
-    const keysDoc = await app.firestore().collection('system_settings').doc('api_keys').get();
+    const keysDocRef = app.firestore().collection('system_settings').doc('api_keys');
+    const keysDoc = await keysDocRef.get();
     const dbKeys = keysDoc.data() || {};
+    let globalNeedsUpdate = false;
+    const now = Date.now();
+    const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
+
+    // Perform automatic reset check for all providers
+    for (const provider in dbKeys) {
+      if (dbKeys[provider] && Array.isArray(dbKeys[provider].keys)) {
+        let providerNeedsUpdate = false;
+        const updatedKeys = dbKeys[provider].keys.map((k: any) => {
+          if (k.isExhausted && k.exhaustedAt) {
+            const exhaustedDate = new Date(k.exhaustedAt);
+            const currentDate = new Date(now);
+            
+            const isNewDay = exhaustedDate.getUTCDate() !== currentDate.getUTCDate() || 
+                             exhaustedDate.getUTCMonth() !== currentDate.getUTCMonth() ||
+                             exhaustedDate.getUTCFullYear() !== currentDate.getUTCFullYear();
+            
+            const isPast24h = now - k.exhaustedAt > TWENTY_FOUR_HOURS;
+
+            if (isNewDay || isPast24h) {
+              providerNeedsUpdate = true;
+              return { ...k, isExhausted: false, exhaustedAt: undefined };
+            }
+          }
+          return k;
+        });
+
+        if (providerNeedsUpdate) {
+          dbKeys[provider].keys = updatedKeys;
+          globalNeedsUpdate = true;
+        }
+      }
+    }
+
+    if (globalNeedsUpdate) {
+      await keysDocRef.set(dbKeys);
+    }
 
     const getProviderStatus = (provider: string, envKeyString: string | undefined) => {
       const envKeys = envKeyString ? envKeyString.split(',').map(k => k.trim()).filter(k => k.length > 0) : [];
@@ -1592,7 +1619,7 @@ app.post('/api/ai/generate', verifyAuth, async (req, res) => {
     const routingConfig = routingDoc.data() || {
       chat: 'groq',
       quiz: 'groq',
-      lesson: 'gemini_openrouter',
+      lesson: 'cohere',
       skeleton: 'cohere',
       recommendation: 'cohere',
       flashcard: 'huggingface',
@@ -1602,16 +1629,16 @@ app.post('/api/ai/generate', verifyAuth, async (req, res) => {
     };
     
     const TASK_ROUTING_TABLE: Record<string, { primary: string, fallbacks: string[] }> = {
-      'chat': { primary: 'groq', fallbacks: ['gemini_openrouter', 'mistral_openrouter'] },
+      'chat': { primary: 'groq', fallbacks: ['cohere'] },
       'quiz': { primary: 'groq', fallbacks: ['gemini_openrouter'] },
       'skeleton': { primary: 'cohere', fallbacks: ['mistral_openrouter', 'gemini_openrouter'] },
       'recommendation': { primary: 'cohere', fallbacks: ['gemini_openrouter'] },
-      'lesson': { primary: 'gemini_openrouter', fallbacks: ['mistral_openrouter'] },
+      'lesson': { primary: 'cohere', fallbacks: ['gemini_openrouter', 'mistral_openrouter'] },
       'flashcard': { primary: 'huggingface', fallbacks: ['groq', 'gemini_openrouter'] },
       'rag': { primary: 'gemini_openrouter', fallbacks: ['mistral_openrouter'] },
       'vision': { primary: 'gemini_direct', fallbacks: [] },
       'past_questions': { primary: 'gemini_direct', fallbacks: [] },
-      'default': { primary: 'gemini_openrouter', fallbacks: ['mistral_openrouter'] }
+      'default': { primary: 'cohere', fallbacks: ['gemini_openrouter', 'mistral_openrouter'] }
     };
 
     const routeConfig = TASK_ROUTING_TABLE[taskType] || TASK_ROUTING_TABLE['default'];
@@ -1723,7 +1750,7 @@ app.post('/api/ai/stream', verifyAuth, async (req, res) => {
     const routingConfig = routingDoc.data() || {
       chat: 'groq',
       quiz: 'groq',
-      lesson: 'mistral_openrouter',
+      lesson: 'cohere',
       skeleton: 'cohere',
       recommendation: 'cohere',
       flashcard: 'huggingface',
@@ -1736,7 +1763,7 @@ app.post('/api/ai/stream', verifyAuth, async (req, res) => {
     const aiModeDoc = await appAdmin.firestore().collection('system_config').doc('ai_mode').get();
     const globalAiMode = aiModeDoc.exists ? aiModeDoc.data()?.mode : 'normal';
     
-    let preferredProviderName = req.body.preferredProvider || routingConfig[taskType || 'lesson'] || 'mistral';
+    let preferredProviderName = req.body.preferredProvider || routingConfig[taskType || 'lesson'] || 'cohere';
     
     // If Global Fast Mode is enabled, force Groq for all students
     if (globalAiMode === 'fast') {
@@ -1745,16 +1772,16 @@ app.post('/api/ai/stream', verifyAuth, async (req, res) => {
     }
     
     const TASK_ROUTING_TABLE: Record<string, { primary: string, fallbacks: string[] }> = {
-      'chat': { primary: 'groq', fallbacks: ['gemini_openrouter', 'mistral_openrouter'] },
+      'chat': { primary: 'groq', fallbacks: ['cohere'] },
       'quiz': { primary: 'groq', fallbacks: ['gemini_openrouter'] },
       'skeleton': { primary: 'cohere', fallbacks: ['mistral_openrouter', 'gemini_openrouter'] },
       'recommendation': { primary: 'cohere', fallbacks: ['gemini_openrouter'] },
-      'lesson': { primary: 'gemini_openrouter', fallbacks: ['mistral_openrouter'] },
+      'lesson': { primary: 'cohere', fallbacks: ['gemini_openrouter', 'mistral_openrouter'] },
       'flashcard': { primary: 'huggingface', fallbacks: ['groq', 'gemini_openrouter'] },
       'rag': { primary: 'gemini_openrouter', fallbacks: ['mistral_openrouter'] },
       'vision': { primary: 'gemini_direct', fallbacks: [] },
       'past_questions': { primary: 'gemini_direct', fallbacks: [] },
-      'default': { primary: 'gemini_openrouter', fallbacks: ['mistral_openrouter'] }
+      'default': { primary: 'cohere', fallbacks: ['gemini_openrouter', 'mistral_openrouter'] }
     };
 
     const routeConfig = TASK_ROUTING_TABLE[taskType] || TASK_ROUTING_TABLE['default'];
@@ -1932,8 +1959,8 @@ app.post('/api/course/generate', verifyAuth, async (req, res) => {
     const TASK_ROUTING_TABLE: Record<string, { primary: string, fallbacks: string[] }> = {
       'skeleton': { primary: 'cohere', fallbacks: ['mistral_openrouter', 'gemini_openrouter'] },
       'module': { primary: 'cohere', fallbacks: ['mistral_openrouter', 'gemini_openrouter'] },
-      'lesson': { primary: 'gemini_openrouter', fallbacks: ['mistral_openrouter'] },
-      'default': { primary: 'mistral_openrouter', fallbacks: ['gemini_openrouter'] }
+      'lesson': { primary: 'cohere', fallbacks: ['gemini_openrouter', 'mistral_openrouter'] },
+      'default': { primary: 'cohere', fallbacks: ['gemini_openrouter', 'mistral_openrouter'] }
     };
 
     const routeConfig = TASK_ROUTING_TABLE[type] || TASK_ROUTING_TABLE['default'];

@@ -4084,7 +4084,7 @@ export default function AdminDashboard() {
                 {[
                   { id: 'chat', label: 'Student Chat (Q&A)', icon: Bot, recommended: 'groq', desc: 'Real-time conversational assistance.' },
                   { id: 'quiz', label: 'Quiz Generation', icon: Trophy, recommended: 'groq', desc: 'Creating assessments and practice questions.' },
-                  { id: 'lesson', label: 'Lesson Content', icon: BookOpen, recommended: 'mistral_openrouter', desc: 'Writing detailed educational modules.' },
+                  { id: 'lesson', label: 'Lesson Content', icon: BookOpen, recommended: 'cohere', desc: 'Writing detailed educational modules.' },
                   { id: 'skeleton', label: 'Course Skeletons', icon: Layers, recommended: 'cohere', desc: 'Structuring curriculum outlines and hierarchies.' },
                   { id: 'recommendation', label: 'Smart Recommendations', icon: Star, recommended: 'cohere', desc: 'Analyzing student data for study plans.' },
                   { id: 'flashcard', label: 'Flashcard Generation', icon: FileText, recommended: 'huggingface', desc: 'Fast, repetitive text extraction for study aids.' },
@@ -4144,6 +4144,14 @@ export default function AdminDashboard() {
                 <h2 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
                   <Key className="text-emerald-500" size={28} />
                   API Key Management
+                  <button 
+                    onClick={checkAIStatus}
+                    disabled={isCheckingAI}
+                    className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors text-slate-400 hover:text-emerald-500 disabled:opacity-50"
+                    title="Refresh AI Status"
+                  >
+                    <RefreshCw size={16} className={isCheckingAI ? 'animate-spin' : ''} />
+                  </button>
                 </h2>
                 <p className="text-slate-500 mt-1">Manage multiple API keys per provider for dynamic rotation and rate limit handling.</p>
               </div>
@@ -4737,7 +4745,10 @@ export default function AdminDashboard() {
       {selectedProviderForKeyManager && (
         <ApiKeyManagerModal
           provider={selectedProviderForKeyManager}
-          onClose={() => setSelectedProviderForKeyManager(null)}
+          onClose={() => {
+            setSelectedProviderForKeyManager(null);
+            checkAIStatus();
+          }}
         />
       )}
     </div>

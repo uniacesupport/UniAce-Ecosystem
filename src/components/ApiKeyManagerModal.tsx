@@ -244,13 +244,18 @@ export default function ApiKeyManagerModal({ provider, onClose }: ApiKeyManagerM
                             )}
 
                             {k.isExhausted && (
-                            <button
-                              onClick={() => handleResetExhaustion(index)}
-                              className="px-3 py-1.5 text-xs font-bold text-amber-600 bg-amber-50 hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-400 dark:hover:bg-amber-900/40 rounded-lg transition-colors"
-                            >
-                              Reset Status
-                            </button>
-                          )}
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] text-slate-500 hidden sm:inline-block">
+                                  {k.exhaustedAt ? 'Resets at Midnight UTC' : ''}
+                                </span>
+                                <button
+                                  onClick={() => handleResetExhaustion(index)}
+                                  className="px-3 py-1.5 text-xs font-bold text-amber-600 bg-amber-50 hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-400 dark:hover:bg-amber-900/40 rounded-lg transition-colors"
+                                >
+                                  Reset Status
+                                </button>
+                              </div>
+                            )}
                           <button
                             onClick={() => handleRemoveKey(index)}
                             className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"

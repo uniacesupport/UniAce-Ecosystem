@@ -30,7 +30,6 @@ import GlobalNotification from './components/GlobalNotification';
 import GlobalErrorInterceptor from './components/GlobalErrorInterceptor';
 import PaywallManager from './components/PaywallManager';
 import PWAInstallPrompt from './components/PWAInstallPrompt';
-import PWAUpdatePrompt from './components/PWAUpdatePrompt';
 import Calculator from './components/Calculator';
 import VoiceTutor from './components/VoiceTutor';
 import AcademicProfileModal from './components/AcademicProfileModal';
@@ -684,9 +683,6 @@ function AppContent() {
 
       {/* PWA Install Prompt */}
       <PWAInstallPrompt />
-
-      {/* PWA Update Prompt */}
-      <PWAUpdatePrompt />
 
       {/* Voice Tutor */}
       <VoiceTutor 

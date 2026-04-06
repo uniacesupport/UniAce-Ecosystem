@@ -120,13 +120,56 @@ export class DynamicKeyRotator {
       return;
     }
     try {
-      const doc = await admin.firestore().collection('system_settings').doc('api_keys').get();
+      const docRef = admin.firestore().collection('system_settings').doc('api_keys');
+      const doc = await docRef.get();
       if (doc.exists) {
         const data = doc.data();
         if (data && data[this.providerName] && Array.isArray(data[this.providerName].keys)) {
+           let needsUpdate = false;
+           const now = Date.now();
+           const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
+
+           const updatedKeys = data[this.providerName].keys.map((k: any) => {
+             if (k.isExhausted && k.exhaustedAt) {
+               const exhaustedDate = new Date(k.exhaustedAt);
+               const currentDate = new Date(now);
+               
+               // Reset if:
+               // 1. It's a different calendar day (UTC)
+               // 2. OR 24 hours have passed (Safety fallback)
+               const isNewDay = exhaustedDate.getUTCDate() !== currentDate.getUTCDate() || 
+                                exhaustedDate.getUTCMonth() !== currentDate.getUTCMonth() ||
+                                exhaustedDate.getUTCFullYear() !== currentDate.getUTCFullYear();
+               
+               const isPast24h = now - k.exhaustedAt > TWENTY_FOUR_HOURS;
+
+               if (isNewDay || isPast24h) {
+                 needsUpdate = true;
+                 return { ...k, isExhausted: false, exhaustedAt: undefined };
+               }
+             }
+             return k;
+           });
+
+           if (needsUpdate) {
+             await docRef.update({
+               [`${this.providerName}.keys`]: updatedKeys
+             });
+             data[this.providerName].keys = updatedKeys;
+           }
+
            this.dbKeys = data[this.providerName].keys
              .filter((k: any) => k.key && k.key.trim().length > 0)
              .map((k: any) => k.key.trim());
+
+           // Sync local exhausted state with DB so we don't try exhausted keys until they reset
+           for (const k of data[this.providerName].keys) {
+             if (k.isExhausted) {
+               this.exhaustedKeys.add(k.key.trim());
+             } else {
+               this.exhaustedKeys.delete(k.key.trim());
+             }
+           }
         }
       }
       this.lastFetchTime = Date.now();
@@ -199,11 +242,6 @@ export class DynamicKeyRotator {
     } catch (e) {
       console.error(`Failed to update exhausted state for ${this.providerName}`, e);
     }
-
-    // Remove from exhausted locally after 1 hour
-    setTimeout(() => {
-      this.exhaustedKeys.delete(key);
-    }, 60 * 60 * 1000);
   }
 }
 
@@ -727,7 +765,8 @@ export class GroqProvider implements ModelProvider {
       const groq = new Groq({ apiKey: apiKey });
 
       // Truncate messages for Groq to avoid TPM limits (especially for 8b model)
-      const maxTokens = options.complexity === 'high' ? 5000 : 3000;
+      // Free tier TPM is often 6000. We target 4000 to be safe and leave room for response.
+      const maxTokens = options.complexity === 'high' ? 4000 : 2500;
       const truncatedMessages = this.truncateMessages(messages, maxTokens);
 
       if (options.jsonMode) {
@@ -738,7 +777,7 @@ export class GroqProvider implements ModelProvider {
         const response = await groq.chat.completions.create({
           model: options.complexity === 'high' ? 'llama-3.3-70b-versatile' : 'llama-3.1-8b-instant',
           temperature: 0.5,
-          max_tokens: 8192,
+          max_tokens: options.complexity === 'high' ? 4096 : 2048,
           messages: truncatedMessages,
           response_format: options.jsonMode ? { type: "json_object" } : undefined
         });
@@ -767,14 +806,14 @@ export class GroqProvider implements ModelProvider {
       const groq = new Groq({ apiKey: apiKey });
 
       // Truncate messages for Groq to avoid TPM limits
-      const maxTokens = options.complexity === 'high' ? 5000 : 3000;
+      const maxTokens = options.complexity === 'high' ? 4000 : 2500;
       const truncatedMessages = this.truncateMessages(messages, maxTokens);
 
       try {
         const stream = await groq.chat.completions.create({
           model: options.complexity === 'high' ? 'llama-3.3-70b-versatile' : 'llama-3.1-8b-instant',
           temperature: 0.5,
-          max_tokens: 8192,
+          max_tokens: options.complexity === 'high' ? 4096 : 2048,
           messages: truncatedMessages,
           stream: true
         });
@@ -811,17 +850,39 @@ export class GroqProvider implements ModelProvider {
     
     // Always keep the system message if it exists
     const systemMessage = messages.find(m => m.role === 'system');
+    let systemTokens = 0;
     if (systemMessage) {
-      currentTokens += Math.ceil((systemMessage.content?.length || 0) / 2.5);
+      systemTokens = Math.ceil((systemMessage.content?.length || 0) / 2.5);
+      // If system message alone is too big, truncate it (rare but possible)
+      if (systemTokens > maxTokens * 0.4) {
+        const allowedChars = Math.floor(maxTokens * 0.4 * 2.5);
+        systemMessage.content = systemMessage.content.substring(0, allowedChars) + "... [truncated]";
+        systemTokens = Math.ceil(systemMessage.content.length / 2.5);
+      }
+      currentTokens += systemTokens;
     }
 
     // Process other messages from newest to oldest
     const otherMessages = messages.filter(m => m.role !== 'system');
     for (let i = otherMessages.length - 1; i >= 0; i--) {
       const msg = otherMessages[i];
-      const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
-      const estimatedTokens = Math.ceil(content.length / 2.5);
+      let content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
+      let estimatedTokens = Math.ceil(content.length / 2.5);
       
+      // If the very first (newest) message is too large, truncate it
+      if (i === otherMessages.length - 1 && currentTokens + estimatedTokens > maxTokens) {
+        const allowedTokens = maxTokens - currentTokens;
+        if (allowedTokens > 100) {
+          const allowedChars = Math.floor(allowedTokens * 2.5);
+          content = content.substring(0, allowedChars) + "... [truncated]";
+          estimatedTokens = Math.ceil(content.length / 2.5);
+          msg.content = content;
+        } else {
+          // Too little space left, skip this message
+          continue;
+        }
+      }
+
       if (currentTokens + estimatedTokens > maxTokens) {
         break;
       }
@@ -963,7 +1024,7 @@ export class HuggingFaceProvider implements ModelProvider {
 
       try {
         const response = await hf.chatCompletion({
-          model: 'mistralai/Mistral-7B-Instruct-v0.3',
+          model: 'mistralai/Mistral-7B-Instruct-v0.2',
           messages: messages,
           max_tokens: 4096,
           temperature: 0.5,
@@ -982,7 +1043,13 @@ export class HuggingFaceProvider implements ModelProvider {
         };
       } catch (error: any) {
         const status = error.status || error.statusCode;
-        if (status === 401 || status === 403 || status === 429) {
+        const isQuotaError = status === 401 || status === 403 || status === 429 || 
+                           error.message?.toLowerCase().includes('limit') ||
+                           error.message?.toLowerCase().includes('quota') ||
+                           error.message?.toLowerCase().includes('http error');
+        
+        if (isQuotaError) {
+          console.warn(`[HuggingFace] Marking key as exhausted due to error: ${error.message}`);
           this.rotator.markKeyExhausted(apiKey);
         }
         throw error;
@@ -997,7 +1064,7 @@ export class HuggingFaceProvider implements ModelProvider {
 
       try {
         const stream = hf.chatCompletionStream({
-          model: 'mistralai/Mistral-7B-Instruct-v0.3',
+          model: 'mistralai/Mistral-7B-Instruct-v0.2',
           messages: messages,
           max_tokens: 4096,
           temperature: 0.5,
@@ -1021,7 +1088,13 @@ export class HuggingFaceProvider implements ModelProvider {
         };
       } catch (error: any) {
         const status = error.status || error.statusCode;
-        if (status === 401 || status === 403 || status === 429) {
+        const isQuotaError = status === 401 || status === 403 || status === 429 || 
+                           error.message?.toLowerCase().includes('limit') ||
+                           error.message?.toLowerCase().includes('quota') ||
+                           error.message?.toLowerCase().includes('http error');
+        
+        if (isQuotaError) {
+          console.warn(`[HuggingFace] Marking key as exhausted due to error: ${error.message}`);
           this.rotator.markKeyExhausted(apiKey);
         }
         throw error;
