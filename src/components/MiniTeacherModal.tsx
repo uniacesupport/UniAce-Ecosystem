@@ -4,6 +4,7 @@ import { Sparkles, X, Loader2, Brain } from 'lucide-react';
 import { Module, SubTopic, UserProgress } from '../types';
 import { AIService } from '../services/ai';
 import MarkdownRenderer from './MarkdownRenderer';
+import { sanitizeLatex } from '../services/aiCourseGenerator';
 import { useAuth } from '../context/AuthContext';
 
 interface MiniTeacherModalProps {
@@ -162,7 +163,7 @@ export default function MiniTeacherModal({ isOpen, onClose, onAction, module, su
                 </div>
               ) : content ? (
                 <div className="max-w-none">
-                  <MarkdownRenderer content={content} />
+                  <MarkdownRenderer content={sanitizeLatex(content)} />
                   
                   {activeMode === 'proactive' && !isGenerating && (
                     <motion.div 

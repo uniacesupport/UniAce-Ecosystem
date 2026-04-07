@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { ChatMessage, CourseId, UserProgress, AIPersonality } from "../types";
 import { jsonrepair } from 'jsonrepair';
 import MarkdownRenderer from './MarkdownRenderer';
+import { sanitizeLatex } from '../services/aiCourseGenerator';
 import { AIService } from "../services/ai";
 import { useAuth } from "../context/AuthContext";
 import { useWebSocketChat } from "../hooks/useWebSocketChat";
@@ -530,7 +531,7 @@ export default function ChatBot({
                       <img src={msg.image} alt="User upload" className="rounded-xl mb-3 max-w-full h-auto border border-white/10 shadow-sm" />
                     )}
                     <div className="text-inherit max-w-none">
-                      <MarkdownRenderer content={msg.text} />
+                      <MarkdownRenderer content={sanitizeLatex(msg.text)} />
                     </div>
                     
                     {msg.sources && msg.sources.length > 0 && (
@@ -897,7 +898,7 @@ export default function ChatBot({
                         <img src={msg.image} alt="User upload" className="rounded-2xl mb-4 max-w-full h-auto border border-white/20 shadow-md" />
                       )}
                       <div className="prose prose-sm prose-slate dark:prose-invert max-w-none">
-                        <MarkdownRenderer content={msg.text} />
+                        <MarkdownRenderer content={sanitizeLatex(msg.text)} />
                       </div>
                       {msg.role === "model" && (
                         <div className="mt-5 flex gap-2">

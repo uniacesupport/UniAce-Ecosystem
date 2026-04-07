@@ -19,6 +19,14 @@ export default function PaywallManager({ onUpgrade }: PaywallManagerProps) {
   useEffect(() => {
     if (!profile) return;
 
+    // Do not show paywall/trial warnings for admins, moderators, tutors, or paid users
+    const isActuallyPremium = profile.plan_type !== 'free' || ['tutor', 'moderator', 'admin'].includes(profile.role);
+    if (isActuallyPremium) {
+      setShowSoftWarning(false);
+      setShowHardStop(false);
+      return;
+    }
+
     // Scenario A: Soft Warning (Trial ending soon or low sparks)
     const isTrialEndingSoon = isTrialActive && daysRemaining <= 1;
     const isSparksLow = !isPremium && profile.ai_sparks > 0 && profile.ai_sparks < 50;

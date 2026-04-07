@@ -55,16 +55,10 @@ export const isFirebaseInitialized = (): boolean => {
   return !!adminApp;
 };
 
-export const getAdminApp = (): admin.app.App => {
-  if (!adminApp) {
-    throw new Error("Firebase Admin App is not initialized. Please check your FIREBASE_SERVICE_ACCOUNT environment variable.");
-  }
+export const getAdminApp = (): admin.app.App | null => {
   return adminApp;
 };
 
-export const getDb = (): admin.firestore.Firestore => {
-  if (!db) {
-    throw new Error("Firestore database is not initialized. Please check your Firebase configuration.");
-  }
+export const getDb = (): admin.firestore.Firestore | null => {
   return db;
 };

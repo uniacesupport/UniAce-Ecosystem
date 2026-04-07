@@ -42,6 +42,15 @@ class TelemetryService {
   async initialize() {
     if (this.isInitialized) return;
     try {
+      // Check if admin is initialized
+      try {
+        admin.app();
+      } catch (e) {
+        console.warn('[Telemetry] Firebase Admin not initialized. Skipping Firestore initialization.');
+        this.startFlushing();
+        return;
+      }
+
       const doc = await admin.firestore().collection('system_stats').doc('ai_telemetry').get();
       if (doc.exists) {
         const data = doc.data();
@@ -139,6 +148,13 @@ class TelemetryService {
 
   private async flushToFirestore() {
     try {
+      // Check if admin is initialized
+      try {
+        admin.app();
+      } catch (e) {
+        return;
+      }
+
       await admin.firestore().collection('system_stats').doc('ai_telemetry').set({
         metrics: this.metrics,
         lastUpdated: admin.firestore.FieldValue.serverTimestamp()

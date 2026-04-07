@@ -56,16 +56,59 @@ export function sanitizeLatex(content: string): string {
   // 4. Fix JSON escape character collisions with LaTeX macros
   // When AI fails to double-escape, JSON.parse turns \b, \f, \n, \r, \t into control characters.
   // We need to recover these back into LaTeX commands.
-  sanitized = sanitized.replace(/\x08(egin|matrix|pmat|bmat|vmat|Bmat|Vmat)/g, '\\begin$1'); // \b -> \begin
+  sanitized = sanitized.replace(/\x08(egin|matrix|pmat|bmat|vmat|Bmat|Vmat)/g, '\\b$1'); // \b -> \begin
   sanitized = sanitized.replace(/\x0C(rac|orm)/g, '\\f$1'); // \f -> \frac
   sanitized = sanitized.replace(/\x0A(abla|ewline|eg|u|i)/g, '\\n$1'); // \n -> \nabla, \newline, \neg, \nu, \ni
   sanitized = sanitized.replace(/\x0D(ight|eft|ho|p)/g, '\\r$1'); // \r -> \right, \left, \rho, \rp
   sanitized = sanitized.replace(/\x09(ext|heta|imes|an|au|o)/g, '\\t$1'); // \t -> \text, \theta, \times, \tan, \tau, \to
 
-  // 5. Fix literal \n and \t strings (backslash + n/t) ONLY if they are not part of a word
-  // This is safer than a global replace which breaks \nabla and \text
-  sanitized = sanitized.replace(/\\n(\s|$)/g, '\n$1');
-  sanitized = sanitized.replace(/\\t(\s|$)/g, '\t$1');
+  // 5. Fix literal \n and \t strings (backslash + n/t) that should be actual newlines/tabs
+  // This happens when AI double-escapes newlines in JSON.
+  // We replace \n with actual newline ONLY if it's not followed by a lowercase letter 
+  // that would make it a LaTeX command (like \nabla, \newline, \nu, \ni, \neg)
+  // This safely handles \nBy, \n1., \n#, \n\n while preserving \nabla.
+  sanitized = sanitized.replace(/\\n(?![a-z])/g, '\n');
+  sanitized = sanitized.replace(/\\t(?![a-z])/g, '\t');
+  
+  // 5.5 Fix missing backslashes for begin and end environments (e.g. if jsonrepair stripped them)
+  // It is safe to replace begin{ and end{ because they don't occur in normal English
+  sanitized = sanitized.replace(/(^|[^\\])begin\{/g, '$1\\begin{');
+  sanitized = sanitized.replace(/(^|[^\\])end\{/g, '$1\\end{');
+  
+  // Also fix other common math commands that might have lost their backslash
+  // Only match if they are NOT preceded by a backslash or a letter
+  sanitized = sanitized.replace(/(^|[^a-zA-Z\\])(cdot|rightarrow|leftarrow|Rightarrow|Leftarrow|infty|alpha|beta|gamma|delta|theta|omega|pi|sigma|mu|lambda)(?=[^a-zA-Z]|$)/g, '$1\\$2');
+  sanitized = sanitized.replace(/(^|[^a-zA-Z\\])(sum|int)_?\{/g, '$1\\$2_{');
+  sanitized = sanitized.replace(/(^|[^a-zA-Z\\])frac\{/g, '$1\\frac{');
+
+  // 5.6 Cleanup any duplicated prefixes caused by previous buggy sanitizeLatex versions
+  sanitized = sanitized.replace(/\\beginegin/g, '\\begin');
+  sanitized = sanitized.replace(/\\ffrac/g, '\\frac');
+  sanitized = sanitized.replace(/\\nnabla/g, '\\nabla');
+  sanitized = sanitized.replace(/\\nnewline/g, '\\newline');
+  sanitized = sanitized.replace(/\\nneg/g, '\\neg');
+  sanitized = sanitized.replace(/\\nnu/g, '\\nu');
+  sanitized = sanitized.replace(/\\nni/g, '\\ni');
+  sanitized = sanitized.replace(/\\rright/g, '\\right');
+  sanitized = sanitized.replace(/\\lleft/g, '\\left');
+  sanitized = sanitized.replace(/\\rrho/g, '\\rho');
+  sanitized = sanitized.replace(/\\ttext/g, '\\text');
+  sanitized = sanitized.replace(/\\ttheta/g, '\\theta');
+  sanitized = sanitized.replace(/\\ttimes/g, '\\times');
+  sanitized = sanitized.replace(/\\ttan/g, '\\tan');
+  sanitized = sanitized.replace(/\\ttau/g, '\\tau');
+  
+  // 5.7 Cleanup AI over-applying LaTeX backslashes to common English words
+  // This happens when AI follows "double-escape backslashes" too literally for words like "in", "cup", "end"
+  sanitized = sanitized.replace(/\\in(\s+)/g, 'in$1');
+  sanitized = sanitized.replace(/\\cup(\s+)/g, 'cup$1');
+  sanitized = sanitized.replace(/\\end(\s+)/g, 'end$1');
+  
+  // 5.8 Cleanup trailing backslashes that AI adds to the end of lines (LaTeX style newlines in markdown)
+  // This happens when AI gets confused and uses \\ for newlines in regular text
+  // We only remove it if it's at the end of a line and not preceded by a letter (which would be a command)
+  sanitized = sanitized.replace(/([^a-zA-Z\\])\\\s*(\n|$)/g, '$1$2');
+  sanitized = sanitized.replace(/^\\\s*(\n|$)/gm, '$1');
   
   // 6. Ensure \begin{...} and \end{...} are wrapped in $$ if they aren't already
   // This is a common issue where AI outputs raw LaTeX environments without markdown math delimiters
@@ -189,6 +232,16 @@ async function callGenerateAPI(prompt: string, type: 'skeleton' | 'module' | 'le
           }
         }
         
+        // Pre-process to fix common unescaped LaTeX commands in JSON
+        // This prevents jsonrepair from stripping backslashes from invalid escape sequences like \e
+        try {
+          const latexKeywords = ['text', 'begin', 'end', 'frac', 'omega', 'Omega', 'alpha', 'beta', 'gamma', 'theta', 'mu', 'pi', 'sum', 'int', 'sqrt', 'label', 'tag', 'align', 'matrix', 'cases', 'Rightarrow', 'Leftarrow', 'rightarrow', 'leftarrow', 'equiv', 'approx', 'neq', 'leq', 'geq', 'times', 'div', 'pm', 'mp', 'circ', 'cdot', 'ldots', 'cdots', 'vdots', 'ddots', 'sin', 'cos', 'tan', 'csc', 'sec', 'cot', 'arcsin', 'arccos', 'arctan', 'sinh', 'cosh', 'tanh', 'log', 'ln', 'exp', 'lim', 'max', 'min', 'inf', 'sup', 'det', 'trace', 'dim', 'ker', 'hom', 'hat', 'bar', 'vec', 'dot', 'ddot', 'mathcal', 'mathbb', 'mathfrak', 'mathscr', 'mathsf', 'mathtt', 'mathbf', 'mathit', 'mathrm', 'boldsymbol', 'quad', 'qquad', 'left', 'right', 'langle', 'rangle', 'lfloor', 'rfloor', 'lceil', 'rceil', 'bigcup', 'bigcap', 'cup', 'cap', 'setminus', 'subset', 'supset', 'subseteq', 'supseteq', 'notin', 'exists', 'nexists', 'forall', 'nabla', 'partial', 'propto', 'infty', 'aleph', 'ell', 'wp', 'Re', 'Im', 'top', 'bot', 'emptyset', 'varnothing', 'triangle', 'square', 'bigcirc', 'bullet', 'star', 'ast', 'oplus', 'ominus', 'otimes', 'oslash', 'odot', 'dagger', 'ddagger', 'amalg', 'models', 'vdash', 'dashv', 'Vdash', 'Vvdash', 'vDash', 'simeq', 'asymp', 'doteq', 'bowtie', 'ltimes', 'rtimes', 'smile', 'frown', 'perp', 'mid', 'parallel', ' '];
+          const regex = new RegExp(`(?<!\\\\)\\\\(${latexKeywords.join('|')})`, 'g');
+          jsonToRepair = jsonToRepair.replace(regex, '\\\\$1');
+        } catch (e) {
+          console.warn('Regex lookbehind not supported or failed, skipping LaTeX pre-processing', e);
+        }
+        
         try {
           const repaired = jsonrepair(jsonToRepair);
           parsedData = JSON.parse(repaired);
@@ -266,8 +319,7 @@ export async function generateCourseFormulas(
        For example, output \\\\frac instead of \\frac, and \\\\begin instead of \\begin.
     4. Do NOT use \\label{...} as it is not supported. Use \\tag{...} for equation numbering if needed.
     5. Ensure all LaTeX environments (like align, matrix, etc.) are wrapped in $$ ... $$ delimiters.
-    6. Do NOT use non-standard LaTeX commands like \\ext. Use \\text{...} for plain text inside math mode.
-    7. Double check that every backslash in your LaTeX is escaped with another backslash (e.g., \\\\alpha, \\\\beta).
+    6. Double check that every backslash in your LaTeX is escaped with another backslash (e.g., \\\\alpha, \\\\beta).
     CRITICAL: Ensure all double quotes inside strings are properly escaped (e.g., \\"word\\").
   `;
 
@@ -348,8 +400,7 @@ export async function generateCourseSkeleton(
        For example, output \\\\frac instead of \\frac, and \\\\begin instead of \\begin.
     4. Do NOT use \\label{...} as it is not supported. Use \\tag{...} for equation numbering if needed.
     5. Ensure all LaTeX environments (like align, matrix, etc.) are wrapped in $$ ... $$ delimiters.
-    6. Do NOT use non-standard LaTeX commands like \\ext. Use \\text{...} for plain text inside math mode.
-    7. Double check that every backslash in your LaTeX is escaped with another backslash (e.g., \\\\alpha, \\\\beta).
+    6. Double check that every backslash in your LaTeX is escaped with another backslash (e.g., \\\\alpha, \\\\beta).
     CRITICAL: Ensure all double quotes inside strings are properly escaped (e.g., \\"word\\").
     CRITICAL: If generating electives for a curriculum, ensure they do not overlap with the core courses: ${ccmasCore?.coreCourses.map((c: any) => c.code).join(', ') || 'None'}.
     CRITICAL: Ensure the curriculum is robust, academically rigorous, and follows the Hybrid Approach (NUC structure + International depth).
@@ -470,8 +521,7 @@ export async function generateLessonContent(
        For example, output \\\\frac instead of \\frac, and \\\\begin instead of \\begin.
     4. Do NOT use \\label{...} as it is not supported. Use \\tag{...} for equation numbering if needed.
     5. Ensure all LaTeX environments (like align, matrix, etc.) are wrapped in $$ ... $$ delimiters.
-    6. Do NOT use non-standard LaTeX commands like \\ext. Use \\text{...} for plain text inside math mode.
-    7. Double check that every backslash in your LaTeX is escaped with another backslash (e.g., \\\\alpha, \\\\beta).
+    6. Double check that every backslash in your LaTeX is escaped with another backslash (e.g., \\\\alpha, \\\\beta).
     6. CRITICAL: Output ONLY valid JSON matching this structure:
     {
       "content": "The raw markdown content including Learning Objectives, Key Vocabulary, Body, and Quick Check questions...",
@@ -532,8 +582,7 @@ export async function generateModuleQuiz(
        For example, output \\\\frac instead of \\frac, and \\\\begin instead of \\begin.
     4. Do NOT use \\label{...} as it is not supported. Use \\tag{...} for equation numbering if needed.
     5. Ensure all LaTeX environments (like align, matrix, etc.) are wrapped in $$ ... $$ delimiters.
-    6. Do NOT use non-standard LaTeX commands like \\ext. Use \\text{...} for plain text inside math mode.
-    7. Double check that every backslash in your LaTeX is escaped with another backslash (e.g., \\\\alpha, \\\\beta).
+    6. Double check that every backslash in your LaTeX is escaped with another backslash (e.g., \\\\alpha, \\\\beta).
     9. CRITICAL: For LaTeX in JSON strings, use double backslashes (e.g., "\\\\mathbf"). Do NOT use triple backslashes.
     10. CRITICAL: Ensure the quiz meets the academic standards set by NUC or relevant global guidelines, following the Hybrid Approach.
     11. Return ONLY valid JSON:
