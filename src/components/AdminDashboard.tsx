@@ -140,10 +140,9 @@ export default function AdminDashboard() {
   });
   const [aiProviderStatus, setAiProviderStatus] = useState<Record<string, { active: boolean; totalKeys: number; exhaustedKeys: number; usingEnv: boolean; usingDb: boolean }>>({
     gemini_direct: { active: false, totalKeys: 0, exhaustedKeys: 0, usingEnv: false, usingDb: false },
-    gemini_openrouter: { active: false, totalKeys: 0, exhaustedKeys: 0, usingEnv: false, usingDb: false },
+    openrouter_free: { active: false, totalKeys: 0, exhaustedKeys: 0, usingEnv: false, usingDb: false },
     groq: { active: false, totalKeys: 0, exhaustedKeys: 0, usingEnv: false, usingDb: false },
     mistral_direct: { active: false, totalKeys: 0, exhaustedKeys: 0, usingEnv: false, usingDb: false },
-    mistral_openrouter: { active: false, totalKeys: 0, exhaustedKeys: 0, usingEnv: false, usingDb: false },
     cohere: { active: false, totalKeys: 0, exhaustedKeys: 0, usingEnv: false, usingDb: false },
     huggingface: { active: false, totalKeys: 0, exhaustedKeys: 0, usingEnv: false, usingDb: false }
   });
@@ -152,11 +151,11 @@ export default function AdminDashboard() {
   const [routingConfig, setRoutingConfig] = useState({
     chat: 'groq',
     quiz: 'groq',
-    lesson: 'gemini_openrouter',
+    lesson: 'openrouter_free',
     skeleton: 'cohere',
     recommendation: 'cohere',
     flashcard: 'huggingface',
-    rag: 'gemini_openrouter',
+    rag: 'openrouter_free',
     vision: 'gemini_direct',
     past_questions: 'gemini_direct'
   });
@@ -213,7 +212,7 @@ export default function AdminDashboard() {
   const [sourceText, setSourceText] = useState('');
   const [isReadingFile, setIsReadingFile] = useState(false);
   const [generationProgress, setGenerationProgress] = useState(0);
-  const [aiProvider, setAiProvider] = useState<'gemini_direct' | 'gemini_openrouter' | 'mistral_direct' | 'mistral_openrouter' | 'groq' | 'cohere' | 'huggingface'>('mistral_direct');
+  const [aiProvider, setAiProvider] = useState<'gemini_direct' | 'openrouter_free' | 'mistral_direct' | 'groq' | 'cohere' | 'huggingface'>('gemini_direct');
   const [globalAiMode, setGlobalAiMode] = useState<'normal' | 'fast'>('normal');
   const [isUpdatingAiMode, setIsUpdatingAiMode] = useState(false);
   const [testKeyProvider, setTestKeyProvider] = useState<string>('gemini_direct');
@@ -2209,18 +2208,7 @@ export default function AdminDashboard() {
                     }`}
                   >
                     <Shield size={16} />
-                    Gemini (Direct)
-                  </button>
-                  <button
-                    onClick={() => setAiProvider('gemini_openrouter')}
-                    className={`px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 transition-all ${
-                      aiProvider === 'gemini_openrouter'
-                        ? 'bg-indigo-100 text-indigo-700 border-2 border-indigo-500 dark:bg-indigo-900/30 dark:text-indigo-400'
-                        : 'bg-white text-slate-600 border-2 border-slate-200 hover:border-indigo-300 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700 dark:hover:border-indigo-700'
-                    }`}
-                  >
-                    <Shield size={16} />
-                    Gemini (OpenRouter)
+                    Gemini
                   </button>
                   <button
                     onClick={() => setAiProvider('groq')}
@@ -2242,18 +2230,18 @@ export default function AdminDashboard() {
                     }`}
                   >
                     <Star size={16} />
-                    Mistral (Direct)
+                    Mistral
                   </button>
                   <button
-                    onClick={() => setAiProvider('mistral_openrouter')}
+                    onClick={() => setAiProvider('openrouter_free')}
                     className={`px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 transition-all ${
-                      aiProvider === 'mistral_openrouter'
-                        ? 'bg-pink-100 text-pink-700 border-2 border-pink-500 dark:bg-pink-900/30 dark:text-pink-400'
-                        : 'bg-white text-slate-600 border-2 border-slate-200 hover:border-pink-300 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700 dark:hover:border-pink-700'
+                      aiProvider === 'openrouter_free'
+                        ? 'bg-indigo-100 text-indigo-700 border-2 border-indigo-500 dark:bg-indigo-900/30 dark:text-indigo-400'
+                        : 'bg-white text-slate-600 border-2 border-slate-200 hover:border-indigo-300 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700 dark:hover:border-indigo-700'
                     }`}
                   >
-                    <Star size={16} />
-                    Mistral (OpenRouter)
+                    <Zap size={16} />
+                    OpenRouter
                   </button>
                   <button
                     onClick={() => setAiProvider('cohere')}
@@ -3760,7 +3748,7 @@ export default function AdminDashboard() {
                     {aiProviderStatus.mistral_direct?.active ? 'Active' : 'Offline'}
                   </div>
                 </div>
-                <h3 className="font-bold text-slate-900 dark:text-white">Mistral (Direct)</h3>
+                <h3 className="font-bold text-slate-900 dark:text-white">Mistral</h3>
                 <div className="mt-4 space-y-2">
                   <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
                     <span>Keys</span>
@@ -3779,31 +3767,31 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
-              {/* Mistral OpenRouter Card */}
-              <div className={`p-6 rounded-3xl border-2 transition-all ${aiProviderStatus.mistral_openrouter?.active ? 'border-emerald-500/20 bg-emerald-50/30 dark:bg-emerald-500/5' : 'border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50'}`}>
+              {/* OpenRouter Card */}
+              <div className={`p-6 rounded-3xl border-2 transition-all ${aiProviderStatus.openrouter_free?.active ? 'border-emerald-500/20 bg-emerald-50/30 dark:bg-emerald-500/5' : 'border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50'}`}>
                 <div className="flex items-center justify-between mb-4">
-                  <div className="p-3 rounded-2xl bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400">
-                    <Share2 size={24} />
+                  <div className="p-3 rounded-2xl bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400">
+                    <Zap size={24} />
                   </div>
-                  <div className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${aiProviderStatus.mistral_openrouter?.active ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}>
-                    {aiProviderStatus.mistral_openrouter?.active ? 'Active' : 'Offline'}
+                  <div className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${aiProviderStatus.openrouter_free?.active ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}>
+                    {aiProviderStatus.openrouter_free?.active ? 'Active' : 'Offline'}
                   </div>
                 </div>
-                <h3 className="font-bold text-slate-900 dark:text-white">Mistral (OpenRouter)</h3>
+                <h3 className="font-bold text-slate-900 dark:text-white">OpenRouter</h3>
                 <div className="mt-4 space-y-2">
                   <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
                     <span>Keys</span>
                     <span className="text-slate-900 dark:text-white">
-                      {aiProviderStatus.mistral_openrouter?.totalKeys || 0} ({aiProviderStatus.mistral_openrouter?.exhaustedKeys || 0} exhausted)
+                      {aiProviderStatus.openrouter_free?.totalKeys || 0} ({aiProviderStatus.openrouter_free?.exhaustedKeys || 0} exhausted)
                     </span>
                   </div>
                   <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
                     <span>Latency</span>
-                    <span className="text-amber-500">{aiMetrics.mistral_openrouter?.latency || 'N/A'}</span>
+                    <span className="text-amber-500">{aiMetrics.openrouter_free?.latency || 'N/A'}</span>
                   </div>
                   <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
                     <span>Uptime</span>
-                    <span className="text-slate-900 dark:text-white">{aiMetrics.mistral_openrouter?.uptime || 'N/A'}</span>
+                    <span className="text-slate-900 dark:text-white">{aiMetrics.openrouter_free?.uptime || 'N/A'}</span>
                   </div>
                 </div>
               </div>
@@ -3818,7 +3806,7 @@ export default function AdminDashboard() {
                     {aiProviderStatus.gemini_direct?.active ? 'Active' : 'Offline'}
                   </div>
                 </div>
-                <h3 className="font-bold text-slate-900 dark:text-white">Gemini (Direct)</h3>
+                <h3 className="font-bold text-slate-900 dark:text-white">Gemini</h3>
                 <div className="mt-4 space-y-2">
                   <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
                     <span>Keys</span>
@@ -3833,35 +3821,6 @@ export default function AdminDashboard() {
                   <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
                     <span>Uptime</span>
                     <span className="text-slate-900 dark:text-white">{aiMetrics.gemini_direct?.uptime || 'N/A'}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Gemini OpenRouter Card */}
-              <div className={`p-6 rounded-3xl border-2 transition-all ${aiProviderStatus.gemini_openrouter?.active ? 'border-emerald-500/20 bg-emerald-50/30 dark:bg-emerald-500/5' : 'border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50'}`}>
-                <div className="flex items-center justify-between mb-4">
-                  <div className="p-3 rounded-2xl bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">
-                    <Share2 size={24} />
-                  </div>
-                  <div className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${aiProviderStatus.gemini_openrouter?.active ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}>
-                    {aiProviderStatus.gemini_openrouter?.active ? 'Active' : 'Offline'}
-                  </div>
-                </div>
-                <h3 className="font-bold text-slate-900 dark:text-white">Gemini (OpenRouter)</h3>
-                <div className="mt-4 space-y-2">
-                  <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
-                    <span>Keys</span>
-                    <span className="text-slate-900 dark:text-white">
-                      {aiProviderStatus.gemini_openrouter?.totalKeys || 0} ({aiProviderStatus.gemini_openrouter?.exhaustedKeys || 0} exhausted)
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
-                    <span>Latency</span>
-                    <span className="text-slate-500">{aiMetrics.gemini_openrouter?.latency || 'N/A'}</span>
-                  </div>
-                  <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
-                    <span>Uptime</span>
-                    <span className="text-slate-900 dark:text-white">{aiMetrics.gemini_openrouter?.uptime || 'N/A'}</span>
                   </div>
                 </div>
               </div>
@@ -4088,7 +4047,7 @@ export default function AdminDashboard() {
                   { id: 'skeleton', label: 'Course Skeletons', icon: Layers, recommended: 'cohere', desc: 'Structuring curriculum outlines and hierarchies.' },
                   { id: 'recommendation', label: 'Smart Recommendations', icon: Star, recommended: 'cohere', desc: 'Analyzing student data for study plans.' },
                   { id: 'flashcard', label: 'Flashcard Generation', icon: FileText, recommended: 'huggingface', desc: 'Fast, repetitive text extraction for study aids.' },
-                  { id: 'rag', label: 'Knowledge Retrieval', icon: Database, recommended: 'gemini_openrouter', desc: 'Searching and summarizing internal documents.' },
+                  { id: 'rag', label: 'Knowledge Retrieval', icon: Database, recommended: 'openrouter_free', desc: 'Searching and summarizing internal documents.' },
                   { id: 'vision', label: 'Vision Processing', icon: Search, recommended: 'gemini_direct', desc: 'Analyzing images and handwritten notes.' },
                   { id: 'past_questions', label: 'Past Questions Extraction', icon: FileText, recommended: 'gemini_direct', desc: 'Extracting questions from uploaded PDFs.' }
                 ].map((task) => (
@@ -4116,7 +4075,7 @@ export default function AdminDashboard() {
                         Use Recommended
                       </button>
                       <div className="flex items-center gap-1 bg-white dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700 overflow-x-auto scrollbar-hide max-w-full">
-                        {['gemini_direct', 'gemini_openrouter', 'groq', 'mistral_direct', 'mistral_openrouter', 'cohere', 'huggingface'].map((provider) => (
+                        {['gemini_direct', 'groq', 'mistral_direct', 'openrouter_free', 'cohere', 'huggingface'].map((provider) => (
                           <button
                             key={provider}
                             onClick={() => updateRoutingConfig(task.id, provider)}
@@ -4159,10 +4118,10 @@ export default function AdminDashboard() {
             
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {[
-                { id: 'gemini_direct', label: 'Gemini (Direct)', desc: 'Direct API keys for Google Gemini SDK.' },
-                { id: 'openrouter', label: 'OpenRouter (Shared)', desc: 'Used for Gemini and Mistral OpenRouter paths.' },
+                { id: 'gemini_direct', label: 'Gemini', desc: 'Direct API keys for Google Gemini SDK.' },
+                { id: 'openrouter', label: 'OpenRouter', desc: 'Keys for OpenRouter (with Gemini Flash fallback).' },
                 { id: 'groq', label: 'Groq (Turbo)', desc: 'Direct API keys for Groq Cloud.' },
-                { id: 'mistral_direct', label: 'Mistral (Direct)', desc: 'Direct API keys for Mistral AI Platform.' },
+                { id: 'mistral_direct', label: 'Mistral', desc: 'Direct API keys for Mistral AI Platform.' },
                 { id: 'cohere', label: 'Cohere', desc: 'Direct API keys for Cohere AI.' },
                 { id: 'huggingface', label: 'Hugging Face', desc: 'Direct API keys for Hugging Face Hub.' }
               ].map(provider => (
@@ -4172,11 +4131,11 @@ export default function AdminDashboard() {
                       {provider.label}
                     </h3>
                     <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase ${
-                      aiProviderStatus[provider.id === 'openrouter' ? 'gemini_openrouter' : provider.id]?.active 
+                      aiProviderStatus[provider.id === 'openrouter' ? 'openrouter_free' : provider.id]?.active 
                         ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' 
                         : 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
                     }`}>
-                      {aiProviderStatus[provider.id === 'openrouter' ? 'gemini_openrouter' : provider.id]?.active ? 'Active' : 'Offline'}
+                      {aiProviderStatus[provider.id === 'openrouter' ? 'openrouter_free' : provider.id]?.active ? 'Active' : 'Offline'}
                     </span>
                   </div>
                   <p className="text-xs text-slate-500 mb-2">
@@ -4185,11 +4144,11 @@ export default function AdminDashboard() {
                   <div className="mb-4 flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase">
                     <span>Configured Keys:</span>
                     <span className="text-slate-900 dark:text-white">
-                      {aiProviderStatus[provider.id === 'openrouter' ? 'gemini_openrouter' : provider.id]?.totalKeys || 0}
+                      {aiProviderStatus[provider.id === 'openrouter' ? 'openrouter_free' : provider.id]?.totalKeys || 0}
                     </span>
-                    {aiProviderStatus[provider.id === 'openrouter' ? 'gemini_openrouter' : provider.id]?.exhaustedKeys > 0 && (
+                    {aiProviderStatus[provider.id === 'openrouter' ? 'openrouter_free' : provider.id]?.exhaustedKeys > 0 && (
                       <span className="text-rose-500">
-                        ({aiProviderStatus[provider.id === 'openrouter' ? 'gemini_openrouter' : provider.id]?.exhaustedKeys} exhausted)
+                        ({aiProviderStatus[provider.id === 'openrouter' ? 'openrouter_free' : provider.id]?.exhaustedKeys} exhausted)
                       </span>
                     )}
                   </div>

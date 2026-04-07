@@ -27,10 +27,9 @@ class TelemetryService {
   private resetMetrics() {
     const providers = [
       'gemini_direct', 
-      'gemini_openrouter', 
       'groq', 
       'mistral_direct', 
-      'mistral_openrouter', 
+      'openrouter_free', 
       'cohere', 
       'huggingface'
     ];
@@ -103,8 +102,8 @@ class TelemetryService {
         const time = d.getHours().toString().padStart(2, '0') + ':00';
         // Distribute current metrics with some randomness for the past
         const groqBase = Math.floor(this.metrics['groq']?.requests / 24) || 10;
-        const mistralBase = Math.floor((this.metrics['mistral_direct']?.requests + this.metrics['mistral_openrouter']?.requests) / 24) || 5;
-        const geminiBase = Math.floor((this.metrics['gemini_direct']?.requests + this.metrics['gemini_openrouter']?.requests) / 24) || 3;
+        const mistralBase = Math.floor(this.metrics['mistral_direct']?.requests / 24) || 5;
+        const geminiBase = Math.floor((this.metrics['gemini_direct']?.requests + this.metrics['openrouter_free']?.requests) / 24) || 3;
         
         history.push({
           time,

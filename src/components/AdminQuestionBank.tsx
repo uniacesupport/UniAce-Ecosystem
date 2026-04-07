@@ -28,7 +28,7 @@ export default function AdminQuestionBank() {
   
   // Bulk Tab State
   const [extractedQuestions, setExtractedQuestions] = useState<any[]>([]);
-  const [selectedProvider, setSelectedProvider] = useState<'gemini_direct' | 'gemini_openrouter' | 'mistral_direct' | 'mistral_openrouter' | 'groq' | 'cohere' | 'huggingface'>('gemini_direct');
+  const [selectedProvider, setSelectedProvider] = useState<'gemini_direct' | 'openrouter_free' | 'mistral_direct' | 'groq' | 'cohere' | 'huggingface'>('gemini_direct');
 
   // Single Add State
   const [singleQuestion, setSingleQuestion] = useState({
@@ -605,18 +605,7 @@ export default function AdminQuestionBank() {
                 }`}
               >
                 <Shield size={16} />
-                Gemini (Direct)
-              </button>
-              <button
-                onClick={() => setSelectedProvider('gemini_openrouter')}
-                className={`px-4 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 transition-all ${
-                  selectedProvider === 'gemini_openrouter'
-                    ? 'bg-indigo-100 text-indigo-700 border-2 border-indigo-500 dark:bg-indigo-900/30 dark:text-indigo-400'
-                    : 'bg-slate-50 text-slate-600 border-2 border-slate-100 hover:border-indigo-300 dark:bg-slate-900 dark:text-slate-400 dark:border-slate-700 dark:hover:border-indigo-700'
-                }`}
-              >
-                <Shield size={16} />
-                Gemini (OpenRouter)
+                Gemini
               </button>
               <button
                 onClick={() => setSelectedProvider('groq')}
@@ -638,18 +627,18 @@ export default function AdminQuestionBank() {
                 }`}
               >
                 <Star size={16} />
-                Mistral (Direct)
+                Mistral
               </button>
               <button
-                onClick={() => setSelectedProvider('mistral_openrouter')}
+                onClick={() => setSelectedProvider('openrouter_free')}
                 className={`px-4 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 transition-all ${
-                  selectedProvider === 'mistral_openrouter'
-                    ? 'bg-pink-100 text-pink-700 border-2 border-pink-500 dark:bg-pink-900/30 dark:text-pink-400'
-                    : 'bg-slate-50 text-slate-600 border-2 border-slate-100 hover:border-pink-300 dark:bg-slate-900 dark:text-slate-400 dark:border-slate-700 dark:hover:border-pink-700'
+                  selectedProvider === 'openrouter_free'
+                    ? 'bg-indigo-100 text-indigo-700 border-2 border-indigo-500 dark:bg-indigo-900/30 dark:text-indigo-400'
+                    : 'bg-slate-50 text-slate-600 border-2 border-slate-100 hover:border-indigo-300 dark:bg-slate-900 dark:text-slate-400 dark:border-slate-700 dark:hover:border-indigo-700'
                 }`}
               >
-                <Star size={16} />
-                Mistral (OpenRouter)
+                <Zap size={16} />
+                OpenRouter
               </button>
               <button
                 onClick={() => setSelectedProvider('cohere')}

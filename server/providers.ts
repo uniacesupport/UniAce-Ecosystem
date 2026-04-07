@@ -402,9 +402,11 @@ export class GeminiDirectProvider implements ModelProvider {
   }
 }
 
-export class MistralOpenRouterProvider implements ModelProvider {
+
+
+export class OpenRouterFreeProvider implements ModelProvider {
   private rotator: DynamicKeyRotator;
-  public readonly name = 'mistral_openrouter';
+  public readonly name = 'openrouter_free';
 
   constructor(apiKey: string = '') {
     this.rotator = new DynamicKeyRotator('openrouter', apiKey);
@@ -446,8 +448,9 @@ export class MistralOpenRouterProvider implements ModelProvider {
       }
 
       try {
+        // Try free model first
         const response = await openai.chat.completions.create({
-          model: 'mistralai/mistral-large',
+          model: 'openrouter/free',
           messages: messages,
           max_tokens: 8192,
           temperature: 0.5,
@@ -464,12 +467,41 @@ export class MistralOpenRouterProvider implements ModelProvider {
           finishReason: response.choices[0]?.finish_reason || 'stop'
         };
       } catch (error: any) {
-        if (error.status === 401 || error.status === 403 || error.status === 429) {
+        // If rate limited (429), fallback to paid model: google/gemini-2.5-flash
+        if (error.status === 429) {
+          console.log("[OpenRouterFree] Rate limit hit on free model, falling back to google/gemini-2.5-flash");
+          try {
+            const paidResponse = await openai.chat.completions.create({
+              model: 'google/gemini-2.5-flash',
+              messages: messages,
+              max_tokens: 8192,
+              temperature: 0.5,
+              response_format: options.jsonMode ? { type: "json_object" } : undefined
+            });
+
+            return {
+              text: paidResponse.choices[0]?.message?.content || '',
+              usage: {
+                promptTokens: paidResponse.usage?.prompt_tokens || 0,
+                completionTokens: paidResponse.usage?.completion_tokens || 0,
+                totalTokens: paidResponse.usage?.total_tokens || 0
+              },
+              finishReason: paidResponse.choices[0]?.finish_reason || 'stop'
+            };
+          } catch (paidError: any) {
+             if (paidError.status === 401 || paidError.status === 403 || paidError.status === 429) {
+               this.rotator.markKeyExhausted(apiKey);
+             }
+             throw paidError;
+          }
+        }
+        
+        if (error.status === 401 || error.status === 403) {
           this.rotator.markKeyExhausted(apiKey);
         }
         throw error;
       }
-    }, 'MistralOpenRouter');
+    }, 'OpenRouterFree');
   }
 
   async stream(messages: any[], options: { complexity: 'high' | 'standard' }, onChunk: (chunk: string) => void): Promise<ModelResponse> {
@@ -485,8 +517,9 @@ export class MistralOpenRouterProvider implements ModelProvider {
       });
 
       try {
+        // Try free model first
         const stream = await openai.chat.completions.create({
-          model: 'mistralai/mistral-large',
+          model: 'openrouter/free',
           messages: messages,
           max_tokens: 8192,
           temperature: 0.5,
@@ -508,127 +541,46 @@ export class MistralOpenRouterProvider implements ModelProvider {
           finishReason: 'stop'
         };
       } catch (error: any) {
-        if (error.status === 401 || error.status === 403 || error.status === 429) {
-          this.rotator.markKeyExhausted(apiKey);
-        }
-        throw error;
-      }
-    }, 'MistralOpenRouter');
-  }
-}
+        // If rate limited (429), fallback to paid model: google/gemini-2.5-flash
+        if (error.status === 429) {
+          console.log("[OpenRouterFree Stream] Rate limit hit on free model, falling back to google/gemini-2.5-flash");
+          try {
+            const paidStream = await openai.chat.completions.create({
+              model: 'google/gemini-2.5-flash',
+              messages: messages,
+              max_tokens: 8192,
+              temperature: 0.5,
+              stream: true
+            });
 
-export class GeminiOpenRouterProvider implements ModelProvider {
-  private rotator: DynamicKeyRotator;
-  public readonly name = 'gemini_openrouter';
+            let fullText = '';
+            for await (const chunk of paidStream) {
+              const content = chunk.choices[0]?.delta?.content || '';
+              if (content) {
+                fullText += content;
+                onChunk(content);
+              }
+            }
 
-  constructor(apiKey: string = '') {
-    this.rotator = new DynamicKeyRotator('openrouter', apiKey);
-  }
-
-  private ensureJsonInMessages(messages: any[]) {
-    if (!messages || messages.length === 0) return;
-    const lastMessage = messages[messages.length - 1];
-    const jsonRequirement = " (Your response MUST be a valid JSON object. Ensure the word 'json' is present in your internal reasoning if applicable, and the output is strictly JSON.)";
-    
-    if (typeof lastMessage.content === 'string') {
-      if (!lastMessage.content.toLowerCase().includes('json')) {
-        lastMessage.content += jsonRequirement;
-      }
-    } else if (Array.isArray(lastMessage.content)) {
-      const hasJson = lastMessage.content.some((part: any) => 
-        part.type === 'text' && part.text.toLowerCase().includes('json')
-      );
-      if (!hasJson) {
-        lastMessage.content.push({ type: 'text', text: jsonRequirement });
-      }
-    }
-  }
-
-  async generate(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean }): Promise<ModelResponse> {
-    return retry(async () => {
-      const apiKey = await this.rotator.getNextKey();
-      const openai = new OpenAI({
-        baseURL: "https://openrouter.ai/api/v1",
-        apiKey: apiKey,
-        defaultHeaders: {
-          "HTTP-Referer": "https://uniace.app",
-          "X-Title": "UniAce Learning App",
-        }
-      });
-
-      if (options.jsonMode) {
-        this.ensureJsonInMessages(messages);
-      }
-
-      try {
-        const response = await openai.chat.completions.create({
-          model: 'google/gemini-2.5-flash',
-          messages: messages,
-          max_tokens: 8192,
-          temperature: 0.5,
-          response_format: options.jsonMode ? { type: "json_object" } : undefined
-        });
-
-        return {
-          text: response.choices[0]?.message?.content || '',
-          usage: {
-            promptTokens: response.usage?.prompt_tokens || 0,
-            completionTokens: response.usage?.completion_tokens || 0,
-            totalTokens: response.usage?.total_tokens || 0
-          },
-          finishReason: response.choices[0]?.finish_reason || 'stop'
-        };
-      } catch (error: any) {
-        if (error.status === 401 || error.status === 403 || error.status === 429) {
-          this.rotator.markKeyExhausted(apiKey);
-        }
-        throw error;
-      }
-    }, 'GeminiOpenRouter');
-  }
-
-  async stream(messages: any[], options: { complexity: 'high' | 'standard' }, onChunk: (chunk: string) => void): Promise<ModelResponse> {
-    return retry(async () => {
-      const apiKey = await this.rotator.getNextKey();
-      const openai = new OpenAI({
-        baseURL: "https://openrouter.ai/api/v1",
-        apiKey: apiKey,
-        defaultHeaders: {
-          "HTTP-Referer": "https://uniace.app",
-          "X-Title": "UniAce Learning App",
-        }
-      });
-
-      try {
-        const stream = await openai.chat.completions.create({
-          model: 'google/gemini-2.5-flash',
-          messages: messages,
-          max_tokens: 8192,
-          temperature: 0.5,
-          stream: true
-        });
-
-        let fullText = '';
-        for await (const chunk of stream) {
-          const content = chunk.choices[0]?.delta?.content || '';
-          if (content) {
-            fullText += content;
-            onChunk(content);
+            return {
+              text: fullText,
+              usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+              finishReason: 'stop'
+            };
+          } catch (paidError: any) {
+            if (paidError.status === 401 || paidError.status === 403 || paidError.status === 429) {
+              this.rotator.markKeyExhausted(apiKey);
+            }
+            throw paidError;
           }
         }
 
-        return {
-          text: fullText,
-          usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
-          finishReason: 'stop'
-        };
-      } catch (error: any) {
-        if (error.status === 401 || error.status === 403 || error.status === 429) {
+        if (error.status === 401 || error.status === 403) {
           this.rotator.markKeyExhausted(apiKey);
         }
         throw error;
       }
-    }, 'GeminiOpenRouter');
+    }, 'OpenRouterFree');
   }
 }
 
