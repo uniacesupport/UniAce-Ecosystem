@@ -269,12 +269,12 @@ export default function ChatBot({
           role: m.role,
           parts: [{ text: m.text }]
         })),
-        context: [
-          activeCourseId && `Course: ${activeCourseId}`,
-          activeModule && `Module: ${activeModule}`,
-          activeSubTopic && `Topic: ${activeSubTopic}`,
-          subTopicContent && `Content: ${subTopicContent.substring(0, 1000)}...`
-        ].filter(Boolean).join(', ') || 'General Chat',
+          context: [
+            activeCourseId && `Course: ${activeCourseId}`,
+            activeModule && `Module: ${activeModule}`,
+            activeSubTopic && `Topic: ${activeSubTopic}`,
+            subTopicContent && `Content: ${subTopicContent.substring(0, 15000)}`
+          ].filter(Boolean).join(', ') || 'General Chat',
         complexity: isProMode ? 'high' : 'standard',
         isHintRequest,
         masteryLevel,
@@ -331,7 +331,7 @@ export default function ChatBot({
             activeCourseId && `Course: ${activeCourseId}`,
             activeModule && `Module: ${activeModule}`,
             activeSubTopic && `Topic: ${activeSubTopic}`,
-            subTopicContent && `Content: ${subTopicContent.substring(0, 1000)}...`
+            subTopicContent && `Content: ${subTopicContent.substring(0, 15000)}`
           ].filter(Boolean).join(', ') || 'General Chat',
           complexity: isProMode ? 'high' : 'standard',
           isHintRequest,

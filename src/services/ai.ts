@@ -1,6 +1,10 @@
 import { Module, SubTopic, QuizQuestion, QuestionType, ChatMessage, CourseId, UserProgress, Flashcard, AIPersonality, TimetableEntry, ExamDate } from '../types';
 import { GoogleGenAI } from "@google/genai";
 import { jsonrepair } from 'jsonrepair';
+import { getValidator } from './validators';
+import { classifySubject } from './validators/classifier';
+import { MathEngine } from './mathEngine';
+import { CourseService } from './courseService';
 
 const getAuthToken = async () => {
   try {
@@ -156,6 +160,42 @@ export const AIService = {
     fastMode: boolean = false
   ) => {
     const lastUserMessage = messages[messages.length - 1];
+    
+    // DYNAMIC VALIDATION LAYER
+    if (lastUserMessage.text) {
+      let department: string | undefined;
+      if (activeCourseId) {
+        const course = await CourseService.getCourse(activeCourseId);
+        if (course) {
+          department = course.department;
+        }
+      }
+
+      const subject = classifySubject(lastUserMessage.text, department);
+      if (subject) {
+        const validator = getValidator(subject);
+        if (validator) {
+          const result = await validator.validate(lastUserMessage.text, activeSubTopic || '');
+          if (!result.isValid) {
+            lastUserMessage.text = `${lastUserMessage.text}\n\n[SYSTEM NOTE: ${result.message} ${result.correction || ''}]`;
+          }
+        }
+      }
+
+      // 3. Symbolic Math Verification
+      if (subject === 'Math') {
+        // Simple regex to find potential equations (e.g., x + 2 = 5)
+        const equationMatch = lastUserMessage.text.match(/([a-zA-Z0-9\+\-\*\/\^]+)\s*=\s*([a-zA-Z0-9\+\-\*\/\^]+)/);
+        if (equationMatch) {
+          const [_, left, right] = equationMatch;
+          const isCorrect = MathEngine.compare(left, right);
+          if (!isCorrect) {
+            lastUserMessage.text = `${lastUserMessage.text}\n\n[MATH ENGINE VERIFICATION: The equation ${left} = ${right} appears to be mathematically incorrect.]`;
+          }
+        }
+      }
+    }
+
     const parts: any[] = [];
     
     if (lastUserMessage.text) parts.push({ text: lastUserMessage.text });
@@ -179,7 +219,10 @@ export const AIService = {
       'humorous': 'Be funny, make math puns, and keep the tone lighthearted. Act like a witty study buddy.'
     }[personality];
 
-    const systemInstruction = `You are UniAce, a Senior Academic AI Tutor. You follow the Nigerian University System (NUC/CCMAS) standards for curriculum alignment, but your primary role is to teach the specific academic subject the student is currently studying.
+    const systemInstruction = `You are UniAce, the official AI Study Companion for the UniAce platform. You follow the Nigerian University System (NUC/CCMAS) standards for curriculum alignment, but your primary role is to teach the specific academic subject the student is currently studying.
+
+UNIACE ECOSYSTEM:
+You are part of the UniAce app. NEVER recommend external websites, third-party platforms, or outside resources (e.g., Khan Academy, Coursera, YouTube, Wolfram Alpha, ChatGPT, etc.). If a student needs more help, guide them to explore other modules, lessons, practice quizzes, or flashcards within the UniAce app.
 
 CONTEXT AWARENESS:
 You are always aware of:
@@ -189,8 +232,8 @@ ${subTopicContent ? `- The specific content: ${subTopicContent}` : ''}
 - Your personality style: ${personalityInstruction}
 
 INSTANT CONTEXT AWARENESS:
-If a study context (Course, Module, or Topic) is provided, you MUST acknowledge it immediately in your first sentence. For example: "Hi there! 👋 I see you're diving into Thermodynamics—that's a fascinating but tricky subject! Ready to tackle the First Law together?"
-Always anchor your explanations to this context and proactively suggest sub-topics or related concepts.
+If a study context (Course, Module, or Topic) is provided, you MUST acknowledge it immediately in your first sentence. For example: "Hi there! 👋 I see you're diving into ${activeSubTopic || 'this topic'}—that's a fascinating subject! Ready to tackle it together?"
+Always anchor your explanations to this context and proactively suggest sub-topics or related concepts from the UniAce curriculum.
 
 TEACHING FRAMEWORK (MANDATORY):
 For every response, follow this structure:
@@ -217,10 +260,13 @@ COMMUNICATION STYLE:
 
 FORMATTING RULES:
 - Use Markdown ONLY when it improves readability.
-- ALWAYS use LaTeX for ALL mathematical expressions and variables (e.g., $x$). 
-- Use $ ... $ for inline math and $$ ... $$ for block math.
+- ALWAYS use LaTeX for ALL mathematical expressions, variables, and equations. 
+- Use $ ... $ for inline math (e.g., $x$) and $$ ... $$ for block math (e.g., $$x^2$$).
+- LATEX SQUARE ROOTS: You MUST use \\\\sqrt{...} for all square roots. NEVER use the Unicode symbol √.
+- NEVER use plain text math like 1/(2*sqrt(x)).
 - CRITICAL: You are outputting data to a JSON parser. You MUST double-escape all LaTeX commands. For example, output \\\\frac instead of \\frac, and \\\\right) instead of \\right).
 - Avoid long dense paragraphs.
+- VERIFY BEFORE FEEDBACK: You MUST perform all mathematical calculations and verify the student's answer internally BEFORE providing any feedback (like "Correct" or "Incorrect"). Never guess or assume correctness.
 
 ENGAGEMENT RULE:
 Always end with a helpful, dynamic offer or a follow-up question that keeps the student thinking. For example: "Want to try a practice problem on this?", "Should we break down that last step?", or "Would you like to see how this applies to a real-world scenario?"
@@ -376,7 +422,10 @@ Format the output beautifully using Markdown and LaTeX for math.
       `;
     }
 
-    const systemInstruction = `You are UniAce, a Senior Academic AI Tutor. You follow the Nigerian University System (NUC/CCMAS) standards for curriculum alignment, but your primary role is to teach the specific academic subject the student is currently studying.
+    const systemInstruction = `You are UniAce, the official AI Study Companion for the UniAce platform. You follow the Nigerian University System (NUC/CCMAS) standards for curriculum alignment, but your primary role is to teach the specific academic subject the student is currently studying.
+
+UNIACE ECOSYSTEM:
+You are part of the UniAce app. NEVER recommend external websites, third-party platforms, or outside resources (e.g., Khan Academy, Coursera, YouTube, Wolfram Alpha, ChatGPT, etc.). If a student needs more help, guide them to explore other modules, lessons, practice quizzes, or flashcards within the UniAce app.
 
 [CURRENT STUDY CONTEXT]
 Topic: ${subTopic.title}
@@ -406,7 +455,11 @@ ENGAGEMENT:
 - Always end your response by asking a direct, engaging question to check the student's understanding.
 
 MATH & EQUATIONS:
-- ALWAYS use LaTeX for ALL mathematical formulas and variables (e.g., use $x$ instead of just x).`;
+- ALWAYS use LaTeX for ALL mathematical formulas, variables, and equations.
+- Use $...$ for inline math (e.g., $x$) and $$...$$ for block math (e.g., $$x^2$$).
+- LATEX SQUARE ROOTS: You MUST use \\sqrt{...} for all square roots. NEVER use the Unicode symbol √.
+- NEVER use plain text math like 1/(2*sqrt(x)).
+- VERIFY BEFORE FEEDBACK: You MUST perform all mathematical calculations and verify the student's answer internally BEFORE providing any feedback (like "Correct" or "Incorrect"). Never guess or assume correctness.`;
 
     const token = await getAuthToken();
     const controller = new AbortController();
@@ -504,6 +557,7 @@ MATH & EQUATIONS:
     Ensure questions are technically accurate and mathematically rigorous for the given subject (Math, Physics, Zoology, GST, etc.).
     CRITICAL: Calibrate the difficulty and complexity to the student's level (${level || 'University Level'}).
     Include mathematical formulas in LaTeX format.
+    LATEX SQUARE ROOTS: You MUST use \\\\sqrt{...} for all square roots. NEVER use the Unicode symbol √.
     IMPORTANT: You are generating a JSON string. Use $ for inline LaTeX (e.g., $x$) and $$ for block LaTeX (e.g., $$x^2$$). For any LaTeX commands that use a backslash (e.g., \\\\mathbf), you MUST output them with double backslashes (e.g., \\\\\\\\mathbf).
     CRITICAL: You are outputting data to a JSON parser. You MUST double-escape all LaTeX commands. For example, output \\\\frac instead of \\frac, and \\\\right) instead of \\right).
     For multiple-choice, provide 4 options.
@@ -555,6 +609,7 @@ MATH & EQUATIONS:
     
     The question should test a key concept from the content. 
     CRITICAL: Calibrate the difficulty and complexity to the student's level (${level || 'University Level'}).
+    LATEX SQUARE ROOTS: You MUST use \\\\sqrt{...} for all square roots. NEVER use the Unicode symbol √.
     Provide 4 options, the correct answer, and a short, helpful explanation.
     Return the response as a VALID JSON object.
     IMPORTANT: You are generating a JSON string. Use $ for inline LaTeX (e.g., $x$) and $$ for block LaTeX (e.g., $$x^2$$). For any LaTeX commands that use a backslash (e.g., \\\\mathbf), you MUST output them with double backslashes (e.g., \\\\\\\\mathbf).

@@ -37,6 +37,11 @@ export function sanitizeLatex(content: string): string {
   // 0. Remove markdown code block wrappers if the AI incorrectly wrapped the entire response
   let sanitized = content.replace(/^```(?:markdown)?\n([\s\S]*?)\n```$/g, '$1');
   
+  // 0.5. Replace Unicode square root √ with LaTeX \sqrt{}
+  // Handle √ followed by parentheses, numbers, or variables, and ensure it catches cases without parentheses
+  sanitized = sanitized.replace(/√\(([^)]+)\)/g, '\\sqrt{$1}');
+  sanitized = sanitized.replace(/√([a-zA-Z0-9^+\-*/]+)/g, '\\sqrt{$1}');
+  
   // 1. Replace \[ ... \] with $$ ... $$ for block math
   sanitized = sanitized.replace(/\\\[/g, '\n$$$$\n').replace(/\\\]/g, '\n$$$$\n');
   
