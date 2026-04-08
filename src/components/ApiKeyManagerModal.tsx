@@ -10,6 +10,8 @@ interface ApiKeyManagerModalProps {
 
 export default function ApiKeyManagerModal({ provider, onClose }: ApiKeyManagerModalProps) {
   const [keys, setKeys] = useState<{ key: string; isExhausted: boolean; exhaustedAt?: number; testStatus?: 'idle' | 'testing' | 'success' | 'error'; testError?: string }[]>([]);
+  const [model, setModel] = useState('');
+  const [fallbackModel, setFallbackModel] = useState('');
   const [newKey, setNewKey] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -31,6 +33,8 @@ export default function ApiKeyManagerModal({ provider, onClose }: ApiKeyManagerM
         const data = docSnap.data();
         const providerData = data[provider] || { keys: [] };
         setKeys(providerData.keys || []);
+        setModel(providerData.model || '');
+        setFallbackModel(providerData.fallbackModel || '');
       } else {
         setKeys([]);
       }
@@ -128,7 +132,9 @@ export default function ApiKeyManagerModal({ provider, onClose }: ApiKeyManagerM
       await setDoc(docRef, {
         ...currentData,
         [provider]: {
-          keys: keys
+          keys: keys,
+          model: model,
+          fallbackModel: fallbackModel
         }
       });
       
@@ -177,6 +183,29 @@ export default function ApiKeyManagerModal({ provider, onClose }: ApiKeyManagerM
             </div>
           ) : (
             <div className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-200 dark:border-slate-700">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 uppercase px-1">Primary Model</label>
+                  <input
+                    type="text"
+                    value={model}
+                    onChange={(e) => setModel(e.target.value)}
+                    placeholder="e.g. google/gemini-2.0-flash-exp:free"
+                    className="w-full px-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:text-white"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 uppercase px-1">Fallback Model (Paid)</label>
+                  <input
+                    type="text"
+                    value={fallbackModel}
+                    onChange={(e) => setFallbackModel(e.target.value)}
+                    placeholder="e.g. google/gemini-flash-1.5"
+                    className="w-full px-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:text-white"
+                  />
+                </div>
+              </div>
+
               <div className="flex gap-2">
                 <input
                   type="text"

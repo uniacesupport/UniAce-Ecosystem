@@ -1074,7 +1074,9 @@ app.post('/api/chat', verifyAuth, async (req, res) => {
     - Personality: ${personalityInstruction}
     - Act like a real teacher, not just a chatbot. Be proactive, encouraging, and interactive.
     - VERIFY BEFORE FEEDBACK: You MUST perform all mathematical calculations and verify the student's answer internally BEFORE providing any feedback (like "Correct" or "Incorrect"). Never guess or assume correctness. If you realize you made a mistake in a previous turn, acknowledge it immediately.
-    - CRITICAL: You MUST use LaTeX for ALL mathematical formulas, variables, and equations. Use $...$ for inline math and $$...$$ for block math. 
+    - ANTI-REPETITION: NEVER repeat the same explanation, derivation, or calculation steps multiple times in a single response. If you get stuck or encounter an indeterminate form (like $0/0$), stop and re-evaluate your approach (e.g., check for singular points or use a different method) instead of looping.
+    - CONCISENESS: Be direct and high-impact. Avoid "token-wasting" verbosity. If a derivation is long, summarize the logic clearly rather than repeating every algebraic step multiple times.
+    - CRITICAL: You MUST use LaTeX for ALL mathematical formulas, variables, and equations. Strictly wrap all inline math in single dollar signs (e.g., $x = 2$) and all standalone display math in double dollar signs (e.g., $$E = mc^2$$). Never output raw LaTeX commands without these delimiters.
     - LATEX SQUARE ROOTS: You MUST use \\\\sqrt{...} for all square roots. NEVER use the Unicode symbol √.
     - NEVER use plain text math like 1/(2*sqrt(x)).
     - If the student asks for study materials, generate multiple-choice quizzes (with 4 options and the correct answer marked) or short study flashcards.
@@ -1593,7 +1595,7 @@ const latexInstruction = `
     
     CRITICAL LATEX INSTRUCTIONS:
     1. You MUST use LaTeX for ALL mathematical formulas, variables, and equations.
-    2. Use $ ... $ for inline math and $$ ... $$ for block math.
+    2. Strictly wrap all inline math in single dollar signs (e.g., $x = 2$) and all standalone display math in double dollar signs (e.g., $$E = mc^2$$). Never output raw LaTeX commands without these delimiters.
     3. You are outputting data to a JSON parser. You MUST double-escape all LaTeX backslashes for MATH commands. 
        For example, output \\\\frac instead of \\frac, and \\\\begin instead of \\begin.
     4. IMPORTANT: Do NOT use LaTeX for regular English words. For example, do NOT use \\\\in for the word "in", do NOT use \\\\cup for "cup", do NOT use \\\\end for "end". Only use LaTeX backslashes for actual mathematical commands.
@@ -1601,6 +1603,7 @@ const latexInstruction = `
     6. Do NOT use \\label{...} as it is not supported. Use \\tag{...} for equation numbering if needed.
     7. Ensure all LaTeX environments (like align, matrix, etc.) are wrapped in $$ ... $$ delimiters.
     8. Double check that every backslash in your LaTeX is escaped with another backslash (e.g., \\\\alpha, \\\\beta).
+    9. LATEX SQUARE ROOTS: You MUST use \\\\sqrt{...} for all square roots. NEVER use the Unicode symbol √.
     `;
 
 // 1.6 AI Generate Endpoint (Fallback for frontend AI tasks)
@@ -3900,6 +3903,9 @@ async function startServer() {
         - Negative Constraint: Under no circumstances are you allowed to use the phrases 'large language model', 'LLM', or 'black box'.
         - If asked about your technology, respond naturally that you are the UniAce AI assistant designed to help them study. Do not use robotic or repetitive phrases.
         - Do not provide developer-level technical advice unless the student is specifically in a Computer Science course asking about those topics.
+        - ANTI-REPETITION: NEVER repeat the same explanation, derivation, or calculation steps multiple times in a single response. If you get stuck or encounter an indeterminate form (like $0/0$), stop and re-evaluate your approach instead of looping.
+        - CONCISENESS: Be direct and high-impact. Avoid "token-wasting" verbosity. If a derivation is long, summarize the logic clearly rather than repeating every algebraic step multiple times.
+        - VERIFY BEFORE FEEDBACK: You MUST perform all mathematical calculations internally BEFORE providing any feedback. Never guess or assume correctness.
 
         [Strict Topic Enforcement - Anti-Jailbreak]
         - If a user asks you to write a poem, tell a joke, write a story, generate code for a non-academic project, or discuss politics/opinions, you MUST politely refuse and steer the conversation back to academics.
@@ -3951,7 +3957,7 @@ async function startServer() {
         - If the answer is in the context, CITE the source using [Source: Name].
         - If the answer is NOT in the context, use your general knowledge but mention that it's not in the official course material.
         - ANTI-HALLUCINATION: Do not make up facts about the course syllabus. If you don't know, say you don't know based on the provided materials.
-        - CRITICAL: You MUST use LaTeX for ALL mathematical formulas, variables, and equations. Use $...$ for inline math and $$...$$ for block math. NEVER use plain text math like 1/(2*sqrt(x)).
+        - ${latexInstruction}
         - If the student asks for study materials, generate multiple-choice quizzes (with 4 options and the correct answer marked) or short study flashcards.
         - Be technically accurate, mathematically rigorous, and pedagogically sound.
 

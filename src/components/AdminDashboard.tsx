@@ -3748,7 +3748,7 @@ export default function AdminDashboard() {
                     {aiProviderStatus.mistral_direct?.active ? 'Active' : 'Offline'}
                   </div>
                 </div>
-                <h3 className="font-bold text-slate-900 dark:text-white">Mistral</h3>
+                <h3 className="font-bold text-slate-900 dark:text-white">Direct Mistral</h3>
                 <div className="mt-4 space-y-2">
                   <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
                     <span>Keys</span>

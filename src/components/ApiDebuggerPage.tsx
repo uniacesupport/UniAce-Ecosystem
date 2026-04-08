@@ -424,7 +424,7 @@ export const ApiDebuggerPage = ({ onBack, showToast }: { onBack: () => void, sho
                     className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-700 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
                   >
                     <option value="gemini_direct">Gemini</option>
-                    <option value="mistral_direct">Mistral</option>
+                    <option value="mistral_direct">Direct Mistral</option>
                     <option value="groq">Groq</option>
                     <option value="openrouter">OpenRouter</option>
                     <option value="cohere">Cohere</option>

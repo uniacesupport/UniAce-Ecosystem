@@ -108,6 +108,8 @@ export class DynamicKeyRotator {
   private currentIndex: number = 0;
   private lastFetchTime: number = 0;
   private exhaustedKeys: Set<string> = new Set();
+  private configuredModel: string = '';
+  private configuredFallbackModel: string = '';
 
   constructor(providerName: string, fallbackKeyString: string = '') {
     this.providerName = providerName;
@@ -124,7 +126,11 @@ export class DynamicKeyRotator {
       const doc = await docRef.get();
       if (doc.exists) {
         const data = doc.data();
-        if (data && data[this.providerName] && Array.isArray(data[this.providerName].keys)) {
+        if (data && data[this.providerName]) {
+          this.configuredModel = data[this.providerName].model || '';
+          this.configuredFallbackModel = data[this.providerName].fallbackModel || '';
+          
+          if (Array.isArray(data[this.providerName].keys)) {
            let needsUpdate = false;
            const now = Date.now();
            const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
@@ -176,6 +182,16 @@ export class DynamicKeyRotator {
     } catch (e) {
       console.error(`Failed to fetch keys for ${this.providerName}`, e);
     }
+  }
+
+  async getModel(): Promise<string> {
+    await this.fetchKeys();
+    return this.configuredModel;
+  }
+
+  async getFallbackModel(): Promise<string> {
+    await this.fetchKeys();
+    return this.configuredFallbackModel;
   }
 
   async getNextKey(): Promise<string> {
@@ -434,6 +450,9 @@ export class OpenRouterFreeProvider implements ModelProvider {
   async generate(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean }): Promise<ModelResponse> {
     return retry(async () => {
       const apiKey = await this.rotator.getNextKey();
+      const model = await this.rotator.getModel() || 'google/gemini-2.0-flash-exp:free';
+      const fallbackModel = await this.rotator.getFallbackModel() || 'google/gemini-flash-1.5';
+      
       const openai = new OpenAI({
         baseURL: "https://openrouter.ai/api/v1",
         apiKey: apiKey,
@@ -450,7 +469,7 @@ export class OpenRouterFreeProvider implements ModelProvider {
       try {
         // Try free model first
         const response = await openai.chat.completions.create({
-          model: 'openrouter/free',
+          model: model,
           messages: messages,
           max_tokens: 8192,
           temperature: 0.5,
@@ -467,12 +486,12 @@ export class OpenRouterFreeProvider implements ModelProvider {
           finishReason: response.choices[0]?.finish_reason || 'stop'
         };
       } catch (error: any) {
-        // If rate limited (429), fallback to paid model: google/gemini-2.5-flash
+        // If rate limited (429), fallback to paid model
         if (error.status === 429) {
-          console.log("[OpenRouterFree] Rate limit hit on free model, falling back to google/gemini-2.5-flash");
+          console.log(`[OpenRouterFree] Rate limit hit on ${model}, falling back to ${fallbackModel}`);
           try {
             const paidResponse = await openai.chat.completions.create({
-              model: 'google/gemini-2.5-flash',
+              model: fallbackModel,
               messages: messages,
               max_tokens: 8192,
               temperature: 0.5,
@@ -507,6 +526,9 @@ export class OpenRouterFreeProvider implements ModelProvider {
   async stream(messages: any[], options: { complexity: 'high' | 'standard' }, onChunk: (chunk: string) => void): Promise<ModelResponse> {
     return retry(async () => {
       const apiKey = await this.rotator.getNextKey();
+      const model = await this.rotator.getModel() || 'google/gemini-2.0-flash-exp:free';
+      const fallbackModel = await this.rotator.getFallbackModel() || 'google/gemini-flash-1.5';
+
       const openai = new OpenAI({
         baseURL: "https://openrouter.ai/api/v1",
         apiKey: apiKey,
@@ -519,7 +541,7 @@ export class OpenRouterFreeProvider implements ModelProvider {
       try {
         // Try free model first
         const stream = await openai.chat.completions.create({
-          model: 'openrouter/free',
+          model: model,
           messages: messages,
           max_tokens: 8192,
           temperature: 0.5,
@@ -541,12 +563,12 @@ export class OpenRouterFreeProvider implements ModelProvider {
           finishReason: 'stop'
         };
       } catch (error: any) {
-        // If rate limited (429), fallback to paid model: google/gemini-2.5-flash
+        // If rate limited (429), fallback to paid model
         if (error.status === 429) {
-          console.log("[OpenRouterFree Stream] Rate limit hit on free model, falling back to google/gemini-2.5-flash");
+          console.log(`[OpenRouterFree Stream] Rate limit hit on ${model}, falling back to ${fallbackModel}`);
           try {
             const paidStream = await openai.chat.completions.create({
-              model: 'google/gemini-2.5-flash',
+              model: fallbackModel,
               messages: messages,
               max_tokens: 8192,
               temperature: 0.5,
