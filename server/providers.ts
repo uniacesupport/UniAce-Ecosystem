@@ -131,51 +131,52 @@ export class DynamicKeyRotator {
           this.configuredFallbackModel = data[this.providerName].fallbackModel || '';
           
           if (Array.isArray(data[this.providerName].keys)) {
-           let needsUpdate = false;
-           const now = Date.now();
-           const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
+            let needsUpdate = false;
+            const now = Date.now();
+            const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
 
-           const updatedKeys = data[this.providerName].keys.map((k: any) => {
-             if (k.isExhausted && k.exhaustedAt) {
-               const exhaustedDate = new Date(k.exhaustedAt);
-               const currentDate = new Date(now);
-               
-               // Reset if:
-               // 1. It's a different calendar day (UTC)
-               // 2. OR 24 hours have passed (Safety fallback)
-               const isNewDay = exhaustedDate.getUTCDate() !== currentDate.getUTCDate() || 
-                                exhaustedDate.getUTCMonth() !== currentDate.getUTCMonth() ||
-                                exhaustedDate.getUTCFullYear() !== currentDate.getUTCFullYear();
-               
-               const isPast24h = now - k.exhaustedAt > TWENTY_FOUR_HOURS;
+            const updatedKeys = data[this.providerName].keys.map((k: any) => {
+              if (k.isExhausted && k.exhaustedAt) {
+                const exhaustedDate = new Date(k.exhaustedAt);
+                const currentDate = new Date(now);
+                
+                // Reset if:
+                // 1. It's a different calendar day (UTC)
+                // 2. OR 24 hours have passed (Safety fallback)
+                const isNewDay = exhaustedDate.getUTCDate() !== currentDate.getUTCDate() || 
+                                 exhaustedDate.getUTCMonth() !== currentDate.getUTCMonth() ||
+                                 exhaustedDate.getUTCFullYear() !== currentDate.getUTCFullYear();
+                
+                const isPast24h = now - k.exhaustedAt > TWENTY_FOUR_HOURS;
 
-               if (isNewDay || isPast24h) {
-                 needsUpdate = true;
-                 return { ...k, isExhausted: false, exhaustedAt: undefined };
-               }
-             }
-             return k;
-           });
+                if (isNewDay || isPast24h) {
+                  needsUpdate = true;
+                  return { ...k, isExhausted: false, exhaustedAt: undefined };
+                }
+              }
+              return k;
+            });
 
-           if (needsUpdate) {
-             await docRef.update({
-               [`${this.providerName}.keys`]: updatedKeys
-             });
-             data[this.providerName].keys = updatedKeys;
-           }
+            if (needsUpdate) {
+              await docRef.update({
+                [`${this.providerName}.keys`]: updatedKeys
+              });
+              data[this.providerName].keys = updatedKeys;
+            }
 
-           this.dbKeys = data[this.providerName].keys
-             .filter((k: any) => k.key && k.key.trim().length > 0)
-             .map((k: any) => k.key.trim());
+            this.dbKeys = data[this.providerName].keys
+              .filter((k: any) => k.key && k.key.trim().length > 0)
+              .map((k: any) => k.key.trim());
 
-           // Sync local exhausted state with DB so we don't try exhausted keys until they reset
-           for (const k of data[this.providerName].keys) {
-             if (k.isExhausted) {
-               this.exhaustedKeys.add(k.key.trim());
-             } else {
-               this.exhaustedKeys.delete(k.key.trim());
-             }
-           }
+            // Sync local exhausted state with DB so we don't try exhausted keys until they reset
+            for (const k of data[this.providerName].keys) {
+              if (k.isExhausted) {
+                this.exhaustedKeys.add(k.key.trim());
+              } else {
+                this.exhaustedKeys.delete(k.key.trim());
+              }
+            }
+          }
         }
       }
       this.lastFetchTime = Date.now();
