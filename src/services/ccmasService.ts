@@ -16,6 +16,9 @@ export interface CCMASCore {
   totalCoreUnits: number;
 }
 
+// Fallback CCMAS data if Firestore fails or needs seeding
+const MOCK_CCMAS_DATA: Record<string, CCMASCore> = {};
+
 // CCMAS Core data is loaded from Firestore
 
 export const CCMASService = {

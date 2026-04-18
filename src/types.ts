@@ -131,6 +131,7 @@ export interface UserProgress {
   srsData?: Record<string, SRSData>; // cardId -> SRSData
   aiPersonality?: AIPersonality;
   learningProfile?: LearningProfile;
+  quizzesCompleted?: number;
 }
 
 export interface Bookmark {
