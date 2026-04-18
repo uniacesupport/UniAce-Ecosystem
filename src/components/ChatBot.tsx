@@ -58,6 +58,16 @@ export default function ChatBot({
   const [isProMode, setIsProMode] = useState(false);
   const [showPricingModal, setShowPricingModal] = useState(false);
   const [isSpeedDialOpen, setIsSpeedDialOpen] = useState(false);
+  const [pdfProcessingProgress, setPdfProcessingProgress] = useState<number | null>(null);
+  const [pdfText, setPdfText] = useState<string | null>(null);
+  const workerRef = useRef<Worker | null>(null);
+
+  useEffect(() => {
+    workerRef.current = new Worker(new URL('../workers/pdfWorker.ts', import.meta.url), { type: 'module' });
+    return () => {
+      workerRef.current?.terminate();
+    };
+  }, []);
   
   useEffect(() => {
     localStorage.setItem('chat_input_backup', input);
@@ -140,11 +150,36 @@ export default function ChatBot({
         alert("File size must be less than 10MB");
         return;
       }
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setSelectedImage(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+      
+      if (file.type === 'application/pdf') {
+        setPdfProcessingProgress(0);
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          if (workerRef.current) {
+            workerRef.current.onmessage = (event) => {
+              const { type, progress, text, error } = event.data;
+              if (type === 'PROGRESS') {
+                setPdfProcessingProgress(progress);
+              } else if (type === 'SUCCESS') {
+                setPdfText(text);
+                setPdfProcessingProgress(null);
+                if (onPdfTextChange) onPdfTextChange(text);
+              } else if (type === 'ERROR') {
+                alert(`PDF Parsing Error: ${error}`);
+                setPdfProcessingProgress(null);
+              }
+            };
+            workerRef.current.postMessage({ type: 'PARSE_PDF', fileData: reader.result });
+          }
+        };
+        reader.readAsArrayBuffer(file);
+      } else {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setSelectedImage(reader.result as string);
+        };
+        reader.readAsDataURL(file);
+      }
     }
   };
 
@@ -214,8 +249,8 @@ export default function ChatBot({
   }, [messages]);
 
   const handleSend = async (overrideInput?: string, isHintRequest: boolean = false) => {
-    const textToSend = overrideInput || input;
-    if ((!textToSend.trim() && !selectedImage) || isLoading) return;
+    let textToSend = overrideInput || input;
+    if ((!textToSend.trim() && !selectedImage && !pdfText) || isLoading) return;
     if (!user) {
       setMessages((prev) => [...prev, { role: "model", text: "Please sign in to use the AI Tutor." }]);
       return;
@@ -229,15 +264,20 @@ export default function ChatBot({
       return;
     }
 
+    if (pdfText) {
+      textToSend = `[Attached PDF Content]:\n${pdfText}\n\n[User Message]:\n${textToSend}`;
+    }
+
     const userMsg: ChatMessage = { 
       role: "user", 
-      text: textToSend || (selectedImage ? "Analyzed an image." : ""),
+      text: textToSend || (selectedImage ? "Analyzed an image." : (pdfText ? "Analyzed a PDF." : "")),
       image: selectedImage || undefined
     };
     
     setMessages((prev) => [...prev, userMsg]);
     
     setInput("");
+    setPdfText(null);
     
     // Reset textarea heights
     const textareas = document.querySelectorAll('textarea');
@@ -619,6 +659,39 @@ export default function ChatBot({
               </div>
             )}
 
+            {pdfProcessingProgress !== null && (
+              <div className="mb-4 p-3 bg-slate-50 dark:bg-zinc-800 rounded-xl border border-slate-200 dark:border-zinc-700">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-medium text-slate-600 dark:text-zinc-300 flex items-center gap-2">
+                    <FileText size={14} className="text-emerald-500" />
+                    Extracting text from PDF...
+                  </span>
+                  <span className="text-xs font-bold text-emerald-500">{pdfProcessingProgress}%</span>
+                </div>
+                <div className="w-full bg-slate-200 dark:bg-zinc-700 rounded-full h-1.5">
+                  <div 
+                    className="bg-emerald-500 h-1.5 rounded-full transition-all duration-300" 
+                    style={{ width: `${pdfProcessingProgress}%` }}
+                  ></div>
+                </div>
+              </div>
+            )}
+
+            {pdfText && (
+              <div className="relative inline-block mb-4 mr-2">
+                <div className="h-20 w-20 bg-slate-100 dark:bg-slate-800 rounded-2xl border-2 border-emerald-500 shadow-lg flex flex-col items-center justify-center p-2 text-center">
+                  <FileText className="text-emerald-500 mb-1" size={24} />
+                  <span className="text-[10px] font-medium text-slate-600 dark:text-zinc-300 truncate w-full">PDF Attached</span>
+                </div>
+                <button 
+                  onClick={() => setPdfText(null)}
+                  className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 shadow-lg"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            )}
+
             {selectedImage && (
               <div className="relative inline-block mb-4">
                 {selectedImage.startsWith('data:application/pdf') ? (
@@ -701,7 +774,7 @@ export default function ChatBot({
                 {/* Waveform Button (far right) */}
                 <button 
                   onClick={() => handleSend()}
-                  disabled={isLoading || (!input.trim() && !selectedImage)}
+                  disabled={isLoading || (!input.trim() && !selectedImage && !pdfText)}
                   className="ml-2 w-10 h-10 flex items-center justify-center rounded-full bg-black text-white hover:bg-slate-800 disabled:opacity-50 transition-all"
                 >
                   <Activity size={20} />
@@ -1024,7 +1097,7 @@ export default function ChatBot({
                     />
                     <button 
                       onClick={() => handleSend()}
-                      disabled={isLoading || (!input.trim() && !selectedImage)}
+                      disabled={isLoading || (!input.trim() && !selectedImage && !pdfText)}
                       className="absolute right-2 bottom-2 p-2.5 bg-slate-900 dark:bg-emerald-600 text-white rounded-xl hover:bg-emerald-500 disabled:opacity-50 transition-all shadow-md active:scale-95"
                     >
                       <Send size={20} />

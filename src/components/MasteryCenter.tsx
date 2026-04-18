@@ -141,7 +141,7 @@ export default function MasteryCenter({ progress, onBack, activeCourseId, syllab
             {/* Predictive Performance Analytics */}
             <LockedFeature 
               feature="hasExamReadiness" 
-              onUpgrade={() => onBack()} // This is a placeholder, should probably go to pricing
+              onUpgrade={() => onBack()}
               message="Unlock AI-powered exam readiness predictions with Exam Cram plan!"
             >
               <section>

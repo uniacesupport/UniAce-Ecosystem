@@ -69,8 +69,7 @@ export const BADGES = [
     title: 'Quiz Whiz',
     description: 'Complete 5 quizzes perfectly.',
     icon: 'Brain',
-    // Placeholder condition, would need quiz history
-    condition: (progress: UserProgress) => false, 
+    condition: (progress: UserProgress) => (progress.quizzesCompleted || 0) >= 5, 
     xpReward: 150,
   },
 ];
@@ -133,25 +132,10 @@ export class GamificationService {
         });
       });
 
-      // If empty (e.g. no users yet), return mock data
-      if (leaderboard.length === 0) {
-        return this.getMockLeaderboard();
-      }
-
       return leaderboard;
     } catch (error) {
       console.error('Error fetching leaderboard:', error);
-      return this.getMockLeaderboard();
+      return [];
     }
-  }
-
-  private static getMockLeaderboard(): LeaderboardEntry[] {
-    return [
-      { userId: '1', displayName: 'Alice', photoURL: '', xp: 1250, rank: 1, streak: 5 },
-      { userId: '2', displayName: 'Bob', photoURL: '', xp: 980, rank: 2, streak: 3 },
-      { userId: '3', displayName: 'Charlie', photoURL: '', xp: 850, rank: 3, streak: 12 },
-      { userId: '4', displayName: 'Diana', photoURL: '', xp: 720, rank: 4, streak: 1 },
-      { userId: '5', displayName: 'Evan', photoURL: '', xp: 600, rank: 5, streak: 0 },
-    ];
   }
 }

@@ -211,6 +211,15 @@ export default function AdminDashboard() {
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [sourceText, setSourceText] = useState('');
   const [isReadingFile, setIsReadingFile] = useState(false);
+  const [pdfProcessingProgress, setPdfProcessingProgress] = useState<number | null>(null);
+  const workerRef = useRef<Worker | null>(null);
+
+  useEffect(() => {
+    workerRef.current = new Worker(new URL('../workers/pdfWorker.ts', import.meta.url), { type: 'module' });
+    return () => {
+      workerRef.current?.terminate();
+    };
+  }, []);
   const [generationProgress, setGenerationProgress] = useState(0);
   const [aiProvider, setAiProvider] = useState<'gemini_direct' | 'openrouter_free' | 'mistral_direct' | 'groq' | 'cohere' | 'huggingface'>('gemini_direct');
   const [globalAiMode, setGlobalAiMode] = useState<'normal' | 'fast'>('normal');
@@ -261,25 +270,42 @@ export default function AdminDashboard() {
     setSourceFile(file);
     setIsReadingFile(true);
     
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const text = event.target?.result as string;
-      setSourceText(text);
-      setIsReadingFile(false);
-      showToast("Source file loaded successfully", "success");
-    };
-    reader.onerror = () => {
-      setIsReadingFile(false);
-      showToast("Failed to read source file", "error");
-    };
-    
     if (file.type === 'application/pdf') {
-      showToast("PDF support is limited to text extraction. For best results, use .txt or .md files.", "info");
-      // In a real app, we'd use pdfjs here. For now, we'll just set the file and maybe use a server-side extraction or just inform the user.
-      // For this demo, we'll assume the user provides text or we'll just use the filename as context if we can't parse it.
-      setSourceText(`[Source: ${file.name}] (PDF content extraction would happen here)`);
-      setIsReadingFile(false);
+      setPdfProcessingProgress(0);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        if (workerRef.current) {
+          workerRef.current.onmessage = (event) => {
+            const { type, progress, text, error } = event.data;
+            if (type === 'PROGRESS') {
+              setPdfProcessingProgress(progress);
+            } else if (type === 'SUCCESS') {
+              setSourceText(text);
+              setPdfProcessingProgress(null);
+              setIsReadingFile(false);
+              showToast("PDF extracted successfully", "success");
+            } else if (type === 'ERROR') {
+              showToast(`PDF Parsing Error: ${error}`, "error");
+              setPdfProcessingProgress(null);
+              setIsReadingFile(false);
+            }
+          };
+          workerRef.current.postMessage({ type: 'PARSE_PDF', fileData: reader.result });
+        }
+      };
+      reader.readAsArrayBuffer(file);
     } else {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const text = event.target?.result as string;
+        setSourceText(text);
+        setIsReadingFile(false);
+        showToast("Source file loaded successfully", "success");
+      };
+      reader.onerror = () => {
+        setIsReadingFile(false);
+        showToast("Failed to read source file", "error");
+      };
       reader.readAsText(file);
     }
   };
@@ -925,7 +951,7 @@ export default function AdminDashboard() {
             case 'students': shouldSend = userData.role === 'student'; break;
             case 'tutors': shouldSend = userData.role === 'tutor'; break;
             case 'moderators': shouldSend = userData.role === 'moderator'; break;
-            case 'department': shouldSend = userData.department === 'Mathematics'; break; // Placeholder for now
+            case 'department': shouldSend = userData.department === 'Mathematics'; break; // To be implemented dynamically later
             default: shouldSend = true;
           }
 
@@ -1086,7 +1112,7 @@ export default function AdminDashboard() {
     try {
       const snapshot = await getDocs(query(collection(db, 'knowledge_base'), limit(1)));
       // This is a rough estimate, Firestore doesn't provide easy count for large collections
-      setKbStats({ totalChunks: snapshot.empty ? 0 : 1000 }); // Placeholder
+      setKbStats({ totalChunks: snapshot.empty ? 0 : snapshot.size });
     } catch (error: any) {
       console.error("Error fetching KB stats:", error);
       if (error.message?.includes('permissions') || error.code === 'permission-denied') {
@@ -2329,7 +2355,7 @@ export default function AdminDashboard() {
                         className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 transition-all"
                       >
                         <Upload size={16} />
-                        {sourceFile ? sourceFile.name : 'Upload Syllabus/Textbook (.txt, .md)'}
+                        {sourceFile ? sourceFile.name : 'Upload Syllabus/Textbook (.txt, .md, .pdf)'}
                       </button>
                       {sourceFile && (
                         <button 
@@ -2343,10 +2369,24 @@ export default function AdminDashboard() {
                         type="file" 
                         ref={fileInputRef}
                         onChange={handleSourceFileChange}
-                        accept=".txt,.md"
+                        accept=".txt,.md,application/pdf"
                         className="hidden"
                       />
                     </div>
+                    {pdfProcessingProgress !== null && (
+                      <div className="mt-2 p-2 bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[10px] font-medium text-slate-600 dark:text-slate-300">Extracting PDF text...</span>
+                          <span className="text-[10px] font-bold text-amber-500">{pdfProcessingProgress}%</span>
+                        </div>
+                        <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-1">
+                          <div 
+                            className="bg-amber-500 h-1 rounded-full transition-all duration-300" 
+                            style={{ width: `${pdfProcessingProgress}%` }}
+                          ></div>
+                        </div>
+                      </div>
+                    )}
                     <p className="text-[10px] text-slate-500 mt-1 italic">
                       {isReadingFile ? 'Reading file...' : sourceFile ? 'File loaded! AI will prioritize this content.' : 'Upload a file to ground the AI generation in specific source material.'}
                     </p>

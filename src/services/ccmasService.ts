@@ -16,42 +16,7 @@ export interface CCMASCore {
   totalCoreUnits: number;
 }
 
-// Mock data representing the 70% NUC Core for Computing (100 Level)
-const MOCK_CCMAS_DATA: Record<string, CCMASCore> = {
-  "Computing-100": {
-    discipline: "Computing",
-    level: "100",
-    totalCoreUnits: 32,
-    coreCourses: [
-      { code: "COM 101", title: "Introduction to Computing", units: 3, description: "Basic concepts of computer science and information technology." },
-      { code: "COM 112", title: "Introduction to Problem Solving", units: 3, description: "Algorithm development and basic programming logic." },
-      { code: "MAT 101", title: "Elementary Mathematics I", units: 3, description: "Algebra and Trigonometry." },
-      { code: "MAT 102", title: "Elementary Mathematics II", units: 3, description: "Calculus and Coordinate Geometry." },
-      { code: "PHY 101", title: "General Physics I", units: 3, description: "Mechanics, Thermal Physics and Waves." },
-      { code: "PHY 102", title: "General Physics II", units: 2, description: "Electricity, Magnetism and Modern Physics." },
-      { code: "GST 111", title: "Communication in English I", units: 2, description: "Basic English grammar and communication skills." },
-      { code: "GST 112", title: "Logic, Philosophy and Human Existence", units: 2, description: "Critical thinking and philosophical foundations." },
-      { code: "GST 113", title: "Nigerian Peoples and Culture", units: 2, description: "History and culture of Nigeria." },
-      { code: "GST 121", title: "Use of Library, Study Skills and ICT", units: 2, description: "Information literacy and basic ICT skills." },
-      { code: "GST 122", title: "Communication in English II", units: 2, description: "Advanced communication and writing skills." },
-      { code: "GST 125", title: "Introduction to Entrepreneurship", units: 2, description: "Foundations of entrepreneurial thinking." },
-      { code: "CHM 101", title: "General Chemistry I", units: 3, description: "Basic principles of chemistry." }
-    ]
-  },
-  "Science-100": {
-    discipline: "Science",
-    level: "100",
-    totalCoreUnits: 30,
-    coreCourses: [
-      { code: "BIO 101", title: "General Biology I", units: 3, description: "Introduction to biology and cell theory." },
-      { code: "CHM 101", title: "General Chemistry I", units: 3, description: "Basic principles of chemistry." },
-      { code: "PHY 101", title: "General Physics I", units: 3, description: "Mechanics and properties of matter." },
-      { code: "MAT 101", title: "Elementary Mathematics I", units: 3, description: "Algebra and Trigonometry." },
-      { code: "GST 111", title: "Communication in English I", units: 2, description: "Basic English grammar and communication skills." },
-      { code: "GST 112", title: "Logic, Philosophy and Human Existence", units: 2, description: "Critical thinking and philosophical foundations." }
-    ]
-  }
-};
+// CCMAS Core data is loaded from Firestore
 
 export const CCMASService = {
   getCoreCurriculum: async (department: string, level: string): Promise<CCMASCore | null> => {
@@ -79,8 +44,7 @@ export const CCMASService = {
         return coreDoc.data() as CCMASCore;
       }
       
-      // Fallback to mock data if not in Firestore yet (to prevent breaking during migration)
-      return MOCK_CCMAS_DATA[coreId] || null;
+      return null;
     } catch (error: any) {
       if (error.message?.includes('insufficient permissions')) {
         const errInfo = {

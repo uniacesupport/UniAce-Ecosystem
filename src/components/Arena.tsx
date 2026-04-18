@@ -34,7 +34,7 @@ export default function Arena({ activeCourseId }: ArenaProps) {
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
   const [matchStatus, setMatchStatus] = useState('Searching for opponent...');
 
-  // Audio refs (mock for now)
+  // Audio refs
   const hitSound = useRef<HTMLAudioElement | null>(null);
   const winSound = useRef<HTMLAudioElement | null>(null);
 
@@ -266,57 +266,10 @@ export default function Arena({ activeCourseId }: ArenaProps) {
         }
       }
     } catch (error) {
-      console.error("AI Question Generation failed, falling back to mock:", error);
+      console.error("AI Question Generation failed:", error);
+      throw new Error("Failed to generate battle questions. Please try again.");
     }
-
-    // Fallback Mock Questions
-    return [
-      {
-        id: 'q1',
-        type: 'multiple-choice',
-        question: 'What is the derivative of x^2?',
-        options: ['x', '2x', 'x^2', '2'],
-        correctAnswer: '2x',
-        explanation: 'Power rule: nx^(n-1)',
-        hint: 'Power rule'
-      },
-      {
-        id: 'q2',
-        type: 'multiple-choice',
-        question: 'Evaluate integral of 1/x dx',
-        options: ['ln(x)', 'e^x', '1/x^2', '-1/x'],
-        correctAnswer: 'ln(x)',
-        explanation: 'Standard integral',
-        hint: 'Natural log'
-      },
-      {
-        id: 'q3',
-        type: 'multiple-choice',
-        question: 'What is the limit of 1/x as x approaches infinity?',
-        options: ['0', '1', 'Infinity', 'Undefined'],
-        correctAnswer: '0',
-        explanation: '1 divided by a huge number is near 0',
-        hint: 'Think of a fraction'
-      },
-      {
-        id: 'q4',
-        type: 'multiple-choice',
-        question: 'Solve for x: 2x + 5 = 15',
-        options: ['2', '5', '10', '7.5'],
-        correctAnswer: '5',
-        explanation: '2x = 10 -> x = 5',
-        hint: 'Isolate x'
-      },
-      {
-        id: 'q5',
-        type: 'multiple-choice',
-        question: 'What is the value of sin(90 degrees)?',
-        options: ['0', '1', '-1', '0.5'],
-        correctAnswer: '1',
-        explanation: 'Unit circle at 90 degrees is (0,1)',
-        hint: 'Unit circle top point'
-      }
-    ];
+    throw new Error("Could not find suitable curriculum to generate questions.");
   };
 
   // --- RENDERERS ---
