@@ -25,6 +25,7 @@ import { LogService, SystemLog } from '../services/logService';
 import { CurriculumIntegrityService } from '../services/curriculumIntegrity';
 import { usePermissions } from '../hooks/usePermissions';
 import { useInstitution } from '../context/InstitutionContext';
+import AdminAffiliates from './AdminAffiliates';
 
 import { jsonrepair } from 'jsonrepair';
 
@@ -99,7 +100,7 @@ export default function AdminDashboard() {
   const [isIngesting, setIsIngesting] = useState(false);
   const [ingestionStatus, setIngestionStatus] = useState('');
   const [kbStats, setKbStats] = useState({ totalChunks: 0 });
-  const [activeTab, setActiveTab] = useState<'overview' | 'courses' | 'users' | 'rag' | 'communications' | 'settings' | 'logs' | 'question-bank' | 'curriculum-health' | 'curriculum-manager' | 'curriculum-requests' | 'api-debugger'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'courses' | 'users' | 'rag' | 'communications' | 'settings' | 'logs' | 'question-bank' | 'curriculum-health' | 'curriculum-manager' | 'curriculum-requests' | 'api-debugger' | 'affiliates'>('overview');
 
   useEffect(() => {
     // Redirect if current tab is not allowed for the role
@@ -112,7 +113,8 @@ export default function AdminDashboard() {
     if (activeTab === 'question-bank' && !canManageCourses) setActiveTab('overview');
     if (activeTab === 'curriculum-health' && !canManageCurriculum) setActiveTab('overview');
     if (activeTab === 'curriculum-manager' && !canManageCurriculum) setActiveTab('overview');
-  }, [userRole, activeTab]);
+    if (activeTab === 'affiliates' && !canManageUsers) setActiveTab('overview');
+  }, [userRole, activeTab, canViewLogs, canManageAI, canManageUsers, canManageCourses, canManageRAG, canManageCommunications, canManageCurriculum]);
 
   const [integrityIssues, setIntegrityIssues] = useState<any[]>([]);
   const [isLoadingIntegrity, setIsLoadingIntegrity] = useState(false);
@@ -255,6 +257,7 @@ export default function AdminDashboard() {
       fetchChatAnalytics();
       fetchSystemConfig();
       fetchRoutingConfig();
+      fetchCommunityConfig();
       fetchAiMode();
       fetchLogs();
       fetchIntegrityData();
@@ -481,6 +484,37 @@ export default function AdminDashboard() {
       }
     } catch (error) {
       console.error("Error fetching routing config:", error);
+    }
+  };
+
+  const [communityLink, setCommunityLink] = useState('');
+  const [isUpdatingCommunity, setIsUpdatingCommunity] = useState(false);
+
+  const fetchCommunityConfig = async () => {
+    if (!db) return;
+    try {
+      const docRef = doc(db, 'system_config', 'community');
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists() && docSnap.data().whatsappLink) {
+        setCommunityLink(docSnap.data().whatsappLink);
+      }
+    } catch (error) {
+      console.error("Error fetching community config:", error);
+    }
+  };
+
+  const updateCommunityConfig = async () => {
+    if (!db) return;
+    setIsUpdatingCommunity(true);
+    try {
+      await setDoc(doc(db, 'system_config', 'community'), { whatsappLink: communityLink }, { merge: true });
+      showToast('Community WhatsApp link updated', 'success');
+      LogService.log('info', 'admin', `Updated community whatsapp link`);
+    } catch (error) {
+      console.error("Error updating community config:", error);
+      showToast("Failed to update link", "error");
+    } finally {
+      setIsUpdatingCommunity(false);
     }
   };
 
@@ -2088,6 +2122,7 @@ export default function AdminDashboard() {
             { id: 'curriculum-health', label: 'Curriculum Health', icon: HeartPulse, show: permissions.canManageCurriculum },
             { id: 'curriculum-requests', label: 'Curriculum Requests', icon: MessageSquare, show: permissions.canManageCurriculum },
             { id: 'users', label: 'User Management', icon: Users, show: permissions.canManageUsers },
+            { id: 'affiliates', label: 'Affiliates', icon: Share2, show: permissions.canManageUsers },
             { id: 'communications', label: 'Communications', icon: Globe, show: permissions.canCommunicate },
             { id: 'logs', label: 'System Logs', icon: FileText, show: permissions.canViewLogs },
             { id: 'settings', label: 'Command Center', icon: Shield, show: permissions.canManageSystem }
@@ -3305,6 +3340,8 @@ export default function AdminDashboard() {
         <ApiDebuggerPage onBack={() => setActiveTab('overview')} showToast={showToast} />
       )}
 
+      {activeTab === 'affiliates' && <AdminAffiliates />}
+
       {activeTab === 'users' && (
         <div className="space-y-8">
           {/* User Stats Overview */}
@@ -4186,6 +4223,35 @@ export default function AdminDashboard() {
                       <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${systemConfig.autoFallback ? 'right-0.5' : 'left-0.5'}`} />
                     </div>
                   </div>
+                </div>
+              </div>
+
+              {/* Community Settings */}
+              <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700">
+                <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
+                  <Activity className="text-green-500" size={24} />
+                  Community Setup
+                </h3>
+                <p className="text-slate-500 text-sm mb-6">Set the WhatsApp Group link to appear during new student onboarding.</p>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">WhatsApp Channel Link</label>
+                    <input 
+                      type="url"
+                      value={communityLink}
+                      onChange={(e) => setCommunityLink(e.target.value)}
+                      placeholder="https://chat.whatsapp.com/..." 
+                      className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-green-500 outline-none transition-all dark:text-white"
+                    />
+                  </div>
+                  <button 
+                    onClick={updateCommunityConfig}
+                    disabled={isUpdatingCommunity}
+                    className="w-full py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {isUpdatingCommunity ? <Loader2 size={18} className="animate-spin" /> : <Activity size={18} />}
+                    Save Link
+                  </button>
                 </div>
               </div>
 

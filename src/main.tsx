@@ -18,8 +18,23 @@ try {
   } else {
     document.documentElement.classList.remove('dark');
   }
+
+  // Capture referral code from URL if present
+  const params = new URLSearchParams(window.location.search);
+  const refCode = params.get('ref');
+  if (refCode) {
+    if (sessionStorage.getItem('ref_code') !== refCode) {
+      sessionStorage.setItem('ref_code', refCode);
+      // Blindly increment clicks
+      import('./firebase').then(({ db }) => {
+        import('firebase/firestore').then(({ doc, updateDoc, increment }) => {
+          updateDoc(doc(db, 'affiliates', refCode), { clicks: increment(1) }).catch(() => {});
+        });
+      });
+    }
+  }
 } catch (e) {
-  console.warn('localStorage access denied, falling back to light theme');
+  console.warn('Storage access denied', e);
 }
 
 console.log('Main.tsx: Starting render...');

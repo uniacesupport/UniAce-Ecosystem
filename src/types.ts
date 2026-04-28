@@ -25,7 +25,7 @@ export interface Course {
   deletedAt?: string;
 }
 
-export type View = 'hub' | 'dashboard' | 'study' | 'past-questions' | 'quizzes' | 'module-topics' | 'course-syllabus' | 'mastery' | 'formulas' | 'ai-tutor' | 'notebook' | 'profile' | 'help-support' | 'admin-support' | 'admin-dashboard' | 'pricing' | 'flashcards' | 'arena' | 'concept-map' | 'study-plan';
+export type View = 'hub' | 'dashboard' | 'study' | 'past-questions' | 'quizzes' | 'module-topics' | 'course-syllabus' | 'mastery' | 'formulas' | 'ai-tutor' | 'notebook' | 'profile' | 'help-support' | 'admin-support' | 'admin-dashboard' | 'tutor-dashboard' | 'pricing' | 'flashcards' | 'arena' | 'concept-map' | 'study-plan';
 
 export interface Assignment {
   id: string;
@@ -108,6 +108,10 @@ export interface UserProfile {
   faculty?: string;
   academic_level?: string;
   semester?: string;
+  referralCode?: string;
+  referredBy?: string;
+  referral_count?: number;
+  ai_sparks?: number;
 }
 
 export interface LearningProfile {

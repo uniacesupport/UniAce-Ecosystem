@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import PaystackPop from '@paystack/inline-js';
 
 export default function PricingPage() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [loading, setLoading] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<any>(null);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -70,20 +70,28 @@ export default function PricingPage() {
         key: publicKey,
         email: user.email,
         amount: plan.price * 100,
-        metadata: { uid: user.uid, plan_id: plan.id },
+        metadata: { 
+          userId: user.uid, 
+          planType: plan.id,
+          referredBy: profile?.referredBy || null
+        },
         onSuccess: async (transaction: any) => {
           try {
             const response = await fetch('/api/verify-payment', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ reference: transaction.reference }),
+              body: JSON.stringify({ 
+                reference: transaction.reference,
+                amount: plan.price,
+                planType: plan.id
+              }),
             });
             if (!response.ok) throw new Error('Verification failed');
             setTransactionRef(transaction.reference);
             setShowSuccessModal(true);
           } catch (error) {
             console.error("Payment verification error:", error);
-            alert("Payment successful, but verification failed.");
+            alert("Payment successful, but verification failed. Please contact support with your reference: " + transaction.reference);
           } finally {
             setLoading(false);
           }

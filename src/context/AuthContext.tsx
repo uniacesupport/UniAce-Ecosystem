@@ -38,6 +38,10 @@ interface UserProfile {
     lastUpdated: string;
     fastMode?: boolean;
   };
+  has_seen_whatsapp?: boolean;
+  referralCode?: string;
+  referredBy?: string;
+  referral_count?: number;
 }
 
 interface AuthContextType {
@@ -133,6 +137,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       await fetchQuota();
 
+      let referralCode = userDoc.exists() ? userDoc.data().referralCode : undefined;
+      let referredBy = userDoc.exists() ? userDoc.data().referredBy : undefined;
+
+      if (!referralCode) {
+        // Generate a 6-character referral code based on UID
+        referralCode = currentUser.uid.substring(0, 6).toUpperCase();
+      }
+
+      if (!userDoc.exists() && !referredBy) {
+        const storedRef = sessionStorage.getItem('ref_code');
+        if (storedRef) {
+          referredBy = storedRef;
+          // Increment the affiliate refer code signups blindly
+          try {
+            const { updateDoc, doc, increment } = await import('firebase/firestore');
+            await updateDoc(doc(db, 'affiliates', storedRef), { signups: increment(1) });
+          } catch (e) {
+            console.warn('Failed to increment referral count', e);
+          }
+        }
+      }
+
       const profileData: UserProfile = {
         uid: currentUser.uid,
         email: currentUser.email || "",
@@ -160,6 +186,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         academic_level: userDoc.exists() ? userDoc.data().academic_level : undefined,
         semester: userDoc.exists() ? userDoc.data().semester : undefined,
         learningProfile: userDoc.exists() ? userDoc.data().learningProfile : undefined,
+        has_seen_whatsapp: userDoc.exists() ? userDoc.data().has_seen_whatsapp : false,
+        referralCode,
+        referredBy,
       };
 
       const dataToSave: any = {

@@ -19,6 +19,7 @@ import UserProfile from './components/UserProfile';
 import HelpSupport from './components/HelpSupport';
 import AdminSupport from './components/AdminSupport';
 import AdminDashboard from './components/AdminDashboard';
+import TutorDashboard from './components/TutorDashboard';
 import AdminLogin from './components/AdminLogin';
 import Arena from './components/Arena';
 import ConceptMap from './components/ConceptMap';
@@ -33,6 +34,7 @@ import PWAInstallPrompt from './components/PWAInstallPrompt';
 import Calculator from './components/Calculator';
 import VoiceTutor from './components/VoiceTutor';
 import AcademicProfileModal from './components/AcademicProfileModal';
+import WhatsAppPromoModal from './components/WhatsAppPromoModal';
 import { CalculatorProvider, useCalculator } from './context/CalculatorContext';
 import { useUserProgress } from './hooks/useUserProgress';
 import { useAuth } from './context/AuthContext';
@@ -293,10 +295,12 @@ function AppContent() {
   }
 
   const needsAcademicProfile = user && profile && (!profile.department || !profile.academic_level || !profile.semester);
+  const needsWhatsappPromo = user && profile && !needsAcademicProfile && !profile.has_seen_whatsapp;
 
   return (
     <div className="flex h-screen w-full bg-slate-50 dark:bg-zinc-950 font-sans overflow-hidden relative transition-colors duration-300">
       {needsAcademicProfile && <AcademicProfileModal />}
+      {needsWhatsappPromo && <WhatsAppPromoModal />}
       {user && (
         <PaywallManager onUpgrade={() => setActiveView('pricing')} />
       )}
@@ -611,6 +615,10 @@ function AppContent() {
 
         {activeView === 'study-plan' && (
           <StudyPlan progress={progress} syllabus={syllabus} />
+        )}
+
+        {activeView === 'tutor-dashboard' && (
+          <TutorDashboard onBack={() => setActiveView('profile')} />
         )}
 
         {activeView === 'admin-dashboard' && (

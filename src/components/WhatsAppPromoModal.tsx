@@ -1,0 +1,91 @@
+import React, { useState, useEffect } from 'react';
+import { motion } from 'motion/react';
+import { MessageCircle, ArrowRight } from 'lucide-react';
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { db } from '../firebase';
+import { useAuth } from '../context/AuthContext';
+
+export default function WhatsAppPromoModal() {
+  const [whatsappLink, setWhatsappLink] = useState('');
+  const [isVisible, setIsVisible] = useState(true);
+  const { user } = useAuth();
+
+  useEffect(() => {
+    const fetchLink = async () => {
+      try {
+        const snap = await getDoc(doc(db, 'system_config', 'community'));
+        if (snap.exists() && snap.data().whatsappLink) {
+          setWhatsappLink(snap.data().whatsappLink);
+        }
+      } catch (e) {
+        console.error("Failed to fetch whatsapp link:", e);
+      }
+    };
+    fetchLink();
+  }, []);
+
+  const markAsSeen = async () => {
+    setIsVisible(false);
+    if (user) {
+      try {
+        await updateDoc(doc(db, 'users', user.uid), { has_seen_whatsapp: true });
+      } catch (e) {
+        console.error("Failed to update profile", e);
+      }
+    }
+  };
+
+  const handleJoin = () => {
+    setTimeout(() => {
+      markAsSeen();
+    }, 500);
+  };
+
+  if (!whatsappLink || !isVisible) return null;
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        className="bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200 dark:border-zinc-800 p-8 text-center relative"
+      >
+        <button 
+          onClick={markAsSeen}
+          className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 bg-slate-100 dark:bg-zinc-800 rounded-full transition-colors"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+        
+        <div className="w-20 h-20 bg-green-100 dark:bg-green-500/20 text-green-600 dark:text-green-400 rounded-full flex items-center justify-center mx-auto mb-6">
+          <MessageCircle size={40} className="ml-1" />
+        </div>
+        
+        <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-3">Join the Community!</h2>
+        <p className="text-slate-600 dark:text-zinc-400 mb-8 max-w-[280px] mx-auto">
+          Get instant updates and stay connected with our community on WhatsApp.
+        </p>
+
+        <div className="space-y-4">
+          <a
+            href={whatsappLink}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={handleJoin}
+            className="w-full bg-[#25D366] hover:bg-[#20bd5a] text-white font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-3 shadow-lg shadow-green-500/30 hover:shadow-green-500/40 hover:-translate-y-0.5"
+          >
+            <MessageCircle size={24} />
+            Join us on WhatsApp
+          </a>
+          
+          <button
+            onClick={markAsSeen}
+            className="w-full text-slate-500 hover:text-slate-700 dark:text-zinc-400 dark:hover:text-zinc-200 font-medium py-3 rounded-xl transition-colors flex items-center justify-center gap-2"
+          >
+            Skip for now <ArrowRight size={16} />
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}

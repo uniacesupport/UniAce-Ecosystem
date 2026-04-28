@@ -187,6 +187,21 @@
         "metadata": { "type": "object" }
       },
       "required": ["userId", "userEmail", "type", "severity", "details", "timestamp", "resolved"]
+    },
+    "Affiliate": {
+      "title": "Affiliate",
+      "description": "Tutor affiliate referral tracking",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "clicks": { "type": "number" },
+        "signups": { "type": "number" },
+        "paidConversions": { "type": "number" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "clicks", "signups", "paidConversions"]
     }
   },
   "firestore": {
@@ -229,6 +244,10 @@
     "/users/{userId}/spaced_repetition/{topicId}": {
       "schema": "SpacedRepetition",
       "description": "User's spaced repetition data for specific topics"
+    },
+    "/affiliates/{affiliateId}": {
+      "schema": "Affiliate",
+      "description": "Tutor referral tracking data"
     }
   }
 }

@@ -160,6 +160,153 @@ app.get('/api/config/paystack', (req, res) => {
   res.json({ publicKey });
 });
 
+/**
+ * Paystack Webhook Handler
+ * Documentation: https://paystack.com/docs/payments/webhooks/
+ */
+app.post('/api/paystack-webhook', async (req: any, res) => {
+  try {
+    const secret = process.env.PAYSTACK_SECRET_KEY;
+    if (!secret) return res.status(500).send('Paystack secret key not configured');
+
+    const signature = req.headers['x-paystack-signature'];
+    if (!signature) return res.status(400).send('No signature provided');
+
+    // 1. Verify Signature
+    const hash = crypto
+      .createHmac('sha512', secret)
+      .update(req.rawBody)
+      .digest('hex');
+
+    if (hash !== signature) {
+      console.warn('Paystack Webhook: Signature mismatch');
+      return res.status(401).send('Invalid signature');
+    }
+
+    const event = req.body;
+    console.log(`Paystack Webhook Received: ${event.event}`, event.data.reference);
+
+    // 2. Handle successful charge
+    if (event.event === 'charge.success') {
+      const { reference, amount, customer, metadata } = event.data;
+      const uid = metadata?.userId;
+      
+      if (!uid) {
+        console.error('Paystack Webhook: Missing userId in metadata', reference);
+        return res.status(200).send('Missing userId'); // Still send 200 to acknowledge receipt
+      }
+
+      // Process the success logic
+      await processPaymentSuccess(uid, reference, amount / 100, metadata?.planType || 'monthly');
+    }
+
+    res.status(200).send('Webhook processed');
+  } catch (error) {
+    console.error('Paystack Webhook Error:', error);
+    res.status(500).send('Internal Error');
+  }
+});
+
+/**
+ * Reusable logic to process a successful payment
+ * Handles: Idempotency, user subscription, affiliate commission, and audit logs.
+ */
+async function processPaymentSuccess(uid: string, reference: string, amount: number, planType: string) {
+  const app = getAdminApp();
+  if (!app) throw new Error('Firebase Admin app not initialized');
+
+  const db = app.firestore();
+  const paymentDocRef = db.collection('payments').doc(reference);
+  
+  // 1. Idempotency Check (Prevent duplicate processing)
+  const paymentDoc = await paymentDocRef.get();
+  if (paymentDoc.exists) {
+    console.log(`Payment success already processed for reference: ${reference}`);
+    return;
+  }
+
+  // 2. Fetch User and determine subscription details
+  const userRef = db.collection('users').doc(uid);
+  const userDoc = await userRef.get();
+  if (!userDoc.exists) {
+    throw new Error(`User ${uid} not found during payment processing`);
+  }
+  const userData = userDoc.data();
+
+  // Pricing & Spark logic
+  let sparksToAdd = 0;
+  let durationDays = 30;
+  
+  if (planType === 'semester') {
+    sparksToAdd = 5000;
+    durationDays = 120;
+  } else {
+    sparksToAdd = 1000;
+    durationDays = 30;
+  }
+
+  const now = new Date();
+  const expiryDate = new Date();
+  expiryDate.setDate(expiryDate.getDate() + durationDays);
+
+  const commissionRate = 0.30; // 30% commission
+  const commissionAmount = amount * commissionRate;
+
+  // 3. Perform atomic updates
+  await db.runTransaction(async (transaction) => {
+    // Record the payment (Audit Log)
+    transaction.set(paymentDocRef, {
+      uid,
+      email: userData?.email || userData?.secondary_email || null,
+      amount,
+      plan_type: planType,
+      reference,
+      status: 'success',
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      sparks_added: sparksToAdd,
+      referred_by: userData?.referredBy || null,
+      commission_amount: userData?.referredBy ? commissionAmount : 0
+    });
+
+    // Update User Subscription
+    transaction.update(userRef, {
+      ai_sparks: admin.firestore.FieldValue.increment(sparksToAdd),
+      plan_type: planType,
+      subscription_status: 'active',
+      subscription_start_date: now.toISOString(),
+      subscription_expiry: expiryDate.toISOString(),
+      last_payment_ref: reference,
+      updated_at: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    // Track affiliate conversion and financials
+    if (userData?.referredBy) {
+      const affiliateRef = db.collection('affiliates').doc(userData.referredBy);
+      transaction.set(affiliateRef, {
+        paidConversions: admin.firestore.FieldValue.increment(1),
+        totalEarned: admin.firestore.FieldValue.increment(commissionAmount),
+        pendingBalance: admin.firestore.FieldValue.increment(commissionAmount),
+        last_referral_at: admin.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
+
+      // Create detailed earnings record for audit
+      const earningRef = db.collection('affiliate_earnings').doc(`${userData.referredBy}_${reference}`);
+      transaction.set(earningRef, {
+        affiliateId: userData.referredBy,
+        userId: uid,
+        userEmail: userData.email,
+        paymentId: reference,
+        amount: amount,
+        commissionRate: commissionRate,
+        commissionAmount: commissionAmount,
+        timestamp: admin.firestore.FieldValue.serverTimestamp()
+      });
+    }
+  });
+
+  console.log(`Payment processed successfully for ${uid} (Ref: ${reference})`);
+}
+
 // Strict Rate Limiter for AI Generation Endpoints (Denial of Wallet Protection)
 const aiGenerationLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
@@ -2818,206 +2965,23 @@ app.post('/api/admin/questions/delete', verifyAuth, async (req, res) => {
   }
 });
 
-// 2. Paystack Webhook
-app.post('/api/paystack/webhook', async (req, res) => {
-  const signature = req.headers['x-paystack-signature'] as string;
-  const secret = process.env.PAYSTACK_SECRET_KEY;
+app.post('/api/verify-payment', verifyAuth, async (req: any, res) => {
+  const { reference, amount, planType } = req.body;
+  const uid = req.user.uid;
 
-  if (!signature || !secret) {
-    return res.status(400).send('Missing signature or secret');
-  }
-
-  // Verify event from Paystack signature securely to prevent timing attacks
-  const hash = crypto.createHmac('sha512', secret)
-    .update((req as any).rawBody)
-    .digest('hex');
-
-  const expectedSignature = Buffer.from(signature || '');
-  const actualSignature = Buffer.from(hash);
-
-  if (expectedSignature.length !== actualSignature.length || !crypto.timingSafeEqual(expectedSignature, actualSignature)) {
-    console.warn('CRITICAL: Paystack webhook signature mismatch detected.');
-    return res.status(400).send('Invalid signature');
-  }
-
-  const event = req.body;
-
-  if (event.event === 'charge.success') {
-    const { reference, metadata, amount } = event.data;
-    const uid = metadata?.uid;
-    
-    if (!uid) {
-      console.warn('Webhook received without UID in metadata');
-      return res.sendStatus(200); // Still return 200 to Paystack
-    }
-
-    // Determine plan based on amount (in Kobo)
-    let sparksToAdd = 0;
-    let planType = 'free';
-    let durationDays = 0;
-
-    if (amount === 50000) { // ₦500
-      sparksToAdd = 500;
-      planType = 'exam_cram';
-      durationDays = 7;
-    } else if (amount === 150000) { // ₦1,500
-      sparksToAdd = 2000;
-      planType = 'scholar';
-      durationDays = 30;
-    } else if (amount === 450000) { // ₦4,500
-      sparksToAdd = 6000;
-      planType = 'semester';
-      durationDays = 120;
-    }
-
-    if (sparksToAdd > 0) {
-      const expiryDate = new Date();
-      expiryDate.setDate(expiryDate.getDate() + durationDays);
-      const app = getAdminApp();
-
-      if (app) {
-        try {
-          const db = app.firestore();
-          const userRef = db.collection('users').doc(uid);
-          const paymentRef = db.collection('payments').doc(reference); // Use reference as doc ID for idempotency
-
-          // Use a transaction to prevent race conditions (double-crediting)
-          await db.runTransaction(async (t) => {
-            const userDoc = await t.get(userRef);
-            const paymentDoc = await t.get(paymentRef);
-            
-            // Strictly prevent double-processing the same transaction reference
-            if (paymentDoc.exists || (userDoc.exists && userDoc.data()?.last_payment_ref === reference)) {
-              console.log(`Webhook: Transaction ${reference} already processed. Skipping.`);
-              return; 
-            }
-
-            const now = new Date();
-            t.set(userRef, {
-              ai_sparks: admin.firestore.FieldValue.increment(sparksToAdd),
-              plan_type: planType,
-              subscription_status: 'active',
-              subscription_start_date: now.toISOString(),
-              subscription_expiry: expiryDate.toISOString(),
-              last_payment_ref: reference
-            }, { merge: true });
-
-            // Record the payment atomically
-            t.set(paymentRef, {
-              uid,
-              amount: amount / 100, // Store in Naira
-              plan_type: planType,
-              reference,
-              status: 'success',
-              timestamp: admin.firestore.FieldValue.serverTimestamp(),
-              sparks_added: sparksToAdd
-            });
-          });
-          
-          console.log(`Webhook: Credited ${sparksToAdd} sparks to user ${uid}`);
-        } catch (err) {
-          console.error('Webhook Firestore Error:', err);
-          return res.status(500).send('Database error');
-        }
-      }
-    }
-  }
-
-  res.sendStatus(200);
-});
-
-// 2.5 Verify Payment
-app.post('/api/verify-payment', verifyAuth, async (req, res) => {
-  const { reference } = req.body;
-  const uid = (req as any).user.uid;
-  const secret = process.env.PAYSTACK_SECRET_KEY;
-
-  if (!secret) {
-    return res.status(500).json({ error: 'Payment configuration missing' });
+  if (!reference || !amount || !planType) {
+    return res.status(400).json({ error: 'Missing payment details' });
   }
 
   try {
-    // Verify with Paystack
-    const response = await fetch(`https://api.paystack.co/transaction/verify/${reference}`, {
-      headers: {
-        Authorization: `Bearer ${secret}`
-      }
-    });
-
-    const data = await response.json();
-
-    if (!data.status || data.data.status !== 'success') {
-      return res.status(400).json({ error: 'Payment verification failed' });
-    }
-
-    const amount = data.data.amount;
-    const metadata = data.data.metadata;
-    
-    // Ensure the payment belongs to this user
-    if (metadata?.uid !== uid) {
-      return res.status(403).json({ error: 'Payment mismatch' });
-    }
-
-    // Determine plan based on amount (in Kobo)
-    let sparksToAdd = 0;
-    let planType = 'free';
-    let durationDays = 0;
-
-    if (amount === 50000) { // ₦500
-      sparksToAdd = 500;
-      planType = 'exam_cram';
-      durationDays = 7;
-    } else if (amount === 150000) { // ₦1,500
-      sparksToAdd = 2000;
-      planType = 'scholar';
-      durationDays = 30;
-    } else if (amount === 450000) { // ₦4,500
-      sparksToAdd = 6000;
-      planType = 'semester';
-      durationDays = 120;
-    }
-
-    if (sparksToAdd > 0) {
-      const expiryDate = new Date();
-      expiryDate.setDate(expiryDate.getDate() + durationDays);
-      const app = getAdminApp();
-
-      if (app) {
-        // Check if this reference was already processed
-        const userRef = app.firestore().collection('users').doc(uid);
-        const userDoc = await userRef.get();
-        
-        if (userDoc.exists && userDoc.data()?.last_payment_ref === reference) {
-          return res.json({ success: true, message: 'Already processed' });
-        }
-
-        const now = new Date();
-        await userRef.set({
-          ai_sparks: admin.firestore.FieldValue.increment(sparksToAdd),
-          plan_type: planType,
-          subscription_status: 'active',
-          subscription_start_date: now.toISOString(),
-          subscription_expiry: expiryDate.toISOString(),
-          last_payment_ref: reference
-        }, { merge: true });
-
-        // Record the payment
-        await app.firestore().collection('payments').add({
-          uid,
-          amount: amount / 100,
-          plan_type: planType,
-          reference,
-          status: 'success',
-          timestamp: admin.firestore.FieldValue.serverTimestamp(),
-          sparks_added: sparksToAdd
-        });
-      }
-    }
-
+    // Note: We call processPaymentSuccess here too for fast UI feedback,
+    // but the idempotency check inside ensures it doesn't double-process
+    // if the webhook already arrived.
+    await processPaymentSuccess(uid, reference, amount, planType);
     res.json({ success: true });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Payment verification error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ error: error.message || 'Internal server error' });
   }
 });
 
