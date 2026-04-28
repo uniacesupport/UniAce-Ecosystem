@@ -24,38 +24,13 @@ interface UserProfileProps {
   onNavigate: (view: View) => void;
 }
 
-const DEPARTMENTS: Department[] = [
-  'Aerospace Engineering',
-  'Agricultural Engineering',
-  'Anatomy',
-  'Biology',
-  'Biomedical Engineering',
-  'Chemical Engineering',
-  'Chemistry',
-  'Civil Engineering',
-  'Computer Engineering',
-  'Computer Science',
-  'Dentistry',
-  'Electrical Engineering',
-  'Material Science and Engineering',
-  'Mathematics',
-  'Mechanical Engineering',
-  'Mechatronics Engineering',
-  'Medical Laboratory Science',
-  'Medicine and Surgery',
-  'Nursing Science',
-  'Petroleum Engineering',
-  'Pharmacy',
-  'Physics',
-  'Physiology',
-  'Public Health',
-  'Software Engineering'
-];
-
 const LEVELS: Level[] = ['100', '200', '300', '400', '500'];
 const SEMESTERS: Semester[] = ['1st Semester', '2nd Semester'];
 
+import { useInstitution } from '../context/InstitutionContext';
+
 export default function UserProfile({ onBack, onNavigate }: UserProfileProps) {
+  const { departments: DEPARTMENTS } = useInstitution();
   const { user, logout, profile, updateProfileData } = useAuth();
   const { progress } = useUserProgress();
   const { theme, toggleTheme } = useTheme();

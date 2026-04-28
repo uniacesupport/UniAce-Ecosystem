@@ -39,6 +39,8 @@ export default function AdminQuestionBank() {
     hint: ''
   });
 
+  const [confirmModal, setConfirmModal] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
+
   useEffect(() => {
     if (activeTab === 'view') {
       fetchPapers();
@@ -238,30 +240,35 @@ export default function AdminQuestionBank() {
     });
   };
 
-  const handleDeleteQuestion = async (paperId: string, questionId: string) => {
-    if (!window.confirm('Are you sure you want to delete this question? This will also remove its AI embedding.')) return;
-    
-    setIsLoading(true);
-    try {
-      const token = await auth.currentUser?.getIdToken();
-      const response = await fetch('/api/admin/questions/delete', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ paperId, questionId })
-      });
+  const handleDeleteQuestion = (paperId: string, questionId: string) => {
+    setConfirmModal({
+      title: "Delete Question",
+      message: "Are you sure you want to delete this question? This will also remove its AI embedding.",
+      onConfirm: async () => {
+        setConfirmModal(null);
+        setIsLoading(true);
+        try {
+          const token = await auth.currentUser?.getIdToken();
+          const response = await fetch('/api/admin/questions/delete', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ paperId, questionId })
+          });
 
-      if (!response.ok) throw new Error('Failed to delete question');
-      
-      setSuccess('Question deleted successfully.');
-      fetchPapers();
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setIsLoading(false);
-    }
+          if (!response.ok) throw new Error('Failed to delete question');
+          
+          setSuccess('Question deleted successfully.');
+          fetchPapers();
+        } catch (err: any) {
+          setError(err.message);
+        } finally {
+          setIsLoading(false);
+        }
+      }
+    });
   };
 
   const handleUpdateQuestion = async () => {
@@ -768,6 +775,54 @@ export default function AdminQuestionBank() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Confirm Modal */}
+      {confirmModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 max-w-md w-full shadow-2xl">
+            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">{confirmModal.title}</h3>
+            <p className="text-slate-500 dark:text-slate-400 mb-6">{confirmModal.message}</p>
+            <div className="flex justify-end gap-3">
+              <button 
+                onClick={() => setConfirmModal(null)}
+                className="px-4 py-2 rounded-xl font-bold text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={confirmModal.onConfirm}
+                className="px-6 py-2 rounded-xl font-bold bg-red-600 hover:bg-red-700 text-white"
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Modal */}
+      {confirmModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 max-w-md w-full shadow-2xl">
+            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">{confirmModal.title}</h3>
+            <p className="text-slate-500 dark:text-slate-400 mb-6">{confirmModal.message}</p>
+            <div className="flex justify-end gap-3">
+              <button 
+                onClick={() => setConfirmModal(null)}
+                className="px-4 py-2 rounded-xl font-bold text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={confirmModal.onConfirm}
+                className="px-6 py-2 rounded-xl font-bold bg-red-600 hover:bg-red-700 text-white"
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -9,7 +9,7 @@ import { useCourses } from '../context/CourseContext';
 import { useAuth } from '../context/AuthContext';
 import { db, storage, auth } from '../firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { doc, setDoc, getDoc, collection, getDocs, deleteDoc, query, where, limit, writeBatch, serverTimestamp, orderBy, addDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc, collection, getDocs, deleteDoc, query, where, limit, writeBatch, serverTimestamp, orderBy, addDoc, updateDoc } from 'firebase/firestore';
 import AdminQuestionBank from './AdminQuestionBank';
 import { ApiDebuggerPage } from './ApiDebuggerPage';
 import CourseEditModal from './CourseEditModal';
@@ -20,10 +20,11 @@ import { AIService } from '../services/ai';
 import { generateCourseContent, generateCourseSkeleton, generateModuleContent, generateCourseFormulas } from '../services/aiCourseGenerator';
 import { CourseService, sanitizeForFirestore } from '../services/courseService';
 import { Course, UserProgress, CourseId, Department, Level, Semester, Subject, CourseScope } from '../types';
-import { FACULTIES, DEPARTMENT_TO_FACULTY, DEPARTMENTS, LEVELS, SEMESTERS } from '../constants';
+import { LEVELS, SEMESTERS } from '../constants';
 import { LogService, SystemLog } from '../services/logService';
 import { CurriculumIntegrityService } from '../services/curriculumIntegrity';
 import { usePermissions } from '../hooks/usePermissions';
+import { useInstitution } from '../context/InstitutionContext';
 
 import { jsonrepair } from 'jsonrepair';
 
@@ -71,6 +72,12 @@ export default function AdminDashboard() {
     role: userRole
   } = permissions;
 
+  const { departments, faculties, departmentToFaculty, addDepartment, removeDepartment } = useInstitution();
+
+  const DEPARTMENTS = departments;
+  const FACULTIES = faculties;
+  const DEPARTMENT_TO_FACULTY = departmentToFaculty;
+
   // Add aliases for backward compatibility or specific checks if needed
   const canManageRAG = canManageCourses;
   const canManageCommunications = canCommunicate;
@@ -92,7 +99,7 @@ export default function AdminDashboard() {
   const [isIngesting, setIsIngesting] = useState(false);
   const [ingestionStatus, setIngestionStatus] = useState('');
   const [kbStats, setKbStats] = useState({ totalChunks: 0 });
-  const [activeTab, setActiveTab] = useState<'overview' | 'courses' | 'users' | 'rag' | 'communications' | 'settings' | 'logs' | 'question-bank' | 'curriculum-health' | 'curriculum-manager' | 'api-debugger'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'courses' | 'users' | 'rag' | 'communications' | 'settings' | 'logs' | 'question-bank' | 'curriculum-health' | 'curriculum-manager' | 'curriculum-requests' | 'api-debugger'>('overview');
 
   useEffect(() => {
     // Redirect if current tab is not allowed for the role
@@ -240,6 +247,7 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (user) {
       fetchUsers();
+      fetchCurriculumRequests();
       fetchKbStats();
       fetchSystemStats();
       checkAIStatus();
@@ -396,22 +404,25 @@ export default function AdminDashboard() {
     document.body.removeChild(link);
   };
 
-  const handleClearLogs = async () => {
-    // Use custom modal instead of window.confirm as per guidelines
-    const confirmed = window.confirm("Are you sure you want to clear all system logs? This action cannot be undone.");
-    if (!confirmed) return;
-    
-    setIsLoadingLogs(true);
-    try {
-      // We'll use a batch delete approach if possible, but for now we'll just log the action
-      // and provide a success message. In production, this would be a cloud function.
-      await LogService.log('warning', 'admin', 'Admin requested system logs cleanup');
-      showToast("Logs cleanup request sent", "success");
-    } catch (error) {
-      showToast("Failed to clear logs", "error");
-    } finally {
-      setIsLoadingLogs(false);
-    }
+  const handleClearLogs = () => {
+    setConfirmModal({
+      title: "Clear System Logs",
+      message: "Are you sure you want to clear all system logs? This action cannot be undone.",
+      onConfirm: async () => {
+        setIsLoadingLogs(true);
+        setConfirmModal(null);
+        try {
+          // We'll use a batch delete approach if possible, but for now we'll just log the action
+          // and provide a success message. In production, this would be a cloud function.
+          await LogService.log('warning', 'admin', 'Admin requested system logs cleanup');
+          showToast("Logs cleanup request sent", "success");
+        } catch (error) {
+          showToast("Failed to clear logs", "error");
+        } finally {
+          setIsLoadingLogs(false);
+        }
+      }
+    });
   };
 
   const fetchLogs = async () => {
@@ -1094,6 +1105,28 @@ export default function AdminDashboard() {
           }
         }
         
+        // Dynamically send email if promoting to admin or other roles
+        const targetUser = users.find(u => u.id === targetUserId);
+        if (targetUser && targetUser.email) {
+          try {
+            await fetch('/api/admin/send-email', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${idToken}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({ 
+                to: targetUser.email, 
+                subject: `Your UniAce Account Role has been updated to ${newRole}`, 
+                body: `<p>Hello ${targetUser.displayName || 'User'},</p><p>Your account role on UniAce has been updated to <strong>${newRole}</strong>.</p><p>Please refresh your dashboard or log in again to see these changes.</p>`,
+                fromName: 'UniAce Admin Team'
+              })
+            });
+          } catch (emailErr) {
+            console.error("Failed to send role update email:", emailErr);
+          }
+        }
+        
         showToast(`User role updated to ${newRole}`, 'success');
         LogService.log('warning', 'admin', `Updated user role for ${targetUserId} to ${newRole}`);
         fetchUsers();
@@ -1274,6 +1307,24 @@ export default function AdminDashboard() {
     moderators: 0,
     activeToday: 0
   });
+
+  const [curriculumRequests, setCurriculumRequests] = useState<any[]>([]);
+  const [isLoadingRequests, setIsLoadingRequests] = useState(false);
+
+  const fetchCurriculumRequests = async () => {
+    if (!db) return;
+    setIsLoadingRequests(true);
+    try {
+      const q = query(collection(db, 'curriculum_requests'), orderBy('timestamp', 'desc'));
+      const querySnapshot = await getDocs(q);
+      const requests = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setCurriculumRequests(requests);
+    } catch (error) {
+      console.error("Error fetching curriculum requests:", error);
+    } finally {
+      setIsLoadingRequests(false);
+    }
+  };
 
   const fetchUsers = async () => {
     if (!db) return;
@@ -1598,6 +1649,134 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleFastTrackAIBuild = async (req: any) => {
+    setActiveTab('courses');
+    setQuickDepartment(req.department);
+    setQuickLevel(req.level);
+    if (req.semester) {
+      setQuickSemester(req.semester);
+    }
+    
+    try {
+      if (req.status !== 'in_progress') {
+        await updateDoc(doc(db, 'curriculum_requests', req.id), { status: 'in_progress' });
+        showToast('Request marked as In Progress. Fast track building initiated!', 'success');
+        fetchCurriculumRequests();
+      } else {
+        showToast('Fast track building initiated!', 'success');
+      }
+    } catch (e) {
+      console.error(e);
+      showToast('Error updating status.', 'error');
+    }
+  };
+
+  const handleMarkFulfilled = async (req: any) => {
+    try {
+      await updateDoc(doc(db, 'curriculum_requests', req.id), { status: 'fulfilled' });
+      showToast('Request marked as Fulfilled.', 'success');
+      fetchCurriculumRequests();
+    } catch (e) {
+      console.error(e);
+      showToast('Failed to mark request.', 'error');
+    }
+  };
+
+  const renderCurriculumRequests = () => {
+    return (
+      <div className="space-y-6">
+        <div className="flex justify-between items-center">
+          <div>
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Curriculum Requests</h2>
+            <p className="text-slate-500">View what users are explicitly requesting for their profile.</p>
+          </div>
+          <button 
+            onClick={fetchCurriculumRequests}
+            disabled={isLoadingRequests}
+            className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl hover:bg-slate-800 disabled:opacity-50"
+          >
+            <RefreshCw size={18} className={isLoadingRequests ? 'animate-spin' : ''} />
+            Refresh
+          </button>
+        </div>
+
+        {isLoadingRequests ? (
+          <div className="flex justify-center py-12">
+            <Loader2 className="animate-spin text-slate-400" size={32} />
+          </div>
+        ) : curriculumRequests.length === 0 ? (
+          <div className="text-center py-12 text-slate-500">
+            No curriculum requests yet.
+          </div>
+        ) : (
+          <div className="bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-600 dark:text-slate-400 text-sm border-b border-slate-200 dark:border-slate-700">
+                  <tr>
+                    <th className="p-4 font-semibold">User</th>
+                    <th className="p-4 font-semibold">Department</th>
+                    <th className="p-4 font-semibold">Level & Semester</th>
+                    <th className="p-4 font-semibold">Status</th>
+                    <th className="p-4 font-semibold">Requested At</th>
+                    <th className="p-4 font-semibold">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                  {curriculumRequests.map((req) => (
+                    <tr key={req.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
+                      <td className="p-4">
+                        <div className="font-medium text-slate-900 dark:text-white">{req.email}</div>
+                      </td>
+                      <td className="p-4 text-slate-700 dark:text-slate-300">
+                        {req.department}
+                      </td>
+                      <td className="p-4 text-slate-700 dark:text-slate-300">
+                        {req.level} Level, {req.semester}
+                      </td>
+                      <td className="p-4">
+                        <span className={`px-2 py-1 text-xs font-bold rounded-full ${
+                          req.status === 'fulfilled' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' :
+                          req.status === 'in_progress' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
+                          'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                        }`}>
+                          {req.status === 'fulfilled' ? 'Fulfilled' : req.status === 'in_progress' ? 'In Progress' : 'Pending'}
+                        </span>
+                      </td>
+                      <td className="p-4 text-sm text-slate-500">
+                        {req.timestamp?.toDate ? new Date(req.timestamp.toDate()).toLocaleString() : 'Recent'}
+                      </td>
+                      <td className="p-4">
+                        <div className="flex items-center gap-2">
+                          <button 
+                            onClick={() => handleFastTrackAIBuild(req)}
+                            className="p-2 text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                            title="AI Build Fast-Track"
+                          >
+                            <Zap size={18} />
+                          </button>
+                          {req.status !== 'fulfilled' && (
+                            <button 
+                              onClick={() => handleMarkFulfilled(req)}
+                              className="p-2 text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-900/20 rounded-lg transition-colors"
+                              title="Mark as Fulfilled"
+                            >
+                              <CheckCircle size={18} />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderCurriculumHealth = () => {
     // Group issues by dept and level
     const heatmapData: Record<string, Record<string, number>> = {};
@@ -1907,6 +2086,7 @@ export default function AdminDashboard() {
             { id: 'rag', label: 'Knowledge Base', icon: Database, show: permissions.canManageCourses },
             { id: 'curriculum-manager', label: 'Curriculum Manager', icon: Layers, show: permissions.canManageCurriculum },
             { id: 'curriculum-health', label: 'Curriculum Health', icon: HeartPulse, show: permissions.canManageCurriculum },
+            { id: 'curriculum-requests', label: 'Curriculum Requests', icon: MessageSquare, show: permissions.canManageCurriculum },
             { id: 'users', label: 'User Management', icon: Users, show: permissions.canManageUsers },
             { id: 'communications', label: 'Communications', icon: Globe, show: permissions.canCommunicate },
             { id: 'logs', label: 'System Logs', icon: FileText, show: permissions.canViewLogs },
@@ -3118,6 +3298,8 @@ export default function AdminDashboard() {
       {activeTab === 'curriculum-manager' && <CurriculumManager />}
 
       {activeTab === 'curriculum-health' && renderCurriculumHealth()}
+
+      {activeTab === 'curriculum-requests' && renderCurriculumRequests()}
 
       {activeTab === 'api-debugger' && (
         <ApiDebuggerPage onBack={() => setActiveTab('overview')} showToast={showToast} />
@@ -4378,6 +4560,74 @@ export default function AdminDashboard() {
                 <div className="p-4 bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-800 rounded-2xl">
                   <div className="text-xs font-bold text-emerald-600 uppercase mb-1">Email Service</div>
                   <div className="text-sm font-bold text-slate-900 dark:text-white">Operational</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Institution Structure Management */}
+          <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700">
+            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
+              <Globe className="text-indigo-500" size={24} />
+              Institution Structure
+            </h3>
+            <p className="text-sm text-slate-500 mb-6">
+              Dynamically add or remove Departments and Faculties across the platform.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              {/* Manage Departments */}
+              <div className="space-y-4">
+                <h4 className="font-bold text-slate-700 dark:text-slate-300">Departments</h4>
+                <div className="flex gap-2">
+                  <input 
+                    type="text" 
+                    id="new-dept-input"
+                    className="flex-grow bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-slate-900 dark:text-white"
+                    placeholder="E.g. Computer Science"
+                  />
+                  <select 
+                    id="new-dept-faculty"
+                    className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-slate-900 dark:text-white max-w-[150px]"
+                  >
+                    {faculties.map(f => <option key={f} value={f}>{f}</option>)}
+                  </select>
+                  <button 
+                    onClick={() => {
+                      const dept = (document.getElementById('new-dept-input') as HTMLInputElement).value;
+                      const faculty = (document.getElementById('new-dept-faculty') as HTMLSelectElement).value;
+                      if(dept && faculty) {
+                        addDepartment(dept.trim(), faculty);
+                        (document.getElementById('new-dept-input') as HTMLInputElement).value = '';
+                        showToast(`Added department: ${dept}`, 'success');
+                      }
+                    }}
+                    className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-indigo-700"
+                  >
+                    Add
+                  </button>
+                </div>
+                <div className="max-h-60 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
+                  {departments.map((dept, index) => (
+                    <div key={index} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-700/30 border border-slate-100 dark:border-slate-700/50">
+                      <div>
+                        <p className="font-bold text-slate-800 dark:text-slate-200 text-sm">{dept}</p>
+                        <p className="text-xs text-slate-500">{departmentToFaculty[dept] || 'Unknown Faculty'}</p>
+                      </div>
+                      <button onClick={() => {
+                        setConfirmModal({
+                          title: "Remove Department",
+                          message: `Remove ${dept}? This won't delete courses but it removes it from dropdowns.`,
+                          onConfirm: async () => {
+                            await removeDepartment(dept);
+                            showToast(`Removed department ${dept}`, 'success');
+                            setConfirmModal(null);
+                          }
+                        });
+                      }} className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors">
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>

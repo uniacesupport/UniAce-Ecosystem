@@ -3,39 +3,13 @@ import { motion } from 'motion/react';
 import { GraduationCap, Building2, Layers, Calendar, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { Department, Level, Semester } from '../types';
-
-const DEPARTMENTS: Department[] = [
-  'Aerospace Engineering',
-  'Agricultural Engineering',
-  'Anatomy',
-  'Biology',
-  'Biomedical Engineering',
-  'Chemical Engineering',
-  'Chemistry',
-  'Civil Engineering',
-  'Computer Engineering',
-  'Computer Science',
-  'Dentistry',
-  'Electrical Engineering',
-  'Material Science and Engineering',
-  'Mathematics',
-  'Mechanical Engineering',
-  'Mechatronics Engineering',
-  'Medical Laboratory Science',
-  'Medicine and Surgery',
-  'Nursing Science',
-  'Petroleum Engineering',
-  'Pharmacy',
-  'Physics',
-  'Physiology',
-  'Public Health',
-  'Software Engineering'
-];
+import { useInstitution } from '../context/InstitutionContext';
 
 const LEVELS: Level[] = ['100', '200', '300', '400', '500'];
 const SEMESTERS: Semester[] = ['1st Semester', '2nd Semester'];
 
 export default function AcademicProfileModal({ onClose }: { onClose?: () => void }) {
+  const { departments: DEPARTMENTS } = useInstitution();
   const { profile, updateProfileData } = useAuth();
   const [department, setDepartment] = useState<Department | ''>((profile?.department as Department) || '');
   const [level, setLevel] = useState<Level | ''>((profile?.academic_level as Level) || '');

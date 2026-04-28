@@ -1,12 +1,14 @@
 import React, { useState, useMemo } from 'react';
 import { BookOpen, Plus, Trash2, AlertCircle, Layers, Search, Filter, Copy, CheckSquare, Square, AlertTriangle } from 'lucide-react';
 import { useCourses } from '../context/CourseContext';
-import { DEPARTMENTS, LEVELS, SEMESTERS, DEPARTMENT_TO_FACULTY } from '../constants';
+import { LEVELS, SEMESTERS } from '../constants';
 import { Course, Department, Level, Semester, CourseScope } from '../types';
 import { doc, updateDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
+import { useInstitution } from '../context/InstitutionContext';
 
 export const CurriculumManager: React.FC = () => {
+  const { departments: DEPARTMENTS, departmentToFaculty: DEPARTMENT_TO_FACULTY } = useInstitution();
   const { courses } = useCourses();
   const [selectedDepartment, setSelectedDepartment] = useState<Department | ''>('');
   const [selectedLevel, setSelectedLevel] = useState<Level | ''>('');
@@ -18,6 +20,8 @@ export const CurriculumManager: React.FC = () => {
   
   const [isCloning, setIsCloning] = useState(false);
   const [cloneSourceDepartment, setCloneSourceDepartment] = useState<Department | ''>('');
+  
+  const [confirmModal, setConfirmModal] = useState<{ title: string; message: string; onConfirm: () => void; isAlert?: boolean } | null>(null);
 
   const allCourses = Object.values(courses).filter(c => !c.deleted);
 
@@ -71,36 +75,42 @@ export const CurriculumManager: React.FC = () => {
     return {};
   }, [allocatedCourses]);
 
-  const handleRemoveCourse = async (course: Course) => {
+  const handleRemoveCourse = (course: Course) => {
     if (!selectedDepartment) return;
-    if (!window.confirm(`Are you sure you want to remove ${course.id} from ${selectedDepartment}?`)) return;
+    
+    setConfirmModal({
+      title: "Remove Course",
+      message: `Are you sure you want to remove ${course.id} from ${selectedDepartment}?`,
+      onConfirm: async () => {
+        setConfirmModal(null);
+        try {
+          const courseRef = doc(db, 'courses', course.id);
+          
+          if (course.scope === 'GLOBAL') {
+            setConfirmModal({ title: "Error", message: "Cannot remove a GLOBAL course from a specific department. Change its scope first.", onConfirm: () => setConfirmModal(null), isAlert: true });
+            return;
+          }
+          
+          if (course.scope === 'FACULTY') {
+            const faculty = DEPARTMENT_TO_FACULTY[selectedDepartment as Department];
+            if (faculty && course.faculties?.includes(faculty)) {
+              setConfirmModal({ title: "Error", message: `This course is assigned to the entire ${faculty} faculty. To remove it from just this department, you must change its scope to DEPARTMENT and manually assign it to the other departments.`, onConfirm: () => setConfirmModal(null), isAlert: true });
+              return;
+            }
+          }
 
-    try {
-      const courseRef = doc(db, 'courses', course.id);
-      
-      if (course.scope === 'GLOBAL') {
-        alert("Cannot remove a GLOBAL course from a specific department. Change its scope first.");
-        return;
-      }
-      
-      if (course.scope === 'FACULTY') {
-        const faculty = DEPARTMENT_TO_FACULTY[selectedDepartment as Department];
-        if (faculty && course.faculties?.includes(faculty)) {
-          alert(`This course is assigned to the entire ${faculty} faculty. To remove it from just this department, you must change its scope to DEPARTMENT and manually assign it to the other departments.`);
-          return;
+          const newDepartments = (course.departments || []).filter(d => d !== selectedDepartment);
+          
+          await updateDoc(courseRef, {
+            departments: newDepartments
+          });
+          
+        } catch (error) {
+          console.error("Error removing course:", error);
+          setConfirmModal({ title: "Error", message: "Failed to remove course.", onConfirm: () => setConfirmModal(null), isAlert: true });
         }
       }
-
-      const newDepartments = (course.departments || []).filter(d => d !== selectedDepartment);
-      
-      await updateDoc(courseRef, {
-        departments: newDepartments
-      });
-      
-    } catch (error) {
-      console.error("Error removing course:", error);
-      alert("Failed to remove course.");
-    }
+    });
   };
 
   const handleBulkAddCourses = async () => {
@@ -137,64 +147,69 @@ export const CurriculumManager: React.FC = () => {
     }
   };
 
-  const handleCloneCurriculum = async () => {
+  const handleCloneCurriculum = () => {
     if (!selectedDepartment || !cloneSourceDepartment) return;
     if (selectedDepartment === cloneSourceDepartment) {
-      alert("Source and target departments must be different.");
+      setConfirmModal({ title: "Error", message: "Source and target departments must be different.", onConfirm: () => setConfirmModal(null), isAlert: true });
       return;
     }
     
-    if (!window.confirm(`Are you sure you want to clone all courses from ${cloneSourceDepartment} to ${selectedDepartment}?`)) return;
+    setConfirmModal({
+      title: "Clone Curriculum",
+      message: `Are you sure you want to clone all courses from ${cloneSourceDepartment} to ${selectedDepartment}?`,
+      onConfirm: async () => {
+        setConfirmModal(null);
+        try {
+          // Find all courses in the source department
+          const sourceCourses = allCourses.filter(c => {
+            if (c.scope === 'GLOBAL') return false; // Global courses are already everywhere
+            if (c.scope === 'FACULTY') {
+              const faculty = DEPARTMENT_TO_FACULTY[cloneSourceDepartment as Department];
+              if (faculty && c.faculties?.includes(faculty)) return true;
+              if (c.departments?.includes(cloneSourceDepartment as Department)) return true;
+              return false;
+            }
+            if (c.scope === 'DEPARTMENT') {
+              return c.departments?.includes(cloneSourceDepartment as Department);
+            }
+            return false;
+          });
 
-    try {
-      // Find all courses in the source department
-      const sourceCourses = allCourses.filter(c => {
-        if (c.scope === 'GLOBAL') return false; // Global courses are already everywhere
-        if (c.scope === 'FACULTY') {
-          const faculty = DEPARTMENT_TO_FACULTY[cloneSourceDepartment as Department];
-          if (faculty && c.faculties?.includes(faculty)) return true;
-          if (c.departments?.includes(cloneSourceDepartment as Department)) return true;
-          return false;
+          const batch = writeBatch(db);
+          let count = 0;
+
+          sourceCourses.forEach(course => {
+            // Skip if already in target department
+            if (course.scope === 'FACULTY') {
+               const targetFaculty = DEPARTMENT_TO_FACULTY[selectedDepartment as Department];
+               if (targetFaculty && course.faculties?.includes(targetFaculty)) return;
+            }
+            if (course.departments?.includes(selectedDepartment as Department)) return;
+
+            const courseRef = doc(db, 'courses', course.id);
+            const newDepartments = [...(course.departments || []), selectedDepartment];
+            
+            batch.update(courseRef, {
+              departments: Array.from(new Set(newDepartments))
+            });
+            count++;
+          });
+
+          if (count > 0) {
+            await batch.commit();
+            setConfirmModal({ title: "Success", message: `Successfully cloned ${count} courses to ${selectedDepartment}.`, onConfirm: () => setConfirmModal(null), isAlert: true });
+          } else {
+            setConfirmModal({ title: "Info", message: "No new courses to clone. The target department already has these courses or they are global.", onConfirm: () => setConfirmModal(null), isAlert: true });
+          }
+          
+          setIsCloning(false);
+          setCloneSourceDepartment('');
+        } catch (error) {
+          console.error("Error cloning curriculum:", error);
+          setConfirmModal({ title: "Error", message: "Failed to clone curriculum.", onConfirm: () => setConfirmModal(null), isAlert: true });
         }
-        if (c.scope === 'DEPARTMENT') {
-          return c.departments?.includes(cloneSourceDepartment as Department);
-        }
-        return false;
-      });
-
-      const batch = writeBatch(db);
-      let count = 0;
-
-      sourceCourses.forEach(course => {
-        // Skip if already in target department
-        if (course.scope === 'FACULTY') {
-           const targetFaculty = DEPARTMENT_TO_FACULTY[selectedDepartment as Department];
-           if (targetFaculty && course.faculties?.includes(targetFaculty)) return;
-        }
-        if (course.departments?.includes(selectedDepartment as Department)) return;
-
-        const courseRef = doc(db, 'courses', course.id);
-        const newDepartments = [...(course.departments || []), selectedDepartment];
-        
-        batch.update(courseRef, {
-          departments: Array.from(new Set(newDepartments))
-        });
-        count++;
-      });
-
-      if (count > 0) {
-        await batch.commit();
-        alert(`Successfully cloned ${count} courses to ${selectedDepartment}.`);
-      } else {
-        alert("No new courses to clone. The target department already has these courses or they are global.");
       }
-      
-      setIsCloning(false);
-      setCloneSourceDepartment('');
-    } catch (error) {
-      console.error("Error cloning curriculum:", error);
-      alert("Failed to clone curriculum.");
-    }
+    });
   };
 
   const toggleCourseSelection = (courseId: string) => {
@@ -454,6 +469,58 @@ export const CurriculumManager: React.FC = () => {
           <p className="text-slate-500 dark:text-slate-400 max-w-md mx-auto">
             Choose a department from the dropdown above to view and manage its allocated courses.
           </p>
+        </div>
+      )}
+
+      {/* Confirm Modal */}
+      {confirmModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 max-w-md w-full shadow-2xl">
+            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">{confirmModal.title}</h3>
+            <p className="text-slate-500 dark:text-slate-400 mb-6">{confirmModal.message}</p>
+            <div className="flex justify-end gap-3">
+              {!confirmModal.isAlert && (
+                <button 
+                  onClick={() => setConfirmModal(null)}
+                  className="px-4 py-2 rounded-xl font-bold text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700"
+                >
+                  Cancel
+                </button>
+              )}
+              <button 
+                onClick={confirmModal.onConfirm}
+                className="px-6 py-2 rounded-xl font-bold bg-indigo-600 hover:bg-indigo-700 text-white"
+              >
+                {confirmModal.isAlert ? "OK" : "Confirm"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Modal */}
+      {confirmModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 max-w-md w-full shadow-2xl">
+            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">{confirmModal.title}</h3>
+            <p className="text-slate-500 dark:text-slate-400 mb-6">{confirmModal.message}</p>
+            <div className="flex justify-end gap-3">
+              {!confirmModal.isAlert && (
+                <button 
+                  onClick={() => setConfirmModal(null)}
+                  className="px-4 py-2 rounded-xl font-bold text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700"
+                >
+                  Cancel
+                </button>
+              )}
+              <button 
+                onClick={confirmModal.onConfirm}
+                className="px-6 py-2 rounded-xl font-bold bg-indigo-600 hover:bg-indigo-700 text-white"
+              >
+                {confirmModal.isAlert ? "OK" : "Confirm"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

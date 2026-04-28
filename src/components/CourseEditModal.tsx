@@ -3,7 +3,8 @@ import { X, Save, Trash2, Edit2 } from 'lucide-react';
 import { Course, Module, Department, Level, Semester, CourseScope } from '../types';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
-import { DEPARTMENTS, LEVELS, SEMESTERS, FACULTIES } from '../constants';
+import { LEVELS, SEMESTERS } from '../constants';
+import { useInstitution } from '../context/InstitutionContext';
 
 interface CourseEditModalProps {
   course: Course;
@@ -12,6 +13,8 @@ interface CourseEditModalProps {
 }
 
 export default function CourseEditModal({ course, onClose, onSave }: CourseEditModalProps) {
+  const { departments: DEPARTMENTS, faculties: FACULTIES } = useInstitution();
+  
   const [title, setTitle] = useState(course.title);
   const [description, setDescription] = useState(course.description);
   const [level, setLevel] = useState<Level | undefined>(course.level);
@@ -22,6 +25,7 @@ export default function CourseEditModal({ course, onClose, onSave }: CourseEditM
   const [modules, setModules] = useState<Module[]>(course.syllabus);
   const [isSaving, setIsSaving] = useState(false);
   const [editingModuleId, setEditingModuleId] = useState<string | null>(null);
+  const [confirmModal, setConfirmModal] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -48,9 +52,14 @@ export default function CourseEditModal({ course, onClose, onSave }: CourseEditM
   };
 
   const handleDeleteModule = (moduleId: string) => {
-    if (window.confirm('Are you sure you want to delete this module?')) {
-      setModules(modules.filter(m => m.id !== moduleId));
-    }
+    setConfirmModal({
+      title: "Delete Module",
+      message: "Are you sure you want to delete this module?",
+      onConfirm: () => {
+        setModules(modules.filter(m => m.id !== moduleId));
+        setConfirmModal(null);
+      }
+    });
   };
 
   const handleAddModule = () => {
@@ -315,6 +324,30 @@ export default function CourseEditModal({ course, onClose, onSave }: CourseEditM
           </button>
         </div>
       </div>
+
+      {/* Confirm Modal */}
+      {confirmModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[150] p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 max-w-md w-full shadow-2xl">
+            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">{confirmModal.title}</h3>
+            <p className="text-slate-500 dark:text-slate-400 mb-6">{confirmModal.message}</p>
+            <div className="flex justify-end gap-3">
+              <button 
+                onClick={() => setConfirmModal(null)}
+                className="px-4 py-2 rounded-xl font-bold text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={confirmModal.onConfirm}
+                className="px-6 py-2 rounded-xl font-bold bg-red-600 hover:bg-red-700 text-white"
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

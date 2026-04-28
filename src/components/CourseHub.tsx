@@ -1,6 +1,9 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { BookOpen, Sparkles, Globe, Search, Users, Calendar, ArrowRight, Loader2, Edit2, Clock, GraduationCap } from 'lucide-react';
+import { BookOpen, Sparkles, Globe, Search, Users, Calendar, ArrowRight, Loader2, Edit2, Clock, GraduationCap, Rocket, BellRing } from 'lucide-react';
+import toast from 'react-hot-toast';
+import { db } from '../firebase';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { useCourses } from '../context/CourseContext';
 import { CourseId, View, Course, UserProgress, Department, Semester } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -33,7 +36,30 @@ export default function CourseHub({ onSelectCourse, onProfileClick, onViewSelect
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearchQuery] = useDebounce(searchQuery, 300);
   const [showEditProfile, setShowEditProfile] = useState(false);
+  const [isRequesting, setIsRequesting] = useState(false);
   const { addLastAccessedCourse } = useAppStore();
+
+  const handleRequestCurriculum = async () => {
+    if (!user || isRequesting) return;
+    setIsRequesting(true);
+    try {
+      await addDoc(collection(db, 'curriculum_requests'), {
+        userId: user.uid,
+        email: user.email,
+        department: profile?.department || '',
+        level: profile?.academic_level || '',
+        semester: activeSemester,
+        timestamp: serverTimestamp(),
+        status: 'pending'
+      });
+      toast.success("We've recorded your request! We'll notify you when courses are added.", { duration: 5000, icon: '🚀' });
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to submit request.");
+    } finally {
+      setIsRequesting(false);
+    }
+  };
 
   const filteredCourses = useMemo(() => {
     let result = Object.values(courses);
@@ -250,33 +276,44 @@ export default function CourseHub({ onSelectCourse, onProfileClick, onViewSelect
 
         {filteredCourses.length === 0 ? (
           <div className="bg-white dark:bg-zinc-900/50 border border-slate-200 dark:border-zinc-800 rounded-3xl p-12 text-center flex flex-col items-center justify-center min-h-[400px]">
-            <div className="w-20 h-20 bg-slate-100 dark:bg-zinc-800 rounded-full flex items-center justify-center mb-6">
-              <Search size={32} className="text-slate-400" />
+            <div className={`w-20 h-20 ${activeTab === 'your-courses' ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-500' : 'bg-slate-100 dark:bg-zinc-800 text-slate-400'} rounded-full flex items-center justify-center mb-6`}>
+              {activeTab === 'your-courses' ? <Rocket size={32} /> : <Search size={32} />}
             </div>
             <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">
-              {activeTab === 'your-courses' ? 'No curriculum courses found' : 'No courses found'}
+              {activeTab === 'your-courses' ? 'Courses for your profile are coming soon' : 'No courses found'}
             </h3>
-            <p className="text-slate-500 dark:text-zinc-400 max-w-md mx-auto mb-6">
+            <p className="text-slate-500 dark:text-zinc-400 max-w-md mx-auto mb-8">
               {activeTab === 'your-courses' 
-                ? `We couldn't find any courses matching your profile (${profile?.department}, ${profile?.academic_level} Level, ${activeSemester}). Check your profile or explore the catalog.`
+                ? `We are actively working on adding curriculum courses for ${profile?.department}, ${profile?.academic_level} Level, ${activeSemester}. In the meantime, you can explore our global courses!`
                 : "Try adjusting your search terms to find what you're looking for."}
             </p>
 
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+            <div className="flex flex-col sm:flex-row flex-wrap items-center justify-center gap-3 w-full max-w-3xl">
+              <button 
+                onClick={() => setActiveTab('explore')}
+                className="px-6 py-3 bg-slate-900 text-white dark:bg-white dark:text-slate-900 rounded-xl font-bold hover:scale-105 transition-transform flex items-center gap-2 w-full sm:w-auto justify-center order-1 sm:order-3"
+              >
+                <Globe size={18} />
+                Explore Global Courses
+              </button>
               {activeTab === 'your-courses' && (
                 <button 
                   onClick={() => setShowEditProfile(true)}
-                  className="px-6 py-3 bg-orange-500 text-white rounded-xl font-bold hover:scale-105 transition-transform"
+                  className="px-6 py-3 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 rounded-xl font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-2 w-full sm:w-auto justify-center order-2"
                 >
                   Edit Academic Profile
                 </button>
               )}
-              <button 
-                onClick={() => setActiveTab('explore')}
-                className="px-6 py-3 bg-slate-900 text-white dark:bg-white dark:text-slate-900 rounded-xl font-bold hover:scale-105 transition-transform"
-              >
-                Explore All Courses
-              </button>
+              {activeTab === 'your-courses' && (
+                <button 
+                  onClick={handleRequestCurriculum}
+                  disabled={isRequesting}
+                  className="px-6 py-3 border border-orange-200 dark:border-orange-900/30 text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/10 rounded-xl font-bold hover:bg-orange-100 dark:hover:bg-orange-900/20 transition-colors flex items-center gap-2 w-full sm:w-auto justify-center order-3 sm:order-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isRequesting ? <Loader2 size={18} className="animate-spin" /> : <BellRing size={18} />}
+                  {isRequesting ? 'Requesting...' : 'Notify Me When Added'}
+                </button>
+              )}
             </div>
           </div>
         ) : (

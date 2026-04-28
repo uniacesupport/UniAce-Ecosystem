@@ -45,16 +45,20 @@ import { generateModuleContent, generateCourseSkeleton } from './services/aiCour
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useAppStore } from './lib/store';
 
+import { InstitutionProvider } from './context/InstitutionContext';
+
 const queryClient = new QueryClient();
 
 export default function App() {
   console.log('App.tsx: Rendering...');
   return (
     <QueryClientProvider client={queryClient}>
-      <CalculatorProvider>
-        <AppContent />
-        <GlobalErrorInterceptor />
-      </CalculatorProvider>
+      <InstitutionProvider>
+        <CalculatorProvider>
+          <AppContent />
+          <GlobalErrorInterceptor />
+        </CalculatorProvider>
+      </InstitutionProvider>
     </QueryClientProvider>
   );
 }

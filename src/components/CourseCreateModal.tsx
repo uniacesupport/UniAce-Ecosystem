@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Save } from 'lucide-react';
 import { Course, Module, Department, Level, Semester, CourseScope } from '../types';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
-import { DEPARTMENTS, LEVELS, SEMESTERS, FACULTIES } from '../constants';
+import { LEVELS, SEMESTERS } from '../constants';
+import { useInstitution } from '../context/InstitutionContext';
 
 interface CourseCreateModalProps {
   onClose: () => void;
@@ -11,10 +12,12 @@ interface CourseCreateModalProps {
 }
 
 export default function CourseCreateModal({ onClose, onSave }: CourseCreateModalProps) {
+  const { departments: DEPARTMENTS, faculties: FACULTIES } = useInstitution();
+  
   const [id, setId] = useState('');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [department, setDepartment] = useState<Department>(DEPARTMENTS[0]);
+  const [department, setDepartment] = useState<Department>('');
   const [level, setLevel] = useState<Level>('100');
   const [semester, setSemester] = useState<Semester>('1st Semester');
   const [scope, setScope] = useState<CourseScope>('GLOBAL');
@@ -22,6 +25,12 @@ export default function CourseCreateModal({ onClose, onSave }: CourseCreateModal
   const [departments, setDepartments] = useState<Department[]>([]);
   const [modules, setModules] = useState<Module[]>([]);
   const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (DEPARTMENTS.length > 0 && !department) {
+      setDepartment(DEPARTMENTS[0]);
+    }
+  }, [DEPARTMENTS, department]);
 
   const handleSave = async () => {
     const sanitizedId = id.replace(/\s+/g, '').toUpperCase();
