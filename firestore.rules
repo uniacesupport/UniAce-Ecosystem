@@ -255,6 +255,11 @@ service cloud.firestore {
       allow read, write: if isAdmin() || isTutor();
     }
 
+    match /settings/{configId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
     match /system_settings/{configId} {
       allow read, write: if isAdmin();
     }

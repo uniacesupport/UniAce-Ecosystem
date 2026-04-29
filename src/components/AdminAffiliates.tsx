@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { Users, Link as LinkIcon, Plus, Copy, CheckCircle2, TrendingUp, AlertCircle, X, Loader2, Save, Percent, ShieldCheck, Settings } from 'lucide-react';
-import { doc, setDoc, getDocs, collection, query, serverTimestamp, getDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { doc, setDoc, getDocs, collection, query, serverTimestamp, getDoc, where } from 'firebase/firestore';
+import { db, auth } from '../firebase';
 
 export default function AdminAffiliates() {
   const [affiliates, setAffiliates] = useState<any[]>([]);
@@ -10,6 +10,7 @@ export default function AdminAffiliates() {
   const [isCreating, setIsCreating] = useState(false);
   const [newAffiliateCode, setNewAffiliateCode] = useState('');
   const [newAffiliateName, setNewAffiliateName] = useState('');
+  const [newAffiliateEmail, setNewAffiliateEmail] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
@@ -91,23 +92,39 @@ export default function AdminAffiliates() {
     setIsCreating(true);
     setError('');
     try {
-      if (!db) throw new Error("Database not connected");
-      await setDoc(doc(db, 'affiliates', code), {
-        name: newAffiliateName.trim(),
-        createdAt: serverTimestamp(),
-        clicks: 0,
-        signups: 0,
-        paidConversions: 0,
-        status: 'active'
+      if (!db || !auth) throw new Error("Firebase not initialized");
+      
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) throw new Error("Unauthorized");
+
+      const response = await fetch('/api/admin/create-affiliate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          code,
+          name: newAffiliateName.trim(),
+          userEmail: newAffiliateEmail.trim().toLowerCase()
+        })
       });
-      setSuccess('Affiliate created successfully!');
+
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to create affiliate');
+      }
+
+      setSuccess(data.message || 'Affiliate created successfully!');
       setNewAffiliateCode('');
       setNewAffiliateName('');
+      setNewAffiliateEmail('');
       setTimeout(() => setSuccess(''), 3000);
       fetchAffiliates();
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      setError('Failed to create affiliate.');
+      setError(e.message || 'Failed to create affiliate.');
     } finally {
       setIsCreating(false);
     }
@@ -172,6 +189,16 @@ export default function AdminAffiliates() {
                   className="w-full bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white"
                 />
               </div>
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Tutor Email (Optional - Links to existing User)</label>
+              <input 
+                type="email" 
+                value={newAffiliateEmail}
+                onChange={(e) => setNewAffiliateEmail(e.target.value)}
+                placeholder="tutor@example.com (will auto-link their dashboard to this code)"
+                className="w-full bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white"
+              />
             </div>
           </div>
           <div className="mt-4">

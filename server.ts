@@ -1608,6 +1608,84 @@ app.get('/api/admin/system-config', verifyAuth, async (req, res) => {
   }
 });
 
+// Create Affiliate Target Endpoint
+app.post('/api/admin/create-affiliate', verifyAuth, async (req, res) => {
+  try {
+    const adminUid = (req as any).user.uid;
+    const { code, name, userEmail } = req.body;
+
+    if (!code || !name) {
+      return res.status(400).json({ error: 'Missing code or name' });
+    }
+
+    const app = getAdminApp();
+    const db = app.firestore();
+    const adminDoc = await db.collection('users').doc(adminUid).get();
+    
+    if (adminDoc.data()?.role !== 'admin') {
+      return res.status(403).json({ error: 'Unauthorized: Admin access required' });
+    }
+
+    let userIdToLink = null;
+    let finalUserEmail = '';
+    
+    if (userEmail) {
+      const dbUserEmail = userEmail.trim();
+      const userSnapshot = await db.collection('users').where('email', '==', dbUserEmail).limit(1).get();
+      if (!userSnapshot.empty) {
+        const userDoc = userSnapshot.docs[0];
+        userIdToLink = userDoc.id;
+        const userData = userDoc.data();
+        finalUserEmail = userData.email || dbUserEmail;
+        
+        // Ensure they are at least a tutor if they are being linked
+        const newRole = userData.role === 'admin' ? 'admin' : 'tutor';
+        
+        await userDoc.ref.update({
+          referralCode: code,
+          role: newRole,
+          updatedAt: new Date().toISOString()
+        });
+      } else {
+        return res.status(404).json({ error: `No user found with email ${dbUserEmail}` });
+      }
+    }
+
+    const affiliateRef = db.collection('affiliates').doc(code);
+    const affiliateDoc = await affiliateRef.get();
+    if (affiliateDoc.exists) {
+       return res.status(400).json({ error: 'Affiliate code already exists' });
+    }
+
+    await affiliateRef.set({
+      name: name.trim(),
+      ...(userIdToLink && { userId: userIdToLink }),
+      ...(finalUserEmail && { userEmail: finalUserEmail }),
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      clicks: 0,
+      signups: 0,
+      paidConversions: 0,
+      totalEarned: 0,
+      pendingBalance: 0,
+      status: 'active'
+    });
+
+    if (finalUserEmail) {
+      await MailService.sendAffiliateLinkEmail(
+        finalUserEmail,
+        name.trim(),
+        code,
+        process.env.APP_URL || 'https://uniace.app'
+      ).catch(e => console.error("Mail error:", e));
+    }
+
+    res.json({ success: true, message: userIdToLink ? `Affiliate created and linked to ${finalUserEmail}` : 'Affiliate created successfully' });
+  } catch (error: any) {
+    console.error('Error creating affiliate:', error);
+    res.status(500).json({ error: error.message || 'Failed to create affiliate' });
+  }
+});
+
 // Update User Role Endpoint
 app.post('/api/admin/update-user-role', verifyAuth, async (req, res) => {
   try {
@@ -1625,10 +1703,64 @@ app.post('/api/admin/update-user-role', verifyAuth, async (req, res) => {
       return res.status(403).json({ error: 'Unauthorized: Admin access required' });
     }
 
-    await app.firestore().collection('users').doc(targetUserId).update({
+    const targetUserRef = app.firestore().collection('users').doc(targetUserId);
+    const targetUserDoc = await targetUserRef.get();
+    
+    if (!targetUserDoc.exists) {
+      return res.status(404).json({ error: 'Target user not found' });
+    }
+
+    const targetUserData = targetUserDoc.data();
+
+    await targetUserRef.update({
       role: newRole,
       updatedAt: new Date().toISOString()
     });
+
+    // Auto-create affiliate record for tutors if it doesn't exist
+    if (newRole === 'tutor') {
+      const db = app.firestore();
+      const refCode = targetUserData.referralCode || targetUserId.substring(0, 6).toUpperCase();
+      const affiliateRef = db.collection('affiliates').doc(refCode);
+      const affiliateDoc = await affiliateRef.get();
+      
+      if (!affiliateDoc.exists) {
+        await affiliateRef.set({
+          name: targetUserData.displayName || targetUserData.name || 'Tutor',
+          userId: targetUserId,
+          userEmail: targetUserData.email || '',
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          clicks: 0,
+          signups: 0,
+          paidConversions: 0,
+          totalEarned: 0,
+          pendingBalance: 0,
+          status: 'active'
+        });
+      } else {
+        await affiliateRef.update({ 
+          userId: targetUserId,
+          userEmail: targetUserData.email || ''
+        });
+      }
+      
+      // Ensure the user document has the referralCode set explicitly just in case it wasn't
+      if (!targetUserData.referralCode) {
+        await targetUserRef.update({ referralCode: refCode });
+      }
+    }
+
+    // Send notification email
+    const targetEmail = targetUserData?.email || targetUserData?.secondary_email;
+    if (targetEmail) {
+      MailService.sendRoleUpdateEmail(
+        targetEmail, 
+        targetUserData?.displayName || targetUserData?.name || targetEmail.split('@')[0], 
+        newRole
+      ).catch(err => {
+        console.error('Failed to send role update email:', err);
+      });
+    }
 
     res.json({ success: true, message: `User role updated to ${newRole}` });
   } catch (error: any) {
