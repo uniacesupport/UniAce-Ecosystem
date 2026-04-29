@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Users, Link as LinkIcon, Plus, Copy, CheckCircle2, TrendingUp, AlertCircle, X, Loader2, Save } from 'lucide-react';
-import { doc, setDoc, getDocs, collection, query, serverTimestamp } from 'firebase/firestore';
+import { Users, Link as LinkIcon, Plus, Copy, CheckCircle2, TrendingUp, AlertCircle, X, Loader2, Save, Percent, ShieldCheck, Settings } from 'lucide-react';
+import { doc, setDoc, getDocs, collection, query, serverTimestamp, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 
 export default function AdminAffiliates() {
@@ -13,10 +13,49 @@ export default function AdminAffiliates() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  
+  // Commission settings
+  const [globalCommissionRate, setGlobalCommissionRate] = useState<number>(30); // in percentage
+  const [isSavingCommission, setIsSavingCommission] = useState(false);
 
   useEffect(() => {
     fetchAffiliates();
+    fetchCommissionRate();
   }, []);
+
+  const fetchCommissionRate = async () => {
+    try {
+      if (!db) return;
+      const settingsDoc = await getDoc(doc(db, 'settings', 'commissions'));
+      if (settingsDoc.exists()) {
+        const data = settingsDoc.data();
+        if (typeof data.rate === 'number') {
+          setGlobalCommissionRate(data.rate * 100);
+        }
+      }
+    } catch (e) {
+      console.error('Error fetching commission rate:', e);
+    }
+  };
+
+  const saveCommissionRate = async () => {
+    setIsSavingCommission(true);
+    try {
+      if (!db) return;
+      await setDoc(doc(db, 'settings', 'commissions'), {
+        rate: globalCommissionRate / 100,
+        updatedAt: serverTimestamp(),
+        updatedBy: db.app.options.projectId // Just a placeholder or use auth.currentUser.email
+      }, { merge: true });
+      setSuccess('Commission rate updated successfully!');
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (e) {
+      console.error(e);
+      setError('Failed to update commission rate.');
+    } finally {
+      setIsSavingCommission(false);
+    }
+  };
 
   const fetchAffiliates = async () => {
     setIsLoading(true);
@@ -104,41 +143,95 @@ export default function AdminAffiliates() {
         </div>
       )}
 
-      {/* Create Affiliate Card */}
-      <div className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-3xl p-6 shadow-sm">
-        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Create New Affiliate</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Tutor/Partner Name</label>
-            <input 
-              type="text" 
-              value={newAffiliateName}
-              onChange={(e) => setNewAffiliateName(e.target.value)}
-              placeholder="e.g. John Doe, Math Academy"
-              className="w-full bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Custom Referral Code</label>
-            <div className="relative">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Create Affiliate Card */}
+        <div className="lg:col-span-2 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-3xl p-6 shadow-sm">
+          <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+            <Plus size={20} className="text-indigo-600" />
+            Create New Affiliate
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Tutor/Partner Name</label>
               <input 
                 type="text" 
-                value={newAffiliateCode}
-                onChange={(e) => setNewAffiliateCode(e.target.value.toUpperCase())}
-                placeholder="e.g. TUTOR30"
+                value={newAffiliateName}
+                onChange={(e) => setNewAffiliateName(e.target.value)}
+                placeholder="e.g. John Doe, Math Academy"
                 className="w-full bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white"
               />
             </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Custom Referral Code</label>
+              <div className="relative">
+                <input 
+                  type="text" 
+                  value={newAffiliateCode}
+                  onChange={(e) => setNewAffiliateCode(e.target.value.toUpperCase())}
+                  placeholder="e.g. TUTOR30"
+                  className="w-full bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white"
+                />
+              </div>
+            </div>
           </div>
-          <div className="flex items-end">
+          <div className="mt-4">
             <button
               onClick={createAffiliate}
               disabled={isCreating}
               className="w-full h-[50px] bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
             >
               {isCreating ? <Loader2 className="animate-spin" size={20} /> : <Plus size={20} />}
-              Create Link
+              Create Affiliate Link
             </button>
+          </div>
+        </div>
+
+        {/* Global Commission Settings */}
+        <div className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-3xl p-6 shadow-sm">
+          <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+            <Settings size={20} className="text-indigo-600" />
+            Commission Policy
+          </h3>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Global Commission Rate (%)</label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                  <Percent size={18} className="text-slate-400" />
+                </div>
+                <input 
+                  type="number" 
+                  value={globalCommissionRate}
+                  onChange={(e) => setGlobalCommissionRate(Number(e.target.value))}
+                  placeholder="30"
+                  min="0"
+                  max="100"
+                  className="w-full pl-11 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white font-bold"
+                />
+              </div>
+              <p className="text-[10px] text-slate-500 mt-2">
+                This rate applies to all affiliates. 30% means they earn ₦300 for every ₦1,000 paid by their referrals.
+              </p>
+            </div>
+            
+            <button
+              onClick={saveCommissionRate}
+              disabled={isSavingCommission}
+              className="w-full h-[50px] bg-slate-900 dark:bg-slate-700 hover:bg-slate-800 dark:hover:bg-slate-600 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50 shadow-sm"
+            >
+              {isSavingCommission ? <Loader2 className="animate-spin" size={20} /> : <Save size={20} />}
+              Save Policy
+            </button>
+
+            <div className="pt-4 border-t border-slate-100 dark:border-zinc-800">
+              <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 mb-1">
+                <ShieldCheck size={14} />
+                <span className="text-[10px] font-bold uppercase tracking-wider">Dynamic Rule Active</span>
+              </div>
+              <p className="text-[10px] text-slate-400">
+                Changes will apply to all future payments instantly. Existing earnings are not recalculated.
+              </p>
+            </div>
           </div>
         </div>
       </div>

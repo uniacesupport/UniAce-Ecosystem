@@ -249,7 +249,20 @@ async function processPaymentSuccess(uid: string, reference: string, amount: num
   const expiryDate = new Date();
   expiryDate.setDate(expiryDate.getDate() + durationDays);
 
-  const commissionRate = 0.30; // 30% commission
+  // 2b. Fetch Dynamic Commission Rate from Settings
+  let commissionRate = 0.30; // Global Default
+  try {
+    const settingsDoc = await db.collection('settings').doc('commissions').get();
+    if (settingsDoc.exists) {
+      const data = settingsDoc.data();
+      if (typeof data?.rate === 'number') {
+        commissionRate = data.rate;
+      }
+    }
+  } catch (err) {
+    console.error('Error fetching commission rate settings, using default 30%');
+  }
+
   const commissionAmount = amount * commissionRate;
 
   // 3. Perform atomic updates
