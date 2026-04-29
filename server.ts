@@ -346,6 +346,45 @@ const courseGenerationLimiter = rateLimit({
   }
 });
 
+// Rate Limiter for Affiliate Click Fraud Protection
+const clickTrackingLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // max 10 clicks per IP per 15 minutes to prevent spam
+  message: { error: 'Too many clicks recorded from this IP' },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+app.post('/api/track-click', clickTrackingLimiter, async (req, res) => {
+  try {
+    const { refCode } = req.body;
+    if (!refCode || typeof refCode !== 'string') {
+      return res.status(400).json({ error: 'Missing or invalid refCode' });
+    }
+    
+    // Server-side click tracking logic
+    const app = getAdminApp();
+    const db = app.firestore();
+    const ref = db.collection('affiliates').doc(refCode);
+    const docSnap = await ref.get();
+    
+    if (docSnap.exists) {
+      await ref.update({
+        clicks: admin.firestore.FieldValue.increment(1)
+      });
+    }
+    
+    res.json({ success: true });
+  } catch (error: any) {
+    if (error.code === 5 || error.code === 'NOT_FOUND') {
+       // Code not found, ignore silently for tracking
+       return res.json({ success: true });
+    }
+    console.error('Error tracking click:', error);
+    res.status(500).json({ error: 'Failed to track click' });
+  }
+});
+
 app.use('/api/course/generate', courseGenerationLimiter);
 app.use('/api/ai/generate', aiGenerationLimiter);
 app.use('/api/ai/stream', aiGenerationLimiter);
@@ -1671,11 +1710,12 @@ app.post('/api/admin/create-affiliate', verifyAuth, async (req, res) => {
     });
 
     if (finalUserEmail) {
+      const appUrl = req.headers.origin || process.env.RENDER_EXTERNAL_URL || process.env.APP_URL || 'https://uniace.app';
       await MailService.sendAffiliateLinkEmail(
         finalUserEmail,
         name.trim(),
         code,
-        process.env.APP_URL || 'https://uniace.app'
+        appUrl
       ).catch(e => console.error("Mail error:", e));
     }
 
@@ -1683,6 +1723,162 @@ app.post('/api/admin/create-affiliate', verifyAuth, async (req, res) => {
   } catch (error: any) {
     console.error('Error creating affiliate:', error);
     res.status(500).json({ error: error.message || 'Failed to create affiliate' });
+  }
+});
+
+// Save Affiliate Payout Settings
+app.post('/api/affiliate/payout-settings', verifyAuth, async (req, res) => {
+  try {
+    const uid = (req as any).user.uid;
+    const { bankName, accountName, accountNumber } = req.body;
+    
+    if (!bankName || !accountName || !accountNumber) {
+        return res.status(400).json({ error: 'All payout fields are required' });
+    }
+
+    const app = getAdminApp();
+    const db = app.firestore();
+    
+    const affSnapshot = await db.collection('affiliates').where('userId', '==', uid).limit(1).get();
+    
+    if (affSnapshot.empty) {
+        return res.status(404).json({ error: 'Affiliate record not found' });
+    }
+    
+    const affDoc = affSnapshot.docs[0];
+    await affDoc.ref.update({
+        payoutDetails: {
+            bankName: bankName.trim(),
+            accountName: accountName.trim(),
+            accountNumber: accountNumber.trim()
+        }
+    });
+
+    res.json({ success: true, message: 'Payout details saved' });
+  } catch (error: any) {
+    console.error('Error saving payout details:', error);
+    res.status(500).json({ error: error.message || 'Failed to save payout details' });
+  }
+});
+
+// Request Affiliate Payout
+app.post('/api/affiliate/request-payout', verifyAuth, async (req, res) => {
+  try {
+    const uid = (req as any).user.uid;
+    
+    const app = getAdminApp();
+    const db = app.firestore();
+    
+    // Use transaction to ensure safe balance reading and updating
+    const result = await db.runTransaction(async (transaction) => {
+        const querySnapshot = await transaction.get(db.collection('affiliates').where('userId', '==', uid).limit(1));
+        if (querySnapshot.empty) {
+            throw new Error('Affiliate record not found');
+        } // NOTE: transaction.get with query is not supported in some older sdk versions, but usually it is in recent server sdks.
+        // Actually, let's get the document ref outside or use the query.
+        return querySnapshot;
+    });
+    // Wait, transaction.get() on a Query is supported in Node.js Admin SDK, but let's be careful. Let's do it easier:
+    
+    // Find the doc outside the transaction first to get the ref, then read it IN the transaction.
+    const affSnapshot = await db.collection('affiliates').where('userId', '==', uid).limit(1).get();
+    if (affSnapshot.empty) {
+        return res.status(404).json({ error: 'Affiliate record not found' });
+    }
+    const affDocRef = affSnapshot.docs[0].ref;
+    
+    const amountRequested = await db.runTransaction(async (transaction) => {
+        const docSnap = await transaction.get(affDocRef);
+        const affData = docSnap.data();
+        
+        if (!affData || !affData.payoutDetails || !affData.payoutDetails.bankName) {
+            throw new Error('Please save your payout details first');
+        }
+        
+        const pendingAmount = affData.pendingBalance || 0;
+        if (pendingAmount < 5000) {
+            throw new Error('Minimum payout threshold is ₦5,000');
+        }
+        
+        const payoutRef = db.collection('payout_requests').doc();
+        transaction.set(payoutRef, {
+             userId: uid,
+             affiliateId: docSnap.id,
+             amount: pendingAmount,
+             payoutDetails: affData.payoutDetails,
+             status: 'pending',
+             createdAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+        
+        transaction.update(affDocRef, {
+             pendingBalance: admin.firestore.FieldValue.increment(-pendingAmount)
+        });
+        
+        return pendingAmount;
+    });
+
+    res.json({ success: true, message: `Payout of ₦${amountRequested.toLocaleString()} requested successfully` });
+
+  } catch (error: any) {
+    console.error('Error requesting payout:', error);
+    res.status(400).json({ error: error.message || 'Failed to request payout' });
+  }
+});
+
+// Update Payout Status Endpoint
+app.post('/api/admin/payout-status', verifyAuth, async (req, res) => {
+  try {
+    const adminUid = (req as any).user.uid;
+    const { payoutId, status } = req.body;
+    
+    if (!payoutId || !['approved', 'rejected'].includes(status)) {
+        return res.status(400).json({ error: 'Invalid payload' });
+    }
+    
+    const app = getAdminApp();
+    const db = app.firestore();
+    
+    // Check if admin
+    const adminDoc = await db.collection('users').doc(adminUid).get();
+    if (adminDoc.data()?.role !== 'admin') {
+        return res.status(403).json({ error: 'Unauthorized: Admin access required' });
+    }
+
+    await db.runTransaction(async (transaction) => {
+        const payoutRef = db.collection('payout_requests').doc(payoutId);
+        const payoutSnap = await transaction.get(payoutRef);
+        
+        if (!payoutSnap.exists) {
+            throw new Error('Payout request not found');
+        }
+        
+        const payoutData = payoutSnap.data();
+        if (payoutData?.status !== 'pending') {
+            throw new Error('Payout is no longer pending');
+        }
+        
+        transaction.update(payoutRef, {
+            status,
+            processedAt: admin.firestore.FieldValue.serverTimestamp(),
+            processedBy: adminUid
+        });
+        
+        if (status === 'rejected') {
+            // Refund the user's pending balance
+            const affRef = db.collection('affiliates').doc(payoutData.affiliateId);
+            transaction.update(affRef, {
+                pendingBalance: admin.firestore.FieldValue.increment(payoutData.amount)
+            });
+        }
+        else if (status === 'approved') {
+            // Add to a total paid out potentially if tracked, or simply do nothing but update the payout history
+        }
+    });
+
+    res.json({ success: true, message: `Payout request ${status}` });
+  } catch (error: any) {
+    console.error('Error updating payout:', error);
+    res.status(400).json({ error: error.message || 'Failed to update payout request' });
   }
 });
 

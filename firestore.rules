@@ -284,14 +284,12 @@ service cloud.firestore {
     }
 
     match /affiliates/{affiliateId} {
-      allow read, write: if isAdmin();
-      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['clicks']) &&
-                    (request.resource.data.clicks == resource.data.clicks + 1);
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow write: if isAdmin();
       allow update: if isAuthenticated() &&
-                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['signups', 'clicks', 'paidConversions']) &&
+                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['signups', 'paidConversions']) &&
                     (
                       (request.resource.data.signups == resource.data.signups + 1) ||
-                      (request.resource.data.clicks == resource.data.clicks + 1) ||
                       (request.resource.data.paidConversions == resource.data.paidConversions + 1)
                     );
     }
@@ -299,6 +297,12 @@ service cloud.firestore {
     match /curriculum_requests/{requestId} {
       allow read: if isAdmin();
       allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+    
+    match /payout_requests/{requestId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow create: if false; // Through backend
       allow update, delete: if isAdmin();
     }
   }

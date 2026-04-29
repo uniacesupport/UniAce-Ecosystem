@@ -15,6 +15,12 @@ export default function AdminAffiliates() {
   const [success, setSuccess] = useState('');
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   
+  // Payouts state
+  const [activeTab, setActiveTab] = useState<'overview' | 'payouts'>('overview');
+  const [payouts, setPayouts] = useState<any[]>([]);
+  const [isLoadingPayouts, setIsLoadingPayouts] = useState(false);
+  const [processingPayout, setProcessingPayout] = useState<string | null>(null);
+
   // Commission settings
   const [globalCommissionRate, setGlobalCommissionRate] = useState<number>(30); // in percentage
   const [isSavingCommission, setIsSavingCommission] = useState(false);
@@ -22,7 +28,61 @@ export default function AdminAffiliates() {
   useEffect(() => {
     fetchAffiliates();
     fetchCommissionRate();
+    fetchPayouts();
   }, []);
+
+  const fetchPayouts = async () => {
+    setIsLoadingPayouts(true);
+    try {
+      if (!db) return;
+      // Fetch payouts descending
+      const snapshot = await getDocs(query(collection(db, 'payout_requests')));
+      const data: any[] = [];
+      snapshot.forEach(doc => {
+        data.push({ id: doc.id, ...doc.data() });
+      });
+      // sort by createdAt desc
+      data.sort((a, b) => {
+        const timeA = a.createdAt?.toMillis() || 0;
+        const timeB = b.createdAt?.toMillis() || 0;
+        return timeB - timeA;
+      });
+      setPayouts(data);
+    } catch (e) {
+      console.error(e);
+      setError('Failed to load payouts.');
+    } finally {
+      setIsLoadingPayouts(false);
+    }
+  };
+
+  const handleUpdateStatus = async (payoutId: string, status: 'approved' | 'rejected') => {
+    setProcessingPayout(payoutId);
+    try {
+      if (!auth || !auth.currentUser) throw new Error("Unauthorized");
+      const token = await auth.currentUser.getIdToken();
+      const res = await fetch('/api/admin/payout-status', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ payoutId, status })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      
+      setSuccess(`Payout ${status} successfully!`);
+      setTimeout(() => setSuccess(''), 3000);
+      fetchPayouts();
+      fetchAffiliates(); // also refresh balances
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || 'Failed to update payout');
+    } finally {
+      setProcessingPayout(null);
+    }
+  };
 
   const fetchCommissionRate = async () => {
     try {
@@ -141,9 +201,32 @@ export default function AdminAffiliates() {
     <div className="space-y-8">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Tutor Affiliates</h2>
-          <p className="text-slate-500 dark:text-zinc-400">Manage referral codes for partners and track conversions.</p>
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Affiliates & Payouts</h2>
+          <p className="text-slate-500 dark:text-zinc-400">Manage referral codes, view conversions, and handle payouts.</p>
         </div>
+      </div>
+
+      <div className="flex gap-4 border-b border-slate-200 dark:border-zinc-800 pb-px">
+        <button
+          onClick={() => setActiveTab('overview')}
+          className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${
+            activeTab === 'overview' 
+              ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400' 
+              : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+          }`}
+        >
+          Overview & Settings
+        </button>
+        <button
+          onClick={() => setActiveTab('payouts')}
+          className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${
+            activeTab === 'payouts' 
+              ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400' 
+              : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+          }`}
+        >
+          Payout Requests
+        </button>
       </div>
 
       {error && (
@@ -160,7 +243,9 @@ export default function AdminAffiliates() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {activeTab === 'overview' && (
+        <div className="space-y-8">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Create Affiliate Card */}
         <div className="lg:col-span-2 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-3xl p-6 shadow-sm">
           <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
@@ -344,6 +429,94 @@ export default function AdminAffiliates() {
           </div>
         )}
       </div>
+    </div>
+    )}
+
+      {activeTab === 'payouts' && (
+        <div className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-3xl p-6 shadow-sm">
+          <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-6">Payout Requests</h3>
+          
+          {isLoadingPayouts ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="animate-spin text-indigo-600" size={32} />
+            </div>
+          ) : payouts.length === 0 ? (
+            <div className="text-center py-12">
+              <CheckCircle2 className="mx-auto h-12 w-12 text-slate-400 mb-4" />
+              <h3 className="text-lg font-medium text-slate-900 dark:text-white">All caught up!</h3>
+              <p className="text-slate-500 max-w-sm mx-auto mt-2">
+                No pending payout requests at the moment.
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-200 dark:border-zinc-800 text-sm font-medium text-slate-500 dark:text-slate-400">
+                    <th className="pb-4 font-medium px-4">Date</th>
+                    <th className="pb-4 font-medium px-4">Affiliate</th>
+                    <th className="pb-4 font-medium px-4">Amount</th>
+                    <th className="pb-4 font-medium px-4">Bank Details</th>
+                    <th className="pb-4 font-medium px-4">Status</th>
+                    <th className="pb-4 font-medium px-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {payouts.map((payout) => (
+                    <tr key={payout.id} className="border-b border-slate-100 dark:border-zinc-800/50 hover:bg-slate-50 dark:hover:bg-zinc-800/50 transition-colors text-sm">
+                      <td className="py-4 px-4 whitespace-nowrap text-slate-600 dark:text-slate-400">
+                        {payout.createdAt ? new Date(payout.createdAt.toDate()).toLocaleDateString() : 'N/A'}
+                      </td>
+                      <td className="py-4 px-4 font-bold text-slate-900 dark:text-white">
+                        {payout.affiliateId}
+                      </td>
+                      <td className="py-4 px-4 font-bold text-emerald-600 dark:text-emerald-400">
+                        ₦{(payout.amount || 0).toLocaleString()}
+                      </td>
+                      <td className="py-4 px-4">
+                        <div className="flex flex-col">
+                          <span className="font-bold text-slate-700 dark:text-slate-200">{payout.payoutDetails?.bankName}</span>
+                          <span className="text-slate-600 dark:text-slate-400">{payout.payoutDetails?.accountNumber}</span>
+                          <span className="text-xs text-slate-500">{payout.payoutDetails?.accountName}</span>
+                        </div>
+                      </td>
+                      <td className="py-4 px-4">
+                        <span className={`px-2 py-1 rounded-md text-xs font-bold uppercase tracking-wider ${
+                          payout.status === 'pending' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' :
+                          payout.status === 'approved' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
+                          'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                        }`}>
+                          {payout.status}
+                        </span>
+                      </td>
+                      <td className="py-4 px-4 text-right">
+                        {payout.status === 'pending' && (
+                          <div className="flex justify-end gap-2">
+                            <button
+                                onClick={() => handleUpdateStatus(payout.id, 'approved')}
+                                disabled={processingPayout === payout.id}
+                                className="px-3 py-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-700 dark:bg-emerald-900/30 dark:hover:bg-emerald-900/50 dark:text-emerald-400 rounded-lg font-medium transition-colors disabled:opacity-50"
+                            >
+                                {processingPayout === payout.id ? '...' : 'Approve'}
+                            </button>
+                            <button
+                                onClick={() => handleUpdateStatus(payout.id, 'rejected')}
+                                disabled={processingPayout === payout.id}
+                                className="px-3 py-1.5 bg-red-100 hover:bg-red-200 text-red-700 dark:bg-red-900/30 dark:hover:bg-red-900/50 dark:text-red-400 rounded-lg font-medium transition-colors disabled:opacity-50"
+                            >
+                                Reject
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+        )}
     </div>
   );
 }

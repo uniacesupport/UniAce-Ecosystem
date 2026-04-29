@@ -25,12 +25,12 @@ try {
   if (refCode) {
     if (sessionStorage.getItem('ref_code') !== refCode) {
       sessionStorage.setItem('ref_code', refCode);
-      // Blindly increment clicks
-      import('./firebase').then(({ db }) => {
-        import('firebase/firestore').then(({ doc, updateDoc, increment }) => {
-          updateDoc(doc(db, 'affiliates', refCode), { clicks: increment(1) }).catch(() => {});
-        });
-      });
+      // Blindly increment clicks securely via backend endpoint
+      fetch('/api/track-click', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refCode })
+      }).catch(() => {});
     }
   }
 } catch (e) {
