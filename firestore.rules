@@ -265,7 +265,8 @@ service cloud.firestore {
     }
 
     match /system_config/{configId} {
-      allow read, write: if isAdmin();
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
     match /system_logs/{logId} {
@@ -284,7 +285,7 @@ service cloud.firestore {
     }
 
     match /affiliates/{affiliateId} {
-      allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow read: if isAdmin() || (isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid));
       allow write: if isAdmin();
       allow update: if isAuthenticated() &&
                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['signups', 'paidConversions']) &&
@@ -301,7 +302,7 @@ service cloud.firestore {
     }
     
     match /payout_requests/{requestId} {
-      allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow read: if isAdmin() || (isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid));
       allow create: if false; // Through backend
       allow update, delete: if isAdmin();
     }

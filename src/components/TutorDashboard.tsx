@@ -63,9 +63,9 @@ export default function TutorDashboard({ onBack }: TutorDashboardProps) {
       } catch (err) {
           console.error("Failed to load payout history", err);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      setError('Failed to load dashboard data.');
+      setError(e.message || 'Failed to load dashboard data.');
     } finally {
       setIsLoading(false);
     }
