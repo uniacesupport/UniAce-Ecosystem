@@ -451,9 +451,14 @@ export class OpenRouterFreeProvider implements ModelProvider {
   async generate(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean }): Promise<ModelResponse> {
     return retry(async () => {
       const apiKey = await this.rotator.getNextKey();
-      const model = await this.rotator.getModel() || 'google/gemini-2.0-flash-exp:free';
-      const fallbackModel = await this.rotator.getFallbackModel() || 'google/gemini-flash-1.5';
-      
+      let model = await this.rotator.getModel() || 'openrouter/free';
+      if (model.includes('gemini-2.0-flash-exp:free') || model.includes('gemini-2.0-flash-lite-preview-02-05:free') || model === 'openrouter/auto') {
+          model = 'openrouter/free';
+      }
+      let fallbackModel = await this.rotator.getFallbackModel() || 'openrouter/free';
+      if (fallbackModel.includes('gemini-2.0-flash-exp:free') || fallbackModel.includes('gemini-2.0-flash-lite-preview-02-05:free') || fallbackModel === 'openrouter/auto') {
+          fallbackModel = 'openrouter/free';
+      }
       const openai = new OpenAI({
         baseURL: "https://openrouter.ai/api/v1",
         apiKey: apiKey,
@@ -527,8 +532,14 @@ export class OpenRouterFreeProvider implements ModelProvider {
   async stream(messages: any[], options: { complexity: 'high' | 'standard' }, onChunk: (chunk: string) => void): Promise<ModelResponse> {
     return retry(async () => {
       const apiKey = await this.rotator.getNextKey();
-      const model = await this.rotator.getModel() || 'google/gemini-2.0-flash-exp:free';
-      const fallbackModel = await this.rotator.getFallbackModel() || 'google/gemini-flash-1.5';
+      let model = await this.rotator.getModel() || 'openrouter/free';
+      if (model.includes('gemini-2.0-flash-exp:free') || model.includes('gemini-2.0-flash-lite-preview-02-05:free') || model === 'openrouter/auto') {
+          model = 'openrouter/free';
+      }
+      let fallbackModel = await this.rotator.getFallbackModel() || 'openrouter/free';
+      if (fallbackModel.includes('gemini-2.0-flash-exp:free') || fallbackModel.includes('gemini-2.0-flash-lite-preview-02-05:free') || fallbackModel === 'openrouter/auto') {
+          fallbackModel = 'openrouter/free';
+      }
 
       const openai = new OpenAI({
         baseURL: "https://openrouter.ai/api/v1",
