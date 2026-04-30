@@ -564,21 +564,23 @@ MATH & EQUATIONS (CRITICAL):
     For multiple-choice, provide 4 options.
     For fill-in-the-blank, provide the exact correct string.
     Also provide a short "hint" for each question that guides the user without giving the answer.
-    Return the response as a VALID JSON array of objects.
+    Return the response as a VALID JSON object containing a "questions" array.
     CRITICAL: Every property name MUST be double-quoted. Do not use unquoted keys.
     Structure:
-    [
-      {
-        "id": "string",
-        "type": "${questionType}",
-        "question": "string",
-        "options": ["string", "string", "string", "string"],
-        "correctAnswer": "string",
-        "explanation": "string",
-        "hint": "string",
-        "difficulty": number
-      }
-    ]`;
+    {
+      "questions": [
+        {
+          "id": "string",
+          "type": "${questionType}",
+          "question": "string",
+          "options": ["string", "string", "string", "string"],
+          "correctAnswer": "string",
+          "explanation": "string",
+          "hint": "string",
+          "difficulty": number
+        }
+      ]
+    }`;
 
     const response = await callAI(prompt, undefined, 'json', 2500, 'quiz', 'quiz');
     try {
@@ -671,13 +673,19 @@ MATH & EQUATIONS (CRITICAL):
     Use LaTeX formatting for mathematical expressions. 
     IMPORTANT: Wrap all LaTeX expressions in $ for inline math (e.g., $E=mc^2$) or $$ for block math (e.g., $$ \\\\vec{v}_1 $$).
     CRITICAL: You are outputting data to a JSON parser. You MUST double-escape all LaTeX commands (e.g., \\\\frac, \\\\right).
-    Return the response as a JSON array of objects with the following structure:
+    Return the response as a VALID JSON object containing a "flashcards" array.
+    CRITICAL: Every property name MUST be double-quoted. Do not use unquoted keys.
+    Structure:
     {
-      "id": "string (unique identifier)",
-      "front": "string",
-      "back": "string",
-      "moduleId": "${module.id}",
-      "subTopicId": "${subTopic ? subTopic.id : ''}"
+      "flashcards": [
+        {
+          "id": "string (unique identifier)",
+          "front": "string",
+          "back": "string",
+          "moduleId": "${module.id}",
+          "subTopicId": "${subTopic ? subTopic.id : ''}"
+        }
+      ]
     }`;
 
     const response = await callAI(prompt, undefined, 'json', 2000, 'standard', 'flashcard');

@@ -145,6 +145,13 @@ const apiLimiter = rateLimit({
 app.use('/api/', populateUser);
 app.use('/api/', apiLimiter);
 
+app.use(express.json({
+  limit: '5mb', // Prevent payload bloat attacks
+  verify: (req: any, res, buf) => {
+    req.rawBody = buf;
+  }
+}));
+
 // --- Health Check for Render Cold Starts ---
 app.get('/api/health', (req, res) => {
   res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
@@ -357,7 +364,7 @@ const clickTrackingLimiter = rateLimit({
 
 app.post('/api/track-click', clickTrackingLimiter, async (req, res) => {
   try {
-    const { refCode } = req.body;
+    const { refCode } = req.body || {};
     if (!refCode || typeof refCode !== 'string') {
       return res.status(400).json({ error: 'Missing or invalid refCode' });
     }
@@ -389,13 +396,6 @@ app.use('/api/course/generate', courseGenerationLimiter);
 app.use('/api/ai/generate', aiGenerationLimiter);
 app.use('/api/ai/stream', aiGenerationLimiter);
 app.use('/api/chat', aiGenerationLimiter);
-
-app.use(express.json({
-  limit: '5mb', // Prevent payload bloat attacks
-  verify: (req: any, res, buf) => {
-    req.rawBody = buf;
-  }
-}));
 
 // --- Middleware: Verify Firebase ID Token ---
 const verifyAuth = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
