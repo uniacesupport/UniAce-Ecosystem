@@ -382,9 +382,9 @@ export default function AdminAffiliates() {
                 {affiliates.map((aff) => (
                   <tr key={aff.id} className="border-b border-slate-100 dark:border-zinc-800/50 hover:bg-slate-50 dark:hover:bg-zinc-800/50 transition-colors">
                     <td className="py-4 px-4">
-                      <p className="font-bold text-slate-900 dark:text-white">{aff.name}</p>
+                      <p className="font-bold text-slate-900 dark:text-white">{aff.name || 'System Generated'}</p>
                       <p className="text-xs text-slate-500">
-                        Added {aff.createdAt ? new Date(aff.createdAt.toDate()).toLocaleDateString() : 'Recently'}
+                        Added {aff.createdAt ? new Date(aff.createdAt.toDate()).toLocaleDateString() : 'Auto Tracked'}
                       </p>
                     </td>
                     <td className="py-4 px-4 font-mono font-medium text-indigo-600 dark:text-indigo-400">

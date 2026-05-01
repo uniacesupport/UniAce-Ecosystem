@@ -108,9 +108,24 @@ const ensureArray = (data: any, fallback: any[] = []): any[] => {
     const possibleArray = data.questions || data.quiz || data.data || data.flashcards;
     if (Array.isArray(possibleArray)) return possibleArray;
     
+    // If it's an object of objects (AI made a mistake)
+    if (possibleArray && typeof possibleArray === 'object' && !Array.isArray(possibleArray)) {
+       const vals = Object.values(possibleArray);
+       if (vals.length > 0 && typeof vals[0] === 'object') return vals;
+    }
+    
     // Try to find any property that is an array
     const firstArray = Object.values(data).find(v => Array.isArray(v));
     if (Array.isArray(firstArray)) return firstArray;
+    
+    // If no arrays found but data is an object itself that might be questions (e.g. index-based keys)
+    const dataVals = Object.values(data);
+    if (dataVals.length > 0 && typeof dataVals[0] === 'object' && !Array.isArray(dataVals[0])) {
+       // if all values look like question objects
+       if ((dataVals[0] as any).question || (dataVals[0] as any).front) {
+          return dataVals;
+       }
+    }
   }
   return fallback;
 };
@@ -534,26 +549,15 @@ MATH & EQUATIONS (CRITICAL):
     department?: string,
     studentName?: string
   ): Promise<QuizQuestion[]> => {
-    const contextInfo = subTopic 
-      ? `Generate a quiz for the specific subtopic: "${subTopic.title}" within the module "${module.title}". 
-         The content for this subtopic is: ${subTopic.content ? subTopic.content.substring(0, 12000) : ''}`
-      : `Generate a quiz for the entire module: "${module.title}". 
-         The content for this module includes the following subtopics and their detailed content:
-         ${module.subTopics.map(st => `--- Subtopic: ${st.title} ---\n${st.content ? st.content.substring(0, 3000) : ''}`).join('\n\n')}`;
-
-    const studentContext = `
+    const prompt = `INSTRUCTIONS:
+Generate a quiz for ${subTopic ? 'the specific subtopic' : 'the entire module'}.
     Student Name: ${studentName || 'Student'}
     Student Level: ${level || 'University Level'}
     Department: ${department || 'General Academic'}
-    `;
-
-    const adaptiveInstruction = adaptive 
-      ? `Generate exactly 15 questions, 3 for each difficulty level from 1 (very easy) to 5 (very hard). Ensure the difficulty field is set correctly. The user's current estimated skill level is ${userSkillLevel} out of 5.`
-      : `Number of questions: ${numQuestions}.`;
-
-    const prompt = `${contextInfo}
-    ${studentContext}
-    ${adaptiveInstruction}
+    
+    ${adaptive 
+      ? `Generate exactly 15 questions, 3 for each difficulty level from 1 (very easy) to 5 (very hard). Ensure the difficulty field is set correctly. The user's current estimated skill level is ${userSkillLevel} out of 5.` 
+      : `Number of questions: ${numQuestions}.`}
     Question type: ${questionType}.
     Ensure questions are technically accurate and mathematically rigorous for the given subject (Math, Physics, Zoology, GST, etc.).
     CRITICAL: Calibrate the difficulty and complexity to the student's level (${level || 'University Level'}).
@@ -566,7 +570,8 @@ MATH & EQUATIONS (CRITICAL):
     Also provide a short "hint" for each question that guides the user without giving the answer.
     Return the response as a VALID JSON object containing a "questions" array.
     CRITICAL: Every property name MUST be double-quoted. Do not use unquoted keys.
-    Structure:
+    CRITICAL: The root of your JSON response MUST be a single JSON object containing a "questions" key. 
+    Format your response EXACTLY like this JSON object:
     {
       "questions": [
         {
@@ -580,12 +585,25 @@ MATH & EQUATIONS (CRITICAL):
           "difficulty": number
         }
       ]
+    }
+    
+    CONTENT MATERIAL TO BASE QUIZ ON:
+    ${subTopic 
+      ? `Subtopic Title: "${subTopic.title}"
+         Content: ${subTopic.content ? subTopic.content.substring(0, 12000) : ''}`
+      : `Module Title: "${module.title}"
+         Module Content: ${module.subTopics.map(st => `--- Subtopic: ${st.title} ---\n${st.content ? st.content.substring(0, 3000) : ''}`).join('\n\n')}`
     }`;
 
-    const response = await callAI(prompt, undefined, 'json', 2500, 'quiz', 'quiz');
+    const response = await callAI(prompt, undefined, 'json', 2500, 'high', 'quiz');
     try {
       const data = extractJSON(response.text || "[]");
       const questions = ensureArray(data);
+      
+      if (questions.length === 0) {
+        console.error("DEBUG AI: questions is empty. data extracted was:", data);
+        console.error("DEBUG AI: raw response text was:", response.text);
+      }
       
       // Sanitize LaTeX in all question fields
       return questions.map((q: any) => ({
@@ -596,17 +614,15 @@ MATH & EQUATIONS (CRITICAL):
         explanation: sanitizeLatex(q.explanation),
         hint: sanitizeLatex(q.hint)
       }));
-    } catch (e) {
-      console.error("Quiz generation error:", e);
+    } catch (e: any) {
+      console.error("Quiz generation error (extractJSON threw an error):", e);
       throw e;
     }
   },
 
   generateQuickCheck: async (subTopic: SubTopic, level?: string, department?: string): Promise<QuizQuestion> => {
-    const prompt = `Generate a single, high-quality multiple-choice "Quick Check" question for the following subtopic:
-    
-    Topic: ${subTopic.title}
-    Content: ${subTopic.content}
+    const prompt = `INSTRUCTIONS:
+    Generate a single, high-quality multiple-choice "Quick Check" question for the provided subtopic.
     Student Level: ${level || 'University Level'}
     Department: ${department || 'General Academic'}
     
@@ -617,7 +633,7 @@ MATH & EQUATIONS (CRITICAL):
     Return the response as a VALID JSON object.
     IMPORTANT: You are generating a JSON string. Use $ for inline LaTeX (e.g., $x$) and $$ for block LaTeX (e.g., $$x^2$$). For any LaTeX commands that use a backslash (e.g., \\\\mathbf), you MUST output them with double backslashes (e.g., \\\\\\\\mathbf).
     CRITICAL: You are outputting data to a JSON parser. You MUST double-escape all LaTeX commands (e.g., \\\\frac, \\\\right).
-    Structure:
+    Format your response EXACTLY like this JSON object:
     {
       "id": "quick-check-${subTopic.id}",
       "type": "multiple-choice",
@@ -626,7 +642,11 @@ MATH & EQUATIONS (CRITICAL):
       "correctAnswer": "string",
       "explanation": "string",
       "hint": "string"
-    }`;
+    }
+
+    CONTENT TO BASE QUESTION ON:
+    Topic: ${subTopic.title}
+    Content: ${subTopic.content}`;
 
     const response = await callAI(prompt, undefined, 'json', 1000, 'quiz', 'quiz');
     try {
@@ -656,14 +676,8 @@ MATH & EQUATIONS (CRITICAL):
   },
 
   generateFlashcards: async (module: Module, subTopic?: SubTopic, numCards: number = 10, level?: string, department?: string): Promise<Flashcard[]> => {
-    const contextInfo = subTopic 
-      ? `Generate ${numCards} spaced-repetition flashcards for the specific subtopic: "${subTopic.title}" within the module "${module.title}". 
-         The content for this subtopic is: ${subTopic.content}`
-      : `Generate ${numCards} spaced-repetition flashcards for the entire module: "${module.title}". 
-         The content for this module includes the following subtopics and their detailed content:
-         ${module.subTopics.map(st => `--- Subtopic: ${st.title} ---\n${st.content}`).join('\n\n')}`;
-
-    const prompt = `${contextInfo}
+    const prompt = `INSTRUCTIONS:
+    Generate ${numCards} spaced-repetition flashcards for ${subTopic ? 'the specific subtopic' : 'the entire module'}.
     Student Level: ${level || 'University Level'}
     Department: ${department || 'General Academic'}
     Create high-quality flashcards suitable for university-level learning.
@@ -675,7 +689,7 @@ MATH & EQUATIONS (CRITICAL):
     CRITICAL: You are outputting data to a JSON parser. You MUST double-escape all LaTeX commands (e.g., \\\\frac, \\\\right).
     Return the response as a VALID JSON object containing a "flashcards" array.
     CRITICAL: Every property name MUST be double-quoted. Do not use unquoted keys.
-    Structure:
+    Format your response EXACTLY like this JSON object:
     {
       "flashcards": [
         {
@@ -686,6 +700,14 @@ MATH & EQUATIONS (CRITICAL):
           "subTopicId": "${subTopic ? subTopic.id : ''}"
         }
       ]
+    }
+
+    CONTENT TO BASE FLASHCARDS ON:
+    ${subTopic 
+      ? `Subtopic Title: "${subTopic.title}"
+         Content: ${subTopic.content ? subTopic.content.substring(0, 12000) : ''}`
+      : `Module Title: "${module.title}"
+         Content: ${module.subTopics.map(st => `--- Subtopic: ${st.title} ---\n${st.content ? st.content.substring(0, 3000) : ''}`).join('\n\n')}`
     }`;
 
     const response = await callAI(prompt, undefined, 'json', 2000, 'standard', 'flashcard');

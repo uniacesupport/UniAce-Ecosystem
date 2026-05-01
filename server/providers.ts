@@ -751,8 +751,8 @@ export class GroqProvider implements ModelProvider {
       const groq = new Groq({ apiKey: apiKey });
 
       // Truncate messages for Groq to avoid TPM limits (especially for 8b model)
-      // Free tier TPM is often 6000. We target 4000 to be safe and leave room for response.
-      const maxTokens = options.complexity === 'high' ? 4000 : 2500;
+      // Free tier TPM is often 6000. We target 5000 to be safe and leave room for response.
+      const maxTokens = options.complexity === 'high' ? 5000 : 3000;
       const truncatedMessages = this.truncateMessages(messages, maxTokens);
 
       if (options.jsonMode) {
@@ -830,7 +830,7 @@ export class GroqProvider implements ModelProvider {
   private truncateMessages(messages: any[], maxTokens: number): any[] {
     if (!messages || messages.length === 0) return [];
     
-    // Conservative estimate: 1 token ≈ 2.5 characters
+    // Conservative estimate: 1 token ≈ 3.5 characters
     let currentTokens = 0;
     const truncated = [];
     
@@ -838,12 +838,12 @@ export class GroqProvider implements ModelProvider {
     const systemMessage = messages.find(m => m.role === 'system');
     let systemTokens = 0;
     if (systemMessage) {
-      systemTokens = Math.ceil((systemMessage.content?.length || 0) / 2.5);
+      systemTokens = Math.ceil((systemMessage.content?.length || 0) / 3.5);
       // If system message alone is too big, truncate it (rare but possible)
       if (systemTokens > maxTokens * 0.4) {
-        const allowedChars = Math.floor(maxTokens * 0.4 * 2.5);
+        const allowedChars = Math.floor(maxTokens * 0.4 * 3.5);
         systemMessage.content = systemMessage.content.substring(0, allowedChars) + "... [truncated]";
-        systemTokens = Math.ceil(systemMessage.content.length / 2.5);
+        systemTokens = Math.ceil(systemMessage.content.length / 3.5);
       }
       currentTokens += systemTokens;
     }
@@ -853,15 +853,15 @@ export class GroqProvider implements ModelProvider {
     for (let i = otherMessages.length - 1; i >= 0; i--) {
       const msg = otherMessages[i];
       let content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
-      let estimatedTokens = Math.ceil(content.length / 2.5);
+      let estimatedTokens = Math.ceil(content.length / 3.5);
       
       // If the very first (newest) message is too large, truncate it
       if (i === otherMessages.length - 1 && currentTokens + estimatedTokens > maxTokens) {
         const allowedTokens = maxTokens - currentTokens;
         if (allowedTokens > 100) {
-          const allowedChars = Math.floor(allowedTokens * 2.5);
+          const allowedChars = Math.floor(allowedTokens * 3.5);
           content = content.substring(0, allowedChars) + "... [truncated]";
-          estimatedTokens = Math.ceil(content.length / 2.5);
+          estimatedTokens = Math.ceil(content.length / 3.5);
           msg.content = content;
         } else {
           // Too little space left, skip this message

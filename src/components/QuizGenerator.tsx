@@ -141,6 +141,12 @@ export default function QuizGenerator({
         }
       }
 
+      // Check if there is actual content to generate questions from
+      const hasContent = subTopicForQuiz ? !!subTopicForQuiz.content : moduleForQuiz.subTopics.some(st => st.content);
+      if (!hasContent) {
+        throw new Error("No lesson content found. Please read or generate the lessons first before taking a quiz.");
+      }
+
       const data = await AIService.generateQuiz(
         moduleForQuiz, 
         subTopicForQuiz, 
@@ -169,9 +175,9 @@ export default function QuizGenerator({
         }
       }
       setStep('quiz');
-    } catch (error) {
+    } catch (error: any) {
       console.error("Quiz generation error:", error);
-      alert("Failed to generate quiz. Please try again.");
+      alert(error.message || "Failed to generate quiz. Please try again.");
       setStep('config');
     }
   };

@@ -48,8 +48,15 @@ export default function TutorDashboard({ onBack }: TutorDashboardProps) {
             setAccountNumber(data.payoutDetails.accountNumber || '');
         }
       } else {
-        // Fallback: the admin hasn't created the affiliate for them yet.
-        setError("Your affiliate code hasn't been activated by an admin yet. Please reach out to support.");
+        // Fallback: the affiliate doc doesn't exist yet, meaning 0 referrals so far.
+        setAffiliateData({ 
+          id: refCode, 
+          signups: 0, 
+          clicks: 0, 
+          paidConversions: 0, 
+          totalEarned: 0, 
+          pendingBalance: 0 
+        });
       }
 
       // Fetch payout history

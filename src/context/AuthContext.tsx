@@ -149,10 +149,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const storedRef = sessionStorage.getItem('ref_code');
         if (storedRef) {
           referredBy = storedRef;
-          // Increment the affiliate refer code signups blindly
+          // Increment the affiliate refer code signups blindly via backend
           try {
-            const { updateDoc, doc, increment } = await import('firebase/firestore');
-            await updateDoc(doc(db, 'affiliates', storedRef), { signups: increment(1) });
+            await fetch('/api/track-signup', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ refCode: storedRef, newUserId: currentUser.uid })
+            });
           } catch (e) {
             console.warn('Failed to increment referral count', e);
           }
