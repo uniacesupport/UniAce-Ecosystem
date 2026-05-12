@@ -104,8 +104,8 @@ const extractJSON = (text: string) => {
 const ensureArray = (data: any, fallback: any[] = []): any[] => {
   if (Array.isArray(data)) return data;
   if (data && typeof data === 'object') {
-    // Look for common keys like 'questions', 'quiz', 'data', 'flashcards'
-    const possibleArray = data.questions || data.quiz || data.data || data.flashcards;
+    // Look for common keys like 'questions', 'quiz', 'data', 'flashcards', 'formulas'
+    const possibleArray = data.questions || data.quiz || data.data || data.flashcards || data.formulas;
     if (Array.isArray(possibleArray)) return possibleArray;
     
     // If it's an object of objects (AI made a mistake)

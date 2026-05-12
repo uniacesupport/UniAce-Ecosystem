@@ -300,10 +300,11 @@ export async function generateCourseFormulas(
     
     Requirements:
     1. Generate 10-15 of the most important formulas for this course.
-    2. Group them into logical categories (e.g., "Kinematics", "Thermodynamics", "Calculus", "Statistics").
-    3. Provide the LaTeX representation for each formula.
-    4. Provide a brief, clear description of what the formula is used for and what its variables mean.
-    5. Ensure the formulas are academically rigorous and align with the latest NUC or relevant global curriculum standards.
+    2. Group them into logical and specific academic categories (e.g., "Vector Calculus", "Electrostatics", "Thermodynamics").
+    3. Proactively suggest these categories based on the ${courseName} and its ${courseDescription}.
+    4. Provide the LaTeX representation for each formula.
+    5. Provide a brief, clear description of what the formula is used for and what its variables mean.
+    6. Ensure the formulas are academically rigorous and align with the latest NUC or relevant global curriculum standards.
     
     CRITICAL: You must return ONLY valid JSON matching this exact structure:
     {

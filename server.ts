@@ -3049,6 +3049,11 @@ app.post('/api/formulas/search', verifyAuth, async (req, res) => {
     DO NOT provide obscure, advanced research-level, or unknown formulas that a typical student would not encounter in their curriculum.
     Ensure the formulas are relevant to the academic context of the query.
 
+    [CATEGORIZATION DIRECTIVE]: 
+    1. Identify the primary subject domain (e.g., Physics, Engineering, Mathematics, Biology).
+    2. Proactively suggest and assign a specific "category" for each formula based on the query context (e.g., "Fluid Dynamics", "Thermodynamics", "Calculus", "Organic Chemistry").
+    3. Group related formulas into the same category where possible.
+
     [STUDENT-FRIENDLY DIRECTIVE]: Use clear, simple language in the description. Explain each variable clearly. 
     The goal is to help a student understand the formula, not to provide a complex derivation.
 
@@ -3060,7 +3065,7 @@ app.post('/api/formulas/search', verifyAuth, async (req, res) => {
           "title": "string (name of the formula)",
           "latex": "string (the formula in LaTeX format, DO NOT include any $ or $$ delimiters)",
           "description": "string (brief, student-friendly explanation of the formula and its variables in Markdown. ALWAYS wrap mathematical symbols, variables, and equations in $ ... $ delimiters, e.g. $x^2$ or $\\mathbf{a}$)",
-          "category": "string (e.g. Calculus, Physics, Chemistry, etc.)"
+          "category": "string (specific academic category based on the query context)"
         }
       ]
     }
@@ -3069,7 +3074,14 @@ app.post('/api/formulas/search', verifyAuth, async (req, res) => {
     
     ${latexInstruction}`;
 
-    const prompt = `Find related university-level formulas for: ${query}${courseId ? ` in the context of ${courseId}` : ''}. Ensure they are relevant to a standard university syllabus.`;
+    const prompt = `Find related university-level formulas for: ${query}${courseId ? ` in the context of ${courseId}` : ''}. 
+    
+    PROCEDURE:
+    1. Analyze the context of "${query}" to identify the most appropriate academic categories.
+    2. Suggest categories that are commonly used in university textbooks for this specific topic.
+    3. Return 3-5 of the most essential formulas grouped by these categories.
+    
+    Ensure they are relevant to a standard university syllabus.`;
 
     // Prioritize Mistral as per user request
     const aiProvider = globalMistralDirectBreaker || globalMistralDirectProvider || globalGroqBreaker || globalGroqProvider;
