@@ -134,7 +134,7 @@
     },
     "CCMASCore": {
       "title": "CCMASCore",
-      "description": "The 70% NUC core curriculum for a specific discipline and level",
+      "description": "The NUC/CCMAS core curriculum for a specific discipline and level",
       "type": "object",
       "properties": {
         "discipline": { "type": "string", "description": "e.g., Computing, Engineering, Sciences" },
@@ -215,7 +215,7 @@
     },
     "/ccmas_cores/{coreId}": {
       "schema": "CCMASCore",
-      "description": "NUC 70% core curriculum data"
+      "description": "NUC/CCMAS core curriculum data"
     },
     "/courses/{courseId}": {
       "schema": "Course",

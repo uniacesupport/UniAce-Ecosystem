@@ -293,7 +293,7 @@ export async function generateCourseFormulas(
   provider?: string
 ): Promise<any> {
   const formulaPrompt = `
-    You are an expert university professor. Generate a comprehensive list of essential formulas, equations, and theorems for the following course, ensuring they meet the NUC (National Universities Commission) curriculum standards, or dynamically adapt to the most relevant global academic benchmarks for this subject.
+    You are an expert university professor. Generate a comprehensive list of essential formulas, equations, and theorems for the following course, ensuring they meet the NUC/CCMAS (Core Curriculum and Minimum Academic Standards) curriculum standards, or dynamically adapt to the most relevant global academic benchmarks for this subject.
     
     Course Name: ${courseName}
     Description: ${courseDescription}
@@ -304,7 +304,7 @@ export async function generateCourseFormulas(
     3. Proactively suggest these categories based on the ${courseName} and its ${courseDescription}.
     4. Provide the LaTeX representation for each formula.
     5. Provide a brief, clear description of what the formula is used for and what its variables mean.
-    6. Ensure the formulas are academically rigorous and align with the latest NUC or relevant global curriculum standards.
+    6. Ensure the formulas are academically rigorous and align with the latest NUC/CCMAS or relevant global curriculum standards.
     
     CRITICAL: You must return ONLY valid JSON matching this exact structure:
     {
@@ -360,8 +360,8 @@ export async function generateCourseSkeleton(
   if (ccmasCore && isCurriculumGen) {
     const coreList = ccmasCore.coreCourses.map((c: any) => `${c.code}: ${c.title} (${c.units} units)`).join(', ');
     promptContext = `
-      This is a CCMAS-compliant curriculum generation for ${ccmasCore.discipline} at ${level} Level.
-      The NUC 70% Core Courses are already defined: ${coreList}.
+      This is a NUC/CCMAS-compliant curriculum generation for ${ccmasCore.discipline} at ${level} Level.
+      The NUC/CCMAS 70% Core Courses are already defined: ${coreList}.
       Total Core Units: ${ccmasCore.totalCoreUnits}.
       
       Your task is to generate the remaining 30% of university-specific elective courses.
@@ -377,7 +377,7 @@ export async function generateCourseSkeleton(
     Generate a comprehensive course skeleton for a university-level course.
     
     CRITICAL: You MUST use a "Hybrid Approach" to ensure the course is both exam-relevant and deeply educational, providing a world-class academic experience:
-    1. Structure: Strictly follow the NUC (National Universities Commission) curriculum outline (weeks, topics order, what to cover) to ensure 100% exam readiness and regulatory compliance.
+    1. Structure: Strictly follow the NUC/CCMAS (National Universities Commission / Core Curriculum and Minimum Academic Standards) curriculum outline (weeks, topics order, what to cover) to ensure 100% exam readiness and regulatory compliance.
     2. Depth: Use international-style depth (Ivy League standards) for the content breakdown. Provide step-by-step teaching methodologies, advanced conceptual mappings, and comprehensive thematic breakdowns to ensures true world-class mastery.
     3. Pedagogical Framework: Apply Bloom's Taxonomy. Ensure the progression moves from "Remembering" to "Creating", with clear learning pathways.
     4. General Academic Context: Dynamically adapt the curriculum to reflect current global best practices in ${department || 'this discipline'}.
@@ -394,8 +394,8 @@ export async function generateCourseSkeleton(
     ${existingModuleTitles.length > 0 ? `Current Existing Modules: ${existingModuleTitles.join(', ')}` : ''}
     
     The output must be a detailed JSON object containing:
-    1. A "description" field which is a concise summary of the course content (1-2 sentences), ensuring it aligns with NUC or relevant curriculum objectives.
-    2. An appropriate number of modules (typically 6-12) based on the course complexity and the provided outline, structured according to the NUC curriculum.
+    1. A "description" field which is a concise summary of the course content (1-2 sentences), ensuring it aligns with NUC/CCMAS or relevant curriculum objectives.
+    2. An appropriate number of modules (typically 6-12) based on the course complexity and the provided outline, structured according to the NUC/CCMAS curriculum.
     ${ccmasCore && isCurriculumGen ? '3. Since this is a curriculum generation, the "modules" should represent the ELECTIVE COURSES you are suggesting.' : '3. Each module should have 4 to 6 lesson titles (no content yet, just titles), structured for step-by-step learning.'}
     4. Each module should have a list of topics that will be covered in the quiz.
     
@@ -410,7 +410,7 @@ export async function generateCourseSkeleton(
     6. Double check that every backslash in your LaTeX is escaped with another backslash (e.g., \\\\alpha, \\\\beta).
     CRITICAL: Ensure all double quotes inside strings are properly escaped (e.g., \\"word\\").
     CRITICAL: If generating electives for a curriculum, ensure they do not overlap with the core courses: ${ccmasCore?.coreCourses.map((c: any) => c.code).join(', ') || 'None'}.
-    CRITICAL: Ensure the curriculum is robust, academically rigorous, and follows the Hybrid Approach (NUC structure + International depth).
+    CRITICAL: Ensure the curriculum is robust, academically rigorous, and follows the Hybrid Approach (NUC/CCMAS structure + International depth).
     {
       "description": "A concise summary...",
       "modules": [
@@ -499,7 +499,7 @@ export async function generateLessonContent(
     You are an expert university professor. Your task is to write an extremely comprehensive, long-form academic lesson for the topic "${lessonTitle}" which is part of the module "${moduleTitle}" in the university course "${courseName}".
     
     CRITICAL: You MUST use the "Hybrid Approach" to ensure the content is deeply educational, blending General Academic excellence with local curriculum standards:
-    1. Structure: Follow the NUC (National Universities Commission) curriculum outline for the topic to ensure absolute exam relevance.
+    1. Structure: Follow the NUC/CCMAS (National Universities Commission / Core Curriculum and Minimum Academic Standards) curriculum outline for the topic to ensure absolute exam relevance.
     2. Depth: Use international-style depth (MIT/Stanford/Cambridge level) with step-by-step teaching, complex derivations, and extensive breakdowns to ensure true mastery.
     3. Pedagogical Framework: Apply Bloom's Taxonomy. Every lesson MUST include:
        - Learning Objectives (What will the student know?)
@@ -570,7 +570,7 @@ export async function generateModuleQuiz(
     Generate a university-level quiz for this module.
     
     CRITICAL: You MUST use the "Hybrid Approach" to ensure the quiz is both exam-relevant and deeply educational, testing for world-class competency:
-    1. Relevance: Questions must strictly align with NUC (National Universities Commission) curriculum standards to ensure absolute exam readiness.
+    1. Relevance: Questions must strictly align with NUC/CCMAS (National Universities Commission / Core Curriculum and Minimum Academic Standards) curriculum standards to ensure absolute exam readiness.
     2. Depth: Questions must be challenging, high-order, and conceptual (level 4-6 on Bloom's Taxonomy), requiring deep analytical thinking rather than rote memorization. Incorporate "General Academic" best practices for standardized testing at top-tier universities.
     
     Course: ${courseName}
@@ -597,7 +597,7 @@ export async function generateModuleQuiz(
     5. Ensure all LaTeX environments (like align, matrix, etc.) are wrapped in $$ ... $$ delimiters.
     6. Double check that every backslash in your LaTeX is escaped with another backslash (e.g., \\\\alpha, \\\\beta).
     9. CRITICAL: For LaTeX in JSON strings, use double backslashes (e.g., "\\\\mathbf"). Do NOT use triple backslashes.
-    10. CRITICAL: Ensure the quiz meets the academic standards set by NUC or relevant global guidelines, following the Hybrid Approach.
+    10. CRITICAL: Ensure the quiz meets the academic standards set by NUC/CCMAS or relevant global guidelines, following the Hybrid Approach.
     11. Return ONLY valid JSON:
     {
       "questions": [
