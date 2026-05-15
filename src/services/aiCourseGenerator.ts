@@ -376,10 +376,11 @@ export async function generateCourseSkeleton(
     ${promptContext}
     Generate a comprehensive course skeleton for a university-level course.
     
-    CRITICAL: You MUST use a "Hybrid Approach" to ensure the course is both exam-relevant and deeply educational:
-    1. Structure: Strictly follow the NUC (National Universities Commission) curriculum outline (weeks, topics order, what to cover) to ensure exam readiness.
-    2. Depth: Use international-style depth for the content breakdown (step-by-step teaching, more examples, better breakdowns) to ensure true understanding.
-    3. Pedagogical Framework: Apply Bloom's Taxonomy. Ensure the progression moves from "Remembering" to "Creating".
+    CRITICAL: You MUST use a "Hybrid Approach" to ensure the course is both exam-relevant and deeply educational, providing a world-class academic experience:
+    1. Structure: Strictly follow the NUC (National Universities Commission) curriculum outline (weeks, topics order, what to cover) to ensure 100% exam readiness and regulatory compliance.
+    2. Depth: Use international-style depth (Ivy League standards) for the content breakdown. Provide step-by-step teaching methodologies, advanced conceptual mappings, and comprehensive thematic breakdowns to ensures true world-class mastery.
+    3. Pedagogical Framework: Apply Bloom's Taxonomy. Ensure the progression moves from "Remembering" to "Creating", with clear learning pathways.
+    4. General Academic Context: Dynamically adapt the curriculum to reflect current global best practices in ${department || 'this discipline'}.
     
     Target: ${courseName}
     Description: ${courseDescription}
@@ -495,31 +496,37 @@ export async function generateLessonContent(
   sourceContext?: string
 ): Promise<{ title: string, content: string, metadata: PipelineMetadata }> {
   const lessonPrompt = `
-    You are an expert university professor. Generate a detailed, exhaustive lecture note for ONE specific lesson.
+    You are an expert university professor. Your task is to write an extremely comprehensive, long-form academic lesson for the topic "${lessonTitle}" which is part of the module "${moduleTitle}" in the university course "${courseName}".
     
-    CRITICAL: You MUST use the "Hybrid Approach" to ensure the content is deeply educational:
-    1. Structure: Follow the NUC curriculum outline for the topic.
-    2. Depth: Use international-style depth (step-by-step teaching, more examples, better breakdowns) to ensure true understanding.
+    CRITICAL: You MUST use the "Hybrid Approach" to ensure the content is deeply educational, blending General Academic excellence with local curriculum standards:
+    1. Structure: Follow the NUC (National Universities Commission) curriculum outline for the topic to ensure absolute exam relevance.
+    2. Depth: Use international-style depth (MIT/Stanford/Cambridge level) with step-by-step teaching, complex derivations, and extensive breakdowns to ensure true mastery.
     3. Pedagogical Framework: Apply Bloom's Taxonomy. Every lesson MUST include:
        - Learning Objectives (What will the student know?)
-       - Key Vocabulary (Definitions of core terms)
-       - Active Learning (3 "Quick Check" questions at the end of the lesson).
+       - An engaging, high-impact introduction that sets the stage.
+       - Key Vocabulary (In-depth definitions of core terms).
+       - Detailed Lesson Body (Break down key concepts with deep, thoughtful explanations).
+       - Active Learning: Conclude with a thorough summary and 3 high-quality "Quick Check" review questions.
+    
+    [IF PROVIDED] RELEVANT COURSE CONTEXT/OUTLINE TO FOLLOW: 
+    ${sourceContext || 'General academic standards for this level.'}
     
     Course: ${courseName}
     Module: ${moduleTitle}
     Lesson: ${lessonTitle}
     Tone: ${tone}
     Depth: ${depth}
-    ${level ? `Level: ${level}` : ''}
+    Level: ${level || 'University Undergraduate'}
     ${department ? `Department: ${department}` : ''}
-    ${sourceContext ? `Source Context (Prioritize this information):\n${sourceContext}` : ''}
     
     Requirements:
-    1. Write a CONCISE, high-impact, university-level lecture note in Markdown format.
-    2. Target length: 800-1200 words. Focus on core concepts, key derivations, and practical examples.
-    3. Use a professional, academic tone suitable for a top-tier university, but adapted to the requested Tone: ${tone}.
-    4. Ensure all concepts are explained clearly and logically, using step-by-step breakdowns and multiple examples to ensure deep understanding.
-    5. Use LaTeX for ALL mathematical equations, variables, and scientific notation.
+    1. Write in DETAILED Markdown format. Do NOT hold back on length; make it as thorough as a university lecture transcript.
+    2. Target length: 1200-2000+ words. Focus on core concepts, deep-dive derivations, case studies, and practical examples.
+    3. Use a professional, academic tone suitable for a top-tier university (e.g., Ivy League or equivalent), but adapted to the requested Tone: ${tone}.
+    4. Ensure all concepts are explained clearly and logically, using step-by-step breakdowns and multiple real-world examples to ensure deep understanding.
+    5. Provide examples, case studies, or mathematical formulas (using LaTeX).
+    6. Use LaTeX for ALL mathematical equations, variables, and scientific notation.
+    
     CRITICAL LATEX INSTRUCTIONS:
     1. You MUST use LaTeX for ALL mathematical formulas, variables, and equations.
     2. Use $ ... $ for inline math and $$ ... $$ for block math.
@@ -528,9 +535,10 @@ export async function generateLessonContent(
     4. Do NOT use \\label{...} as it is not supported. Use \\tag{...} for equation numbering if needed.
     5. Ensure all LaTeX environments (like align, matrix, etc.) are wrapped in $$ ... $$ delimiters.
     6. Double check that every backslash in your LaTeX is escaped with another backslash (e.g., \\\\alpha, \\\\beta).
+    
     6. CRITICAL: Output ONLY valid JSON matching this structure:
     {
-      "content": "The raw markdown content including Learning Objectives, Key Vocabulary, Body, and Quick Check questions...",
+      "content": "The raw markdown content including Introduction, Learning Objectives, Key Vocabulary, Body, Summary, and Quick Check questions...",
       "metadata": {
         "hasMath": boolean,
         "hasCode": boolean
@@ -538,9 +546,8 @@ export async function generateLessonContent(
     }
     CRITICAL: Do NOT wrap the JSON in markdown blocks. Output raw JSON only.
     CRITICAL: Ensure all double quotes inside the "content" string are properly escaped (e.g., \\"word\\").
-    7. CRITICAL: Ensure the lesson is COMPLETE and does not cut off abruptly. Provide a clear conclusion or summary at the end.
-    8. CRITICAL: The content must be academically rigorous and align with the Hybrid Approach (NUC structure + International depth).
-    9. CRITICAL: Calibrate the depth and complexity to the student's level (${level || 'University Level'}) and requested Depth: ${depth}.
+    7. CRITICAL: Ensure the lesson is COMPLETE and does not cut off abruptly.
+    8. CRITICAL: Calibrate the depth and complexity to the student's level (${level || 'University Level'}) and requested Depth: ${depth}.
   `;
 
   const result = await callGenerateAPI(lessonPrompt, 'lesson', provider);
@@ -562,9 +569,9 @@ export async function generateModuleQuiz(
   const quizPrompt = `
     Generate a university-level quiz for this module.
     
-    CRITICAL: You MUST use the "Hybrid Approach" to ensure the quiz is both exam-relevant and deeply educational:
-    1. Relevance: Questions must align with NUC curriculum standards to ensure exam readiness.
-    2. Depth: Questions must be challenging and conceptual, requiring deep understanding rather than rote memorization.
+    CRITICAL: You MUST use the "Hybrid Approach" to ensure the quiz is both exam-relevant and deeply educational, testing for world-class competency:
+    1. Relevance: Questions must strictly align with NUC (National Universities Commission) curriculum standards to ensure absolute exam readiness.
+    2. Depth: Questions must be challenging, high-order, and conceptual (level 4-6 on Bloom's Taxonomy), requiring deep analytical thinking rather than rote memorization. Incorporate "General Academic" best practices for standardized testing at top-tier universities.
     
     Course: ${courseName}
     Module: ${moduleTitle}
