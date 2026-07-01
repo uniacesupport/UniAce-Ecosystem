@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, FileText, Plus, CheckCircle, Loader2, BookOpen, AlertCircle, Settings, Trash2, Users, Activity, Database, Search, Zap, Trophy, Star, Bot, Shield, BarChart3, Globe, Edit2, RefreshCw, Clock, FileQuestion, MessageSquare, ArrowLeft, HeartPulse, X, ArrowRight, Layers, Key, Cpu, Share2, Download, Filter, Send, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Upload, FileText, Plus, CheckCircle, Loader2, BookOpen, AlertCircle, Settings, Trash2, Users, Activity, Database, Search, Zap, Trophy, Star, Bot, Shield, BarChart3, Globe, Edit2, RefreshCw, Clock, FileQuestion, MessageSquare, ArrowLeft, HeartPulse, X, ArrowRight, Layers, Key, Cpu, Share2, Download, Filter, Send, ChevronLeft, ChevronRight, Mic } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -166,7 +166,9 @@ export default function AdminDashboard() {
     flashcard: 'huggingface',
     rag: 'openrouter_free',
     vision: 'gemini_direct',
-    past_questions: 'gemini_direct'
+    past_questions: 'gemini_direct',
+    voice_tutor: 'gemini_direct',
+    voice_tutor_model: 'gemini-3.1-flash-live-preview'
   });
   const [logs, setLogs] = useState<SystemLog[]>([]);
   const [isLoadingLogs, setIsLoadingLogs] = useState(false);
@@ -4337,47 +4339,85 @@ export default function AdminDashboard() {
                   { id: 'flashcard', label: 'Flashcard Generation', icon: FileText, recommended: 'huggingface', desc: 'Fast, repetitive text extraction for study aids.' },
                   { id: 'rag', label: 'Knowledge Retrieval', icon: Database, recommended: 'openrouter_free', desc: 'Searching and summarizing internal documents.' },
                   { id: 'vision', label: 'Vision Processing', icon: Search, recommended: 'gemini_direct', desc: 'Analyzing images and handwritten notes.' },
-                  { id: 'past_questions', label: 'Past Questions Extraction', icon: FileText, recommended: 'gemini_direct', desc: 'Extracting questions from uploaded PDFs.' }
+                  { id: 'past_questions', label: 'Past Questions Extraction', icon: FileText, recommended: 'gemini_direct', desc: 'Extracting questions from uploaded PDFs.' },
+                  { id: 'voice_tutor', label: 'Voice Tutor WebSockets', icon: Mic, recommended: 'gemini_direct', desc: 'Real-time audio-to-audio conversational study sessions. Locked to Gemini Direct due to proprietary Google Multimodal Live WebSockets.' }
                 ].map((task) => (
-                  <div key={task.id} className="flex flex-col md:flex-row md:items-center justify-between p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 gap-4">
-                    <div className="flex items-center gap-4">
-                      <div className="p-3 rounded-xl bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 shadow-sm">
-                        <task.icon size={20} />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h4 className="font-bold text-slate-900 dark:text-white">{task.label}</h4>
-                          <span className="px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 text-[10px] font-bold uppercase tracking-wider">
-                            Recommended: {task.recommended}
-                          </span>
+                  <div key={task.id} className="flex flex-col p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 gap-3">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                      <div className="flex items-center gap-4">
+                        <div className="p-3 rounded-xl bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 shadow-sm">
+                          <task.icon size={20} />
                         </div>
-                        <p className="text-xs text-slate-500">{task.desc}</p>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h4 className="font-bold text-slate-900 dark:text-white">{task.label}</h4>
+                            <span className="px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 text-[10px] font-bold uppercase tracking-wider">
+                              Recommended: {task.recommended}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-500 mt-0.5">{task.desc}</p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3 flex-wrap">
+                        {task.id !== 'voice_tutor' && (
+                          <button
+                            onClick={() => updateRoutingConfig(task.id, task.recommended)}
+                            className="px-3 py-1.5 rounded-lg text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors border border-indigo-200 dark:border-indigo-800"
+                          >
+                            Use Recommended
+                          </button>
+                        )}
+                        <div className="flex items-center gap-1 bg-white dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700 overflow-x-auto scrollbar-hide max-w-full">
+                          {(task.id === 'voice_tutor'
+                            ? ['gemini_direct']
+                            : ['gemini_direct', 'groq', 'mistral_direct', 'openrouter_free', 'cohere', 'huggingface']
+                          ).map((provider) => (
+                            <button
+                              key={provider}
+                              onClick={() => updateRoutingConfig(task.id, provider)}
+                              className={`px-3 py-1.5 rounded-lg text-[10px] font-bold capitalize transition-all whitespace-nowrap ${
+                                routingConfig[task.id as keyof typeof routingConfig] === provider
+                                  ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-sm'
+                                  : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700'
+                              }`}
+                            >
+                              {provider.replace('_', ' ')}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-3">
-                      <button
-                        onClick={() => updateRoutingConfig(task.id, task.recommended)}
-                        className="px-3 py-1.5 rounded-lg text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors border border-indigo-200 dark:border-indigo-800"
-                      >
-                        Use Recommended
-                      </button>
-                      <div className="flex items-center gap-1 bg-white dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700 overflow-x-auto scrollbar-hide max-w-full">
-                        {['gemini_direct', 'groq', 'mistral_direct', 'openrouter_free', 'cohere', 'huggingface'].map((provider) => (
+                    {/* Conditional sub-configuration for Gemini Voice Tutor Model selection */}
+                    {task.id === 'voice_tutor' && routingConfig[task.id as keyof typeof routingConfig] === 'gemini_direct' && (
+                      <div className="mt-1 flex flex-wrap items-center gap-2 border-t border-slate-200/60 dark:border-slate-700/60 pt-3">
+                        <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mr-1">
+                          Active Live Model:
+                        </span>
+                        {[
+                          'gemini-3.1-flash-live-preview',
+                          'gemini-2.0-flash-exp',
+                          'gemini-2.5-flash',
+                          'gemini-2.5-pro'
+                        ].map((model) => (
                           <button
-                            key={provider}
-                            onClick={() => updateRoutingConfig(task.id, provider)}
-                            className={`px-3 py-1.5 rounded-lg text-[10px] font-bold capitalize transition-all whitespace-nowrap ${
-                              routingConfig[task.id as keyof typeof routingConfig] === provider
-                                ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-sm'
-                                : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700'
+                            key={model}
+                            onClick={() => updateRoutingConfig('voice_tutor_model', model)}
+                            className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold border transition-all ${
+                              (routingConfig.voice_tutor_model || 'gemini-3.1-flash-live-preview') === model
+                                ? 'bg-amber-500/10 border-amber-500 text-amber-700 dark:text-amber-400 font-bold shadow-xs'
+                                : 'border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
                             }`}
                           >
-                            {provider.replace('_', ' ')}
+                            {model}
                           </button>
                         ))}
+                        <span className="text-[10px] text-slate-400 italic ml-auto">
+                          (Requires Google bidirectional streaming support)
+                        </span>
                       </div>
-                    </div>
+                    )}
                   </div>
                 ))}
               </div>

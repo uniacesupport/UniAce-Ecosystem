@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Mic, MicOff, Loader2, Volume2, Wifi, WifiOff } from 'lucide-react';
+import { X, Mic, Loader2, Volume2 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 interface VoiceTutorProps {
   isOpen: boolean;
@@ -10,202 +11,187 @@ interface VoiceTutorProps {
 }
 
 export default function VoiceTutor({ isOpen, onClose, pdfContent, systemInstruction }: VoiceTutorProps) {
-  const [isConnecting, setIsConnecting] = useState(false);
-  const [isConnected, setIsConnected] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
+  const { user } = useAuth();
+  const [isListening, setIsListening] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [aiResponse, setAiResponse] = useState('');
+  const [statusText, setStatusText] = useState('Tap microphone to speak');
   
-  const wsRef = useRef<WebSocket | null>(null);
-  const inputAudioCtxRef = useRef<AudioContext | null>(null);
-  const outputAudioCtxRef = useRef<AudioContext | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const nextStartTimeRef = useRef<number>(0);
-
-  // PCM to Base64 utility
-  const pcmToBase64 = (pcmData: Float32Array) => {
-    const buffer = new ArrayBuffer(pcmData.length * 2);
-    const view = new DataView(buffer);
-    for (let i = 0; i < pcmData.length; i++) {
-      let s = Math.max(-1, Math.min(1, pcmData[i]));
-      view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
-    }
-    let binary = '';
-    const bytes = new Uint8Array(buffer);
-    for (let i = 0; i < bytes.byteLength; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    return window.btoa(binary);
-  };
-
-  const playAudioChunk = (base64Audio: string) => {
-    const ctx = outputAudioCtxRef.current;
-    if (!ctx) return;
-    
-    // Decode base64 to array buffer
-    const binary = window.atob(base64Audio);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) {
-      bytes[i] = binary.charCodeAt(i);
-    }
-    
-    // Gemini Live API returns 24kHz PCM 16-bit
-    const audioData = new Int16Array(bytes.buffer);
-    const float32Data = new Float32Array(audioData.length);
-    for (let i = 0; i < audioData.length; i++) {
-      float32Data[i] = audioData[i] / 32768.0;
-    }
-    
-    const buffer = ctx.createBuffer(1, float32Data.length, 24000);
-    buffer.getChannelData(0).set(float32Data);
-    
-    const source = ctx.createBufferSource();
-    source.buffer = buffer;
-    source.connect(ctx.destination);
-    
-    // Gapless playback scheduling
-    const currentTime = ctx.currentTime;
-    if (nextStartTimeRef.current < currentTime) {
-      nextStartTimeRef.current = currentTime + 0.05; // slight buffer
-    }
-    
-    source.start(nextStartTimeRef.current);
-    
-    setIsSpeaking(true);
-    source.onended = () => {
-      setTimeout(() => setIsSpeaking(false), 500); 
-    };
-    
-    nextStartTimeRef.current += buffer.duration;
-  };
-
-  const stopAudioOutput = () => {
-    if (outputAudioCtxRef.current) {
-      outputAudioCtxRef.current.suspend();
-      setTimeout(() => {
-        if (outputAudioCtxRef.current) {
-          outputAudioCtxRef.current.resume();
-          nextStartTimeRef.current = outputAudioCtxRef.current.currentTime;
-        }
-      }, 50);
-    }
-  };
+  const recognitionRef = useRef<any>(null);
+  const synthesisRef = useRef<SpeechSynthesis | null>(null);
 
   useEffect(() => {
-    if (isOpen) {
-      startConnection();
-    } else {
-      cleanup();
-    }
-    return cleanup;
-  }, [isOpen]);
+    // Initialize Web Speech APIs
+    if (typeof window !== 'undefined') {
+      synthesisRef.current = window.speechSynthesis;
 
-  const startConnection = async () => {
-    if (wsRef.current) return;
-    setIsConnecting(true);
-    setAiResponse('Connecting to AI Tutor...');
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        const recognition = new SpeechRecognition();
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.lang = 'en-US';
+
+        recognition.onstart = () => {
+          setIsListening(true);
+          setStatusText('Listening...');
+        };
+
+        recognition.onresult = async (event: any) => {
+          setIsListening(false);
+          const transcript = event.results[0][0].transcript;
+          setStatusText(`You: "${transcript}"`);
+          await processVoiceInput(transcript);
+        };
+
+        recognition.onerror = (event: any) => {
+          setIsListening(false);
+          if (event.error !== 'aborted') {
+            setStatusText(`Error: ${event.error}. Tap mic to try again.`);
+          }
+        };
+
+        recognition.onend = () => {
+          setIsListening(false);
+        };
+
+        recognitionRef.current = recognition;
+      } else {
+        setStatusText('Speech recognition is not supported in this browser.');
+      }
+    }
+  }, [user, pdfContent, systemInstruction]);
+
+  const processVoiceInput = async (transcript: string) => {
+    if (!user) {
+      setStatusText('Please log in to use the tutor.');
+      return;
+    }
+
+    setIsProcessing(true);
+    setStatusText('Thinking...');
 
     try {
-      const userStr = localStorage.getItem('user');
-      const user = userStr ? JSON.parse(userStr) : null;
-      const token = user?.uid || 'anonymous';
-      
-      let contextStr = systemInstruction || 'You are UniAce voice tutor.';
+      const token = await user.getIdToken();
+      let contextStr = systemInstruction || 'You are a helpful, encouraging voice tutor. Keep your responses short, conversational, and easy to understand out loud (no markdown, bolding, or lists).';
       if (pdfContent) {
          contextStr += `\n\nStudy Context:\n${pdfContent.substring(0, 1500)}`;
       }
+
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          message: transcript,
+          history: [], // We could track history here if needed
+          context: contextStr,
+          complexity: 'standard',
+          personality: 'encouraging'
+        })
+      });
+
+      const responseText = await response.text();
+      let aiText = '';
       
-      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${wsProtocol}//${window.location.host}/api/live?token=${encodeURIComponent(token)}&systemInstruction=${encodeURIComponent(contextStr)}`;
-      
-      const ws = new WebSocket(wsUrl);
-      wsRef.current = ws;
-
-      ws.onopen = async () => {
-        setIsConnected(true);
-        setIsConnecting(false);
-        setAiResponse('Connected. Start speaking!');
+      try {
+        // The endpoint returns Server-Sent Events (SSE) by default for streaming
+        // Let's just strip out the SSE "data: " wrappers to get the raw text
+        const lines = responseText.split('\n');
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const dataStr = line.substring(6).trim();
+            if (dataStr === '[DONE]') continue;
+            try {
+              const data = JSON.parse(dataStr);
+              if (data.reply) aiText += data.reply;
+              if (data.chunk) aiText += data.chunk;
+            } catch (e) {
+              // Sometimes it might not be JSON if it's raw text chunk
+            }
+          }
+        }
         
-        // Setup audio contexts
-        inputAudioCtxRef.current = new window.AudioContext({ sampleRate: 16000 });
-        outputAudioCtxRef.current = new window.AudioContext({ sampleRate: 24000 });
-        nextStartTimeRef.current = outputAudioCtxRef.current.currentTime;
-        
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          streamRef.current = stream;
-          
-          const source = inputAudioCtxRef.current.createMediaStreamSource(stream);
-          const processor = inputAudioCtxRef.current.createScriptProcessor(4096, 1, 1);
-          source.connect(processor);
-          processor.connect(inputAudioCtxRef.current.destination);
-          
-          processor.onaudioprocess = (e) => {
-            if (isMuted || ws.readyState !== WebSocket.OPEN) return;
-            const base64 = pcmToBase64(e.inputBuffer.getChannelData(0));
-            ws.send(JSON.stringify({ audio: base64 }));
-          };
-        } catch (e) {
-          console.error("Mic error:", e);
-          setAiResponse('Microphone access denied or error.');
+        // If it wasn't SSE, maybe it was just a plain JSON response
+        if (!aiText) {
+           const data = JSON.parse(responseText);
+           aiText = data.reply || data.text || "I'm not sure what to say.";
         }
-      };
+      } catch (e) {
+         // Fallback if parsing fails
+         aiText = "Sorry, I had trouble processing that.";
+      }
 
-      ws.onmessage = (event) => {
-        const msg = JSON.parse(event.data);
-        if (msg.audio) {
-          playAudioChunk(msg.audio);
-        }
-        if (msg.interrupted) {
-          stopAudioOutput();
-          setIsSpeaking(false);
-          setAiResponse('Interrupted. Listening...');
-        }
-        if (msg.error) {
-           setAiResponse('Error: ' + msg.error);
-        }
-      };
+      setStatusText(`Tutor: "${aiText}"`);
+      speakText(aiText);
 
-      ws.onclose = () => {
-        setIsConnected(false);
-        setAiResponse('Disconnected.');
-      };
-
-    } catch (e) {
-      console.error(e);
-      setAiResponse('Failed to connect.');
-      setIsConnecting(false);
+    } catch (error) {
+      console.error('Error processing voice:', error);
+      setStatusText('Failed to reach the AI. Try again.');
+      setIsProcessing(false);
     }
   };
 
-  const cleanup = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(t => t.stop());
-      streamRef.current = null;
+  const speakText = (text: string) => {
+    if (!synthesisRef.current) return;
+    
+    // Stop any ongoing speech
+    synthesisRef.current.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    
+    // Try to find a good English voice
+    const voices = synthesisRef.current.getVoices();
+    const preferredVoice = voices.find(v => v.name.includes('Google US English') || v.name.includes('Samantha') || v.lang === 'en-US');
+    if (preferredVoice) {
+      utterance.voice = preferredVoice;
     }
-    if (inputAudioCtxRef.current) {
-      inputAudioCtxRef.current.close();
-      inputAudioCtxRef.current = null;
-    }
-    if (outputAudioCtxRef.current) {
-      outputAudioCtxRef.current.close();
-      outputAudioCtxRef.current = null;
-    }
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
-    }
-    setIsConnected(false);
-    setIsConnecting(false);
-    setIsSpeaking(false);
+    
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+
+    utterance.onstart = () => {
+      setIsProcessing(false);
+      setIsSpeaking(true);
+    };
+
+    utterance.onend = () => {
+      setIsSpeaking(false);
+      setStatusText('Tap microphone to speak');
+    };
+
+    utterance.onerror = () => {
+      setIsSpeaking(false);
+      setIsProcessing(false);
+      setStatusText('Failed to play audio.');
+    };
+
+    synthesisRef.current.speak(utterance);
   };
 
-  const toggleMute = () => {
-    setIsMuted(!isMuted);
+  const toggleListening = () => {
+    if (!recognitionRef.current) return;
+    
+    if (isListening) {
+      recognitionRef.current.stop();
+    } else {
+      // If the tutor is speaking, stop it so we can listen
+      if (synthesisRef.current && isSpeaking) {
+        synthesisRef.current.cancel();
+      }
+      try {
+        recognitionRef.current.start();
+      } catch (e) {
+        console.error("Could not start recognition", e);
+      }
+    }
   };
 
   const handleClose = () => {
-    cleanup();
+    if (recognitionRef.current) recognitionRef.current.stop();
+    if (synthesisRef.current) synthesisRef.current.cancel();
     onClose();
   };
 
@@ -222,11 +208,8 @@ export default function VoiceTutor({ isOpen, onClose, pdfContent, systemInstruct
             className="bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-3xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col relative"
           >
             <div className="flex items-center justify-between p-5 border-b border-slate-100 dark:border-zinc-800/50">
-              <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-2">
-                <div className="bg-emerald-100 dark:bg-emerald-900/30 p-1.5 rounded-lg">
-                  {isConnected ? <Wifi className="w-5 h-5 text-emerald-600 dark:text-emerald-400" /> : <WifiOff className="w-5 h-5 text-slate-400" />}
-                </div>
-                Live Voice Tutor
+              <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-200">
+                Voice Tutor
               </h2>
               <button
                 onClick={handleClose}
@@ -237,31 +220,28 @@ export default function VoiceTutor({ isOpen, onClose, pdfContent, systemInstruct
             </div>
             
             <div className="p-8 flex flex-col items-center justify-center min-h-[350px] relative">
-              {/* Status Text */}
-              <div className="absolute top-6 left-0 right-0 text-center">
+              <div className="absolute top-6 left-0 right-0 text-center px-4">
                 <p className="text-sm font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                  {isConnecting ? 'Connecting...' : !isConnected ? 'Disconnected' : isSpeaking ? 'Tutor is speaking...' : isMuted ? 'Muted' : 'Listening...'}
+                  {isListening ? 'Listening...' : isProcessing ? 'Thinking...' : isSpeaking ? 'Speaking...' : 'Ready'}
                 </p>
               </div>
 
-              {/* Main Interaction Button */}
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                onClick={toggleMute}
-                disabled={!isConnected}
+                onClick={toggleListening}
+                disabled={isProcessing}
                 className={`relative w-32 h-32 rounded-full flex items-center justify-center transition-all duration-500 ${
-                  !isConnected
-                    ? 'bg-slate-200 dark:bg-zinc-800'
-                    : isMuted
-                    ? 'bg-rose-500 shadow-[0_0_40px_rgba(244,63,94,0.4)]'
+                  isProcessing
+                    ? 'bg-amber-500 shadow-[0_0_40px_rgba(245,158,11,0.4)]'
                     : isSpeaking
                     ? 'bg-blue-500 shadow-[0_0_40px_rgba(59,130,246,0.4)]'
+                    : isListening
+                    ? 'bg-rose-500 shadow-[0_0_40px_rgba(244,63,94,0.4)]'
                     : 'bg-emerald-500 shadow-[0_0_40px_rgba(16,185,129,0.4)]'
                 }`}
               >
-                {/* Ripple Effect */}
-                {isConnected && !isMuted && (
+                {(isListening || isSpeaking) && (
                   <>
                     <motion.div
                       animate={{ scale: [1, 1.5, 1], opacity: [0.5, 0, 0.5] }}
@@ -275,31 +255,26 @@ export default function VoiceTutor({ isOpen, onClose, pdfContent, systemInstruct
                     />
                   </>
                 )}
-
-                {isConnecting ? (
+                
+                {isProcessing ? (
                   <Loader2 className="w-12 h-12 text-white animate-spin" />
-                ) : !isConnected ? (
-                  <WifiOff className="w-12 h-12 text-slate-400" />
                 ) : isSpeaking ? (
                   <Volume2 className="w-12 h-12 text-white" />
-                ) : isMuted ? (
-                  <MicOff className="w-12 h-12 text-white" />
                 ) : (
                   <Mic className="w-12 h-12 text-white" />
                 )}
               </motion.button>
 
-              {/* Transcript / Response Area */}
-              <div className="mt-10 w-full text-center h-24 flex items-center justify-center">
+              <div className="mt-10 w-full text-center h-24 flex items-center justify-center px-4 overflow-y-auto">
                 <AnimatePresence mode="wait">
                   <motion.p 
-                    key={aiResponse}
+                    key={statusText}
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -10 }}
-                    className="text-slate-600 dark:text-slate-400 text-base"
+                    className="text-slate-600 dark:text-slate-400 text-sm md:text-base leading-relaxed"
                   >
-                    {aiResponse}
+                    {statusText}
                   </motion.p>
                 </AnimatePresence>
               </div>
@@ -310,4 +285,3 @@ export default function VoiceTutor({ isOpen, onClose, pdfContent, systemInstruct
     </AnimatePresence>
   );
 }
-

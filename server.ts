@@ -1394,23 +1394,56 @@ app.post('/api/chat', verifyAuth, async (req, res) => {
     const groqBreaker = globalGroqBreaker;
     const cohereBreaker = globalCohereBreaker;
     const huggingFaceBreaker = globalHuggingFaceBreaker;
+    const geminiDirectBreaker = globalGeminiDirectBreaker;
+
+    // Fetch dynamic task routing config for chat
+    let routingConfig: any = { chat: 'groq' };
+    try {
+      if (appAdmin) {
+        const routingDoc = await appAdmin.firestore().collection('system_config').doc('routing').get();
+        if (routingDoc.exists) {
+          routingConfig = routingDoc.data() || { chat: 'groq' };
+        }
+      }
+    } catch (err) {
+      console.warn("Failed to fetch routing config for POST chat route:", err);
+    }
 
     try {
-      // Tiered Strategy:
-      // 1. Groq (Speed/Turbo) - Best for quick chat
-      // 2. Mistral (Balance/Creative) - Best for reasoning
-      // 3. Gemini (Power/Heavy) - Best for large context
-      
+      const preferredProviderName = routingConfig.chat || 'groq';
       const providers = [];
-      
+
+      const providerMap: Record<string, any> = {
+        gemini_direct: geminiDirectBreaker,
+        mistral_direct: mistralBreaker,
+        groq: groqBreaker,
+        cohere: cohereBreaker,
+        huggingface: huggingFaceBreaker,
+        openrouter_free: openRouterFreeBreaker
+      };
+
       if (image) {
-        // Force Gemini for multimodal tasks
-        if (globalGeminiDirectBreaker) providers.push(globalGeminiDirectBreaker);
-        if (openRouterFreeBreaker) providers.push(openRouterFreeBreaker);
+        // Force vision-supporting providers for multimodal tasks
+        const visionSupportingProviders = ['gemini_direct', 'openrouter_free'];
+        if (visionSupportingProviders.includes(preferredProviderName) && providerMap[preferredProviderName]) {
+          providers.push(providerMap[preferredProviderName]);
+        }
+        for (const pName of visionSupportingProviders) {
+          if (pName !== preferredProviderName && providerMap[pName]) {
+            providers.push(providerMap[pName]);
+          }
+        }
       } else {
-        // Only use Groq for AI chatbot and cohere as fallback
-        if (groqBreaker) providers.push(groqBreaker);
-        if (cohereBreaker) providers.push(cohereBreaker);
+        // Regular chat uses the preferred provider, with fallbacks
+        if (providerMap[preferredProviderName]) {
+          providers.push(providerMap[preferredProviderName]);
+        }
+        const fallbackOrder = ['groq', 'mistral_direct', 'gemini_direct', 'openrouter_free', 'cohere', 'huggingface'];
+        for (const pName of fallbackOrder) {
+          if (pName !== preferredProviderName && providerMap[pName]) {
+            providers.push(providerMap[pName]);
+          }
+        }
       }
 
       let lastError;
@@ -4139,8 +4172,8 @@ async function startServer() {
     });
   });
 
-  // --- WebSocket Server ---
-  const wss = new WebSocketServer({ server, path: '/api/chat' });
+  // --- WebSocket Servers ---
+  const wss = new WebSocketServer({ noServer: true });
 
   wss.on('connection', async (ws: WebSocket, req) => {
     console.log('New WebSocket connection attempt');
@@ -4452,28 +4485,58 @@ async function startServer() {
 
         const fastMode = fastModeOverride ?? learningProfile?.fastMode ?? false;
 
+        // Fetch dynamic task routing config for chat
+        let routingConfig: any = { chat: 'groq' };
+        try {
+          if (app) {
+            const routingDoc = await app.firestore().collection('system_config').doc('routing').get();
+            if (routingDoc.exists) {
+              routingConfig = routingDoc.data() || { chat: 'groq' };
+            }
+          }
+        } catch (err) {
+          console.warn("Failed to fetch routing config for WebSocket chat:", err);
+        }
+
+        const preferredProviderName = routingConfig.chat || 'groq';
         const providers = [];
+
+        const providerMap: Record<string, any> = {
+          gemini_direct: geminiDirectBreaker,
+          mistral_direct: mistralDirectBreaker,
+          groq: groqBreaker,
+          cohere: cohereBreaker,
+          huggingface: huggingFaceBreaker,
+          openrouter_free: openRouterFreeBreaker
+        };
+
         if (image) {
-          if (geminiDirectBreaker) providers.push(geminiDirectBreaker);
-          if (openRouterFreeBreaker) providers.push(openRouterFreeBreaker);
+          // Multimodal tasks require vision support (Gemini Direct or OpenRouter Free)
+          const visionSupportingProviders = ['gemini_direct', 'openrouter_free'];
+          if (visionSupportingProviders.includes(preferredProviderName) && providerMap[preferredProviderName]) {
+            providers.push(providerMap[preferredProviderName]);
+          }
+          for (const pName of visionSupportingProviders) {
+            if (pName !== preferredProviderName && providerMap[pName]) {
+              providers.push(providerMap[pName]);
+            }
+          }
         } else if (fastMode) {
+          // Fast Mode overrides general preference with Groq or lightweight providers
           if (groqBreaker) providers.push(groqBreaker);
           if (mistralDirectBreaker) providers.push(mistralDirectBreaker);
           if (geminiDirectBreaker) providers.push(geminiDirectBreaker);
-        } else if (complexity === 'high') {
-          if (mistralDirectBreaker) providers.push(mistralDirectBreaker);
-          if (geminiDirectBreaker) providers.push(geminiDirectBreaker);
-          if (openRouterFreeBreaker) providers.push(openRouterFreeBreaker);
-          if (groqBreaker) providers.push(groqBreaker);
-          if (cohereBreaker) providers.push(cohereBreaker);
-          if (huggingFaceBreaker) providers.push(huggingFaceBreaker);
         } else {
-          if (groqBreaker) providers.push(groqBreaker);
-          if (mistralDirectBreaker) providers.push(mistralDirectBreaker);
-          if (geminiDirectBreaker) providers.push(geminiDirectBreaker);
-          if (openRouterFreeBreaker) providers.push(openRouterFreeBreaker);
-          if (cohereBreaker) providers.push(cohereBreaker);
-          if (huggingFaceBreaker) providers.push(huggingFaceBreaker);
+          // Regular chat uses the preferred provider, with fallbacks
+          if (providerMap[preferredProviderName]) {
+            providers.push(providerMap[preferredProviderName]);
+          }
+          const fallbackOrder = ['groq', 'mistral_direct', 'gemini_direct', 'openrouter_free', 'cohere', 'huggingface'];
+          for (const pName of fallbackOrder) {
+            if (pName !== preferredProviderName && providerMap[pName]) {
+              providers.push(providerMap[pName]);
+            }
+          }
         }
 
         const formattedMessages = [
@@ -4530,7 +4593,9 @@ async function startServer() {
   });
 
   // --- Live API WebSocket Server ---
-  const liveWss = new WebSocketServer({ server, path: '/api/live' });
+  const liveWss = new WebSocketServer({ noServer: true });
+
+  liveWss.on('error', (err) => console.error('LiveWSS Error:', err));
 
   liveWss.on('connection', async (clientWs: WebSocket, req) => {
     console.log('New Live API WebSocket connection');
@@ -4538,7 +4603,6 @@ async function startServer() {
     // Extract setup data from query string
     const url = new URL(req.url || '', `http://${req.headers.host}`);
     const token = url.searchParams.get('token');
-    const systemInstruction = url.searchParams.get('systemInstruction') || "You are a helpful assistant.";
 
     if (!token) {
       console.log('Live API WebSocket connection rejected: No token');
@@ -4546,52 +4610,122 @@ async function startServer() {
       return;
     }
 
-    try {
-      // Setup GenAI
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey) throw new Error("Missing GEMINI_API_KEY");
-      const ai = new GoogleGenAI({ apiKey });
+    let sessionPromise: Promise<any> | null = null;
 
-      const session = await ai.live.connect({
-        model: "gemini-3.1-flash-live-preview",
-        config: {
-          responseModalities: ["AUDIO"],
-          speechConfig: {
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } },
-          },
-          systemInstruction: systemInstruction,
-        },
-        callbacks: {
-          onmessage: (message: any) => {
-            const audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
-            if (audio) clientWs.send(JSON.stringify({ audio }));
-            if (message.serverContent?.interrupted)
-              clientWs.send(JSON.stringify({ interrupted: true }));
-          },
-        },
-      });
+    clientWs.on("message", async (data) => {
+      try {
+        const payload = JSON.parse(data.toString());
+        
+        // Handle setup message
+        if (payload.setup && !sessionPromise) {
+          let voiceModel = "gemini-3.1-flash-live-preview";
+          try {
+            const appAdmin = getAdminApp();
+            if (appAdmin) {
+              const routingDoc = await appAdmin.firestore().collection('system_config').doc('routing').get();
+              if (routingDoc.exists) {
+                const config = routingDoc.data();
+                if (config && config.voice_tutor_model) {
+                  voiceModel = config.voice_tutor_model;
+                  console.log(`[VoiceTutor] Dynamically routing to configured model: ${voiceModel}`);
+                }
+              }
+            }
+          } catch (routingErr) {
+            console.error("Error fetching dynamic voice model config, falling back to default:", routingErr);
+          }
 
-      clientWs.on("message", (data) => {
-        try {
-          const { audio } = JSON.parse(data.toString());
-          if (audio) {
+          const apiKey = process.env.GEMINI_API_KEY;
+          if (!apiKey) throw new Error("Missing GEMINI_API_KEY");
+          const ai = new GoogleGenAI({ apiKey });
+
+          sessionPromise = ai.live.connect({
+            model: voiceModel,
+            config: {
+              responseModalities: ["AUDIO"],
+              speechConfig: {
+                voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } },
+              },
+              systemInstruction: payload.setup.systemInstruction || "You are a helpful assistant.",
+            },
+            callbacks: {
+              onmessage: (message: any) => {
+                const audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
+                if (audio && clientWs.readyState === WebSocket.OPEN) {
+                  clientWs.send(JSON.stringify({ audio }));
+                }
+                if (message.serverContent?.interrupted && clientWs.readyState === WebSocket.OPEN) {
+                  clientWs.send(JSON.stringify({ interrupted: true }));
+                }
+              },
+              onclose: (e: any) => {
+                console.log("Live API: session closed by Google", e?.code, e?.reason);
+                if (clientWs.readyState === WebSocket.OPEN) {
+                  clientWs.send(JSON.stringify({ error: "Session closed: " + (e?.reason || "Unknown") }));
+                  clientWs.close();
+                }
+              },
+              onerror: (err: any) => {
+                console.error("Live API Error from Google:", err);
+                if (clientWs.readyState === WebSocket.OPEN) {
+                  clientWs.send(JSON.stringify({ error: "AI Error: " + (err.message || "Unknown error") }));
+                }
+              }
+            },
+          });
+          
+          sessionPromise.then(session => {
+            // Send an initial greeting to trigger the AI to start speaking
             session.sendRealtimeInput({
-              audio: { data: audio, mimeType: "audio/pcm;rate=16000" },
+              text: "Hi! I just joined the session. Please greet me briefly and ask what I'd like to study today.",
+            });
+          }).catch(err => console.error("Initial connect error:", err));
+          
+          return;
+        }
+
+        // Handle audio chunks
+        if (payload.audio) {
+          if (!sessionPromise) {
+            console.log("Live API: dropping audio because sessionPromise not ready");
+          } else {
+            // Log every 100th chunk to avoid spamming, just to confirm it's working
+            if (Math.random() < 0.01) console.log("Live API: sending audio chunk");
+            sessionPromise.then(session => {
+              session.sendRealtimeInput({
+                audio: {
+                  mimeType: "audio/pcm;rate=16000",
+                  data: payload.audio
+                }
+              });
+            }).catch(err => {
+              console.error("Live API send audio error:", err);
             });
           }
-        } catch (e) {
-          console.error("Live API message parse error:", e);
         }
-      });
+      } catch (e: any) {
+        console.error("Live API message parse/setup error:", e);
+        if (clientWs.readyState === WebSocket.OPEN) {
+          clientWs.send(JSON.stringify({ error: e.message }));
+        }
+      }
+    });
 
-      clientWs.on("close", () => {
-        console.log("Live API WebSocket closed");
-      });
+    clientWs.on("close", () => {
+      console.log("Live API WebSocket closed");
+    });
+  });
 
-    } catch (error: any) {
-      console.error('Live API Setup Error:', error);
-      clientWs.send(JSON.stringify({ error: error.message }));
-      clientWs.close(1011, 'Internal Server Error');
+  server.on('upgrade', (request, socket, head) => {
+    const url = new URL(request.url || '', `http://${request.headers.host}`);
+    if (url.pathname === '/api/chat') {
+      wss.handleUpgrade(request, socket, head, (ws) => {
+        wss.emit('connection', ws, request);
+      });
+    } else if (url.pathname === '/api/live') {
+      liveWss.handleUpgrade(request, socket, head, (ws) => {
+        liveWss.emit('connection', ws, request);
+      });
     }
   });
 
