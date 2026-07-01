@@ -37,6 +37,7 @@ import AcademicProfileModal from './components/AcademicProfileModal';
 import WhatsAppPromoModal from './components/WhatsAppPromoModal';
 import { CalculatorProvider, useCalculator } from './context/CalculatorContext';
 import { useUserProgress } from './hooks/useUserProgress';
+import { AdaptiveRecalibratorModal } from './components/AdaptiveRecalibratorModal';
 import { useAuth } from './context/AuthContext';
 import { useCourses } from './context/CourseContext';
 import { Menu, Mic } from 'lucide-react';
@@ -80,6 +81,17 @@ function AppContent() {
   const { progress, addXp, updateMastery, recordStudyTime, addBookmark, removeBookmark, enrollCourse, unenrollCourse, updateAIPersonality, isOnline, checkAndUpdateStreak } = useUserProgress();
   const [activeCourseId, setActiveCourseId] = useState<CourseId | null>(null);
   const [activeView, setActiveView] = useState<View>('hub');
+  const [recalibrationTopicId, setRecalibrationTopicId] = useState<string | null>(null);
+  const [recalibrationScore, setRecalibrationScore] = useState<number | null>(null);
+  const [isRecalibrationOpen, setIsRecalibrationOpen] = useState(false);
+
+  const triggerRecalibration = (topicId: string, score: number) => {
+    if (score < 60 || score === 100) {
+      setRecalibrationTopicId(topicId);
+      setRecalibrationScore(score);
+      setIsRecalibrationOpen(true);
+    }
+  };
   const [activeDepartment, setActiveDepartment] = useState<Department>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('activeDepartment');
@@ -526,10 +538,12 @@ function AppContent() {
             onQuizComplete={(topicId, score) => {
               updateMastery(topicId, score);
               addXp(score * 2); // 2 XP per percentage point
+              triggerRecalibration(topicId, score);
             }}
             onQuickCheckComplete={(topicId) => {
               addXp(20); // Bonus XP for quick check
               updateMastery(topicId, 100); // Mark as mastered if correct
+              triggerRecalibration(topicId, 100);
             }}
             autoStartQuiz={autoStartQuiz}
             onViewSelect={handleViewSelect}
@@ -545,6 +559,7 @@ function AppContent() {
             onQuizComplete={(topicId, score) => {
               updateMastery(topicId, score);
               addXp(score * 2);
+              triggerRecalibration(topicId, score);
             }}
             syllabus={syllabus}
           />
@@ -715,6 +730,17 @@ Your teaching strategy:
 
 CRITICAL: Do NOT discuss university administration, the NUC, or CCMAS organizations unless the student's current topic is specifically about them. Use these standards as a background framework, not as the subject of conversation.`}
       />
+
+      {recalibrationTopicId && recalibrationScore !== null && (
+        <AdaptiveRecalibratorModal
+          topicId={recalibrationTopicId}
+          score={recalibrationScore}
+          isOpen={isRecalibrationOpen}
+          onClose={() => setIsRecalibrationOpen(false)}
+          progress={progress}
+          syllabus={syllabus}
+        />
+      )}
 
       {/* Global Admin Alert */}
       <GlobalNotification />

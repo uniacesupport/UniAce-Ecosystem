@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Calendar, BookOpen, CheckCircle2, Clock, Target, Sparkles, Loader2, ChevronRight, AlertCircle, Download, Share2, Lock } from 'lucide-react';
+import { Calendar, BookOpen, CheckCircle2, Clock, Target, Sparkles, Loader2, ChevronRight, AlertCircle, Download, Share2, Lock, Cpu } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useCourses } from '../context/CourseContext';
 import { usePremiumStatus } from '../hooks/usePremiumStatus';
 import { AIService } from '../services/ai';
 import LockedFeature from './LockedFeature';
 import { Module, UserProgress } from '../types';
+import { db } from '../firebase';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 interface StudyPlanData {
   title: string;
@@ -34,13 +36,36 @@ export default function StudyPlan({ progress, syllabus }: StudyPlanProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Load existing plan on mount
+  useEffect(() => {
+    const loadPlan = async () => {
+      if (!user) return;
+      setIsLoading(true);
+      try {
+        const docRef = doc(db, 'user_study_plans', user.uid);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          setPlan(docSnap.data() as StudyPlanData);
+        }
+      } catch (err) {
+        console.error('Error loading study plan:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadPlan();
+  }, [user]);
+
   const generatePlan = async () => {
-    if (!progress || !syllabus) return;
+    if (!progress || !syllabus || !user) return;
     setIsLoading(true);
     setError(null);
     try {
       const data = await AIService.generateStudyPlan(progress, syllabus);
       setPlan(data);
+      // Save plan to Firestore
+      const docRef = doc(db, 'user_study_plans', user.uid);
+      await setDoc(docRef, data);
     } catch (err) {
       console.error('Error generating study plan:', err);
       setError('Failed to generate your personalized plan. Please try again.');
@@ -120,6 +145,10 @@ export default function StudyPlan({ progress, syllabus }: StudyPlanProps) {
                   <div className="bg-white/10 px-4 py-2 rounded-xl flex items-center gap-2">
                     <Clock size={16} className="text-blue-400" />
                     <span className="text-xs font-bold uppercase">7-Day Sprint</span>
+                  </div>
+                  <div className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-4 py-2 rounded-xl flex items-center gap-2">
+                    <Cpu size={16} className="text-emerald-400 animate-pulse" />
+                    <span className="text-xs font-bold uppercase tracking-wider">Adaptive Recalibration Active</span>
                   </div>
                 </div>
               </div>

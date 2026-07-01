@@ -917,6 +917,68 @@ Generate a quiz for ${subTopic ? 'the specific subtopic' : 'the entire module'}.
     }
   },
 
+  generateBoosterLesson: async (topicTitle: string, score: number) => {
+    const prompt = `The student completed a quiz on "${topicTitle}" but scored only ${score}%, which is below the 60% mastery threshold.
+    Analyze what foundational sub-concepts they need help with. Generate a custom, high-impact foundational review lesson (booster task) to inject into their study plan.
+    
+    CRITICAL: Output ONLY the JSON object. Do not include any other text, markdown formatting, or explanations.
+    Return a JSON object with the following structure:
+    {
+      "focus": "Booster Focus (e.g., Foundational Review of [Concept])",
+      "tasks": [
+        "Review: [Specific concept explanation and review action]",
+        "Practice: [A target practice activity]",
+        "Concept Check: [A quick diagnostic action]"
+      ]
+    }`;
+    const response = await callAI(prompt, undefined, 'json', undefined, 'standard', 'recommendation');
+    try {
+      return extractJSON(response.text || "null");
+    } catch (e) {
+      console.error("Booster lesson generation error:", e);
+      throw e;
+    }
+  },
+
+  generateFastTrackPlan: async (progress: UserProgress, syllabus: Module[], fastTrackTopicTitle: string) => {
+    const masteryData = Object.entries(progress.mastery).map(([id, score]) => {
+      const topic = syllabus.flatMap(m => m.subTopics).find(st => st.id === id);
+      return { title: topic?.title || id, score };
+    });
+
+    const prompt = `As an expert academic strategist, generate a fast-track, advanced study plan for this student.
+    
+    The student has achieved perfect 100% mastery in "${fastTrackTopicTitle}"!
+    We want to fast-track them to advanced topics, skipping introductory material for this subject.
+    
+    Student Progress:
+    - Mastery Levels: ${JSON.stringify(masteryData)}
+    - Level: ${progress.level}
+    - Target Exam Date: Next 30 days
+    
+    Syllabus Structure:
+    ${syllabus.map(m => `- ${m.title}: ${m.subTopics.map(st => st.title).join(', ')}`).join('\n')}
+    
+    CRITICAL: Output ONLY the JSON object. Do not include any other text, markdown formatting, or explanations.
+    Return a JSON object with the following structure:
+    {
+      "title": "Fast-Track Advanced Study Plan",
+      "overview": "Brief strategic overview highlighting the fast-track and advanced concepts",
+      "dailySchedule": [
+        { "day": "Day 1", "focus": "Advanced Topic Title", "tasks": ["Advanced Task 1", "Advanced Task 2"] }
+      ],
+      "tips": ["Advanced Tip 1", "Advanced Tip 2"]
+    }`;
+
+    const response = await callAI(prompt, undefined, 'json', undefined, 'standard', 'recommendation');
+    try {
+      return extractJSON(response.text || "null");
+    } catch (e) {
+      console.error("Fast track plan generation error:", e);
+      throw e;
+    }
+  },
+
   claimReward: async (subTopicId: string, rewardType: 'proactive_quiz' = 'proactive_quiz') => {
     try {
       const token = await getAuthToken();
