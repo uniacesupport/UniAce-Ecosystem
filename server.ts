@@ -4528,6 +4528,73 @@ async function startServer() {
       }
     });
   });
+
+  // --- Live API WebSocket Server ---
+  const liveWss = new WebSocketServer({ server, path: '/api/live' });
+
+  liveWss.on('connection', async (clientWs: WebSocket, req) => {
+    console.log('New Live API WebSocket connection');
+    
+    // Extract setup data from query string
+    const url = new URL(req.url || '', `http://${req.headers.host}`);
+    const token = url.searchParams.get('token');
+    const systemInstruction = url.searchParams.get('systemInstruction') || "You are a helpful assistant.";
+
+    if (!token) {
+      console.log('Live API WebSocket connection rejected: No token');
+      clientWs.close(1008, 'Token required');
+      return;
+    }
+
+    try {
+      // Setup GenAI
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) throw new Error("Missing GEMINI_API_KEY");
+      const ai = new GoogleGenAI({ apiKey });
+
+      const session = await ai.live.connect({
+        model: "gemini-3.1-flash-live-preview",
+        config: {
+          responseModalities: ["AUDIO"],
+          speechConfig: {
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } },
+          },
+          systemInstruction: systemInstruction,
+        },
+        callbacks: {
+          onmessage: (message: any) => {
+            const audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
+            if (audio) clientWs.send(JSON.stringify({ audio }));
+            if (message.serverContent?.interrupted)
+              clientWs.send(JSON.stringify({ interrupted: true }));
+          },
+        },
+      });
+
+      clientWs.on("message", (data) => {
+        try {
+          const { audio } = JSON.parse(data.toString());
+          if (audio) {
+            session.sendRealtimeInput({
+              audio: { data: audio, mimeType: "audio/pcm;rate=16000" },
+            });
+          }
+        } catch (e) {
+          console.error("Live API message parse error:", e);
+        }
+      });
+
+      clientWs.on("close", () => {
+        console.log("Live API WebSocket closed");
+      });
+
+    } catch (error: any) {
+      console.error('Live API Setup Error:', error);
+      clientWs.send(JSON.stringify({ error: error.message }));
+      clientWs.close(1011, 'Internal Server Error');
+    }
+  });
+
 }
 
 startServer().catch(err => {
