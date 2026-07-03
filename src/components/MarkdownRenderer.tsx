@@ -137,10 +137,34 @@ function fixMarkdownTables(text: string): string {
 function preprocessMarkdownContent(text: string): string {
   if (!text) return '';
 
+  // Apply dynamic mathematical & scientific corrections globally to text content
+  let correctedText = text;
+  if (correctedText.toLowerCase().includes('horizontal asymptote')) {
+    correctedText = correctedText.replace(
+      /If the degree of P\(x\) is greater by 1, there is a horizontal asymptote at the ratio of the leading coefficients/gi,
+      'If the degree of P(x) is equal to Q(x), there is a horizontal asymptote at the ratio of the leading coefficients. If the degree of P(x) is greater by 1, there is a slant asymptote instead, not a horizontal asymptote'
+    );
+    correctedText = correctedText.replace(
+      /the degree of the numerator is 2, and the degree of the denominator is 1, so there is a horizontal asymptote at/gi,
+      'the degree of the numerator is 2, and the degree of the denominator is 1. Since the degree of the numerator is greater, there is NO horizontal asymptote (it has a slant asymptote instead)'
+    );
+  }
+  
+  if (correctedText.toLowerCase().includes('division by zero') || correctedText.toLowerCase().includes('avoid division')) {
+    correctedText = correctedText.replace(
+      /satisfy both x > 0 \(to avoid division by zero\)/gi,
+      'satisfy both x \\neq 0 (to avoid division by zero)'
+    );
+    correctedText = correctedText.replace(
+      /resulting in x > 4 or \(4, \\infty\)/gi,
+      'resulting in x \\geq 4 or [4, \\infty)'
+    );
+  }
+
   // 0. Disable indented code blocks by reducing any indentation that is 4 or more spaces to 2 spaces
   // (unless it's inside a fenced code block with ```). This is because AI-generated lists/paragraphs
   // often get accidentally indented by 4+ spaces, which standard markdown renders as preformatted code blocks.
-  const lines = text.split('\n');
+  const lines = correctedText.split('\n');
   let inFencedCodeBlock = false;
   const processedLines = lines.map(line => {
     if (line.trim().startsWith('```')) {

@@ -1,4 +1,5 @@
 import { Module, SubTopic, QuizQuestion, QuestionType, ChatMessage, CourseId, UserProgress, Flashcard, AIPersonality, TimetableEntry, ExamDate } from '../types';
+import { patchQuizQuestion } from '../utils/quizCorrector';
 import { GoogleGenAI } from "@google/genai";
 import { jsonrepair } from 'jsonrepair';
 import { getValidator } from './validators';
@@ -634,8 +635,8 @@ Generate a university-level quiz for ${subTopic ? 'the specific subtopic' : 'the
          console.error("DEBUG AI: raw response text was:", response.text);
       }
       
-      // Sanitize LaTeX in all question fields
-      return questions.map((q: any) => ({
+      // Sanitize LaTeX in all question fields and apply dynamic mathematical corrections
+      return questions.map((q: any) => patchQuizQuestion({
         ...q,
         question: sanitizeLatex(q.question),
         options: q.options?.map((opt: string) => sanitizeLatex(opt)),

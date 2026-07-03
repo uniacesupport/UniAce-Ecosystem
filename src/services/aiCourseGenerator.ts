@@ -22,6 +22,7 @@ export interface GeneratedCourse {
 
 import { jsonrepair } from 'jsonrepair';
 import { PipelineMetadata } from '../types';
+import { patchQuizQuestion } from '../utils/quizCorrector';
 const getAuthToken = async () => {
   try {
     const { auth } = await import('../firebase');
@@ -677,7 +678,7 @@ export async function generateModuleQuiz(
   
   // Sanitize LaTeX in questions and explanations
   if (result && result.questions && Array.isArray(result.questions)) {
-    result.questions = result.questions.map((q: any) => ({
+    result.questions = result.questions.map((q: any) => patchQuizQuestion({
       ...q,
       question: sanitizeLatex(q.question),
       options: Array.isArray(q.options) ? q.options.map((opt: any) => sanitizeLatex(opt)) : q.options,

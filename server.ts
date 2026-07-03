@@ -2185,6 +2185,35 @@ const latexInstruction = `
     3. JSON COMPATIBILITY: You MUST double-escape all backslashes. Output \\\\frac instead of \\frac. 
     4. NESTING: For complex formulas inside JSON strings, verify your escaping.
     5. No Unicode math symbols. Use LaTeX commands (e.g., \\\\sqrt{...} not √).
+
+    [CRITICAL MATHEMATICAL & SCIENTIFIC RIGOR DIRECTIVE - MANDATORY]:
+    You MUST adhere to absolute mathematical and scientific accuracy. Under no circumstances should you present simplified, incorrect rules, or hallucinated mathematical theorems.
+    
+    1. RATIONAL FUNCTION ASYMPTOTES:
+       For any rational function f(x) = P(x) / Q(x) where P(x) and Q(x) are polynomials:
+       - CASE A: Degree(P) < Degree(Q) -> There is a horizontal asymptote at y = 0.
+       - CASE B: Degree(P) = Degree(Q) -> There is a horizontal asymptote at y = a_n / b_m (where a_n and b_m are the leading coefficients).
+       - CASE C: Degree(P) > Degree(Q) -> There is NO horizontal asymptote.
+         * Subcase 1: If Degree(P) = Degree(Q) + 1, there is a slant (oblique) asymptote. You MUST NEVER call this a horizontal asymptote or say a horizontal asymptote exists.
+         * Subcase 2: If Degree(P) > Degree(Q) + 1, there is a non-linear (quadratic, cubic, etc.) curved asymptote. There is NO horizontal asymptote.
+       - Example violation to avoid: Do NOT claim f(x) = (3x^2 + 2x)/(x-1) has a horizontal asymptote at y = 3. It has a slant asymptote (y = 3x + 5) and NO horizontal asymptote. The correct function with a horizontal asymptote at y = 3 is h(x) = e^x + 3 (since as x -> -infinity, e^x -> 0, so h(x) -> 3).
+    
+    2. FUNCTION DOMAINS:
+       When calculating the domain of combined functions, find the domain of each constituent part and calculate their intersection (AND logic).
+       - Division by Zero: The term 1 / g(x) requires g(x) != 0. It does NOT require g(x) > 0 unless g(x) is also under an even root.
+       - Even Roots: The term sqrt(h(x)) requires h(x) >= 0.
+       - Example intersection: For f(x) = 1/x + sqrt(x - a):
+         * The term 1/x requires x != 0.
+         * The term sqrt(x - a) requires x >= a.
+         * If a > 0 (e.g., a = 4), then any x >= a is already strictly greater than 0 (and hence != 0).
+         * Therefore, the combined domain is simply x >= a, which in interval notation is the CLOSED interval [a, infinity).
+         * Example violation to avoid: Do NOT claim the domain of 1/x + sqrt(x - 4) is (4, infinity) by claiming x > 0 is required to avoid division by zero. x = 4 is perfectly valid (f(4) = 1/4 + 0 = 1/4). The correct answer is [4, infinity).
+    
+    3. MANDATORY ANALYTICAL SELF-CHECK & STEP-BY-STEP PROOF:
+       Before outputting any question, options, correct answer, or explanation, you MUST run a step-by-step mathematical or scientific verification from first principles to ensure:
+       - The correctness of the designated "correctAnswer".
+       - The incorrectness of ALL other "options".
+       - The absolute precision of the rules stated in the "explanation".
     `;
 
 const ACADEMIC_INTELLIGENCE_DIRECTIVE = `
