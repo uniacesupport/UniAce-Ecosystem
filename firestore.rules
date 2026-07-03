@@ -147,8 +147,7 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow get, list: if isAdmin() || isModerator();
-      allow get: if isOwner(userId);
+      allow read: if isAuthenticated();
       
       allow update: if (isAdmin() || isModerator()) && 
                       isValidUser(request.resource.data) &&
@@ -176,7 +175,8 @@ service cloud.firestore {
 
     match /notifications/{notificationId} {
       allow read, write: if isAdmin() || isModerator();
-      allow read: if isAuthenticated() && 
+      allow list: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow get: if isAuthenticated() && 
                     (notificationId == 'global_alert' || resource == null || resource.data.userId == request.auth.uid || resource.data.userId == 'global');
       allow update: if isAuthenticated() && resource.data.userId == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'readAt']);
     }

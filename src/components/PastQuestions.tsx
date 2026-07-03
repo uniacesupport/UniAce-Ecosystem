@@ -277,7 +277,9 @@ export default function PastQuestions({ activeCourseId }: PastQuestionsProps) {
                       >
                         <div className="flex gap-2">
                           <Lightbulb size={16} className="shrink-0 mt-0.5" />
-                          <p>{q.hint}</p>
+                          <div className="flex-1 text-inherit not-italic">
+                            <MarkdownRenderer content={q.hint} className="!text-inherit prose-p:!my-0 prose-sm" />
+                          </div>
                         </div>
                       </motion.div>
                     )}

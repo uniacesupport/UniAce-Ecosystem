@@ -736,8 +736,12 @@ export default function QuizGenerator({
                         className="space-y-3"
                       >
                         <div className={`${mode === 'adaptive' ? 'bg-purple-50 dark:bg-purple-900/20 border-purple-100 dark:border-purple-900/30 text-purple-800 dark:text-purple-300' : 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-100 dark:border-emerald-900/30 text-emerald-800 dark:text-emerald-300'} border p-4 rounded-2xl text-sm italic`}>
-                          <span className="font-bold not-italic mr-2">Hint:</span>
-                          {questions[currentQuestionIndex].hint}
+                          <div className="flex gap-2">
+                            <span className="font-bold not-italic shrink-0">Hint:</span>
+                            <div className="flex-1 text-inherit not-italic">
+                              <MarkdownRenderer content={questions[currentQuestionIndex].hint} className="!text-inherit prose-p:!my-0 prose-sm" />
+                            </div>
+                          </div>
                         </div>
                         
                         {!progressiveHint ? (
@@ -755,8 +759,12 @@ export default function QuizGenerator({
                             animate={{ opacity: 1, x: 0 }}
                             className="bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-900/30 p-4 rounded-2xl text-sm text-amber-800 dark:text-amber-300 italic"
                           >
-                            <span className="font-bold not-italic mr-2">Tutor Insight:</span>
-                            {progressiveHint}
+                            <div className="flex gap-2">
+                              <span className="font-bold not-italic shrink-0">Tutor Insight:</span>
+                              <div className="flex-1 text-inherit not-italic">
+                                <MarkdownRenderer content={progressiveHint} className="!text-inherit prose-p:!my-0 prose-sm" />
+                              </div>
+                            </div>
                           </motion.div>
                         )}
                       </motion.div>

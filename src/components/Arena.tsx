@@ -141,6 +141,10 @@ export default function Arena({ activeCourseId }: ArenaProps) {
         setView('lobby');
         setBattleId(null);
       }
+    }, (error) => {
+      console.error("Arena: Error listening to battle:", error);
+      setView('lobby');
+      setBattleId(null);
     });
 
     return () => unsubscribe();

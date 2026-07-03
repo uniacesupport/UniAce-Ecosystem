@@ -3,13 +3,18 @@ import { motion, AnimatePresence } from 'motion/react';
 import { AlertCircle, X, Zap, MessageCircle } from 'lucide-react';
 import { db } from '../firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
+import { useAuth } from '../context/AuthContext';
 
 export default function GlobalNotification() {
+  const { user } = useAuth();
   const [notification, setNotification] = useState<{ id?: string; message: string; active: boolean; whatsappLink?: string } | null>(null);
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
-    if (!db) return;
+    if (!db || !user) {
+      setIsVisible(false);
+      return;
+    }
 
     const unsub = onSnapshot(doc(db, 'notifications', 'global_alert'), (doc) => {
       if (doc.exists()) {
@@ -25,10 +30,13 @@ export default function GlobalNotification() {
           setIsVisible(false);
         }
       }
+    }, (error) => {
+      console.warn("GlobalNotification: Listener permission error (likely not authenticated yet):", error);
+      setIsVisible(false);
     });
 
     return () => unsub();
-  }, []);
+  }, [user]);
 
   const handleDismiss = () => {
     setIsVisible(false);
