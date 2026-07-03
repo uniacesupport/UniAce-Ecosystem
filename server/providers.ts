@@ -151,7 +151,8 @@ export class DynamicKeyRotator {
 
                 if (isNewDay || isPast24h) {
                   needsUpdate = true;
-                  return { ...k, isExhausted: false, exhaustedAt: undefined };
+                  const { exhaustedAt, ...rest } = k;
+                  return { ...rest, isExhausted: false };
                 }
               }
               return k;

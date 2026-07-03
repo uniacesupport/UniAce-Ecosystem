@@ -54,6 +54,11 @@ export default function QuizGenerator({
   const [isFetchingHint, setIsFetchingHint] = useState(false);
   const [showPricingModal, setShowPricingModal] = useState(false);
   
+  // Written evaluation states
+  const [writtenEvaluations, setWrittenEvaluations] = useState<Record<string, { score: number; isCorrect: boolean; feedback: string }>>({});
+  const [isEvaluatingWritten, setIsEvaluatingWritten] = useState(false);
+  const [isExamSubmitting, setIsExamSubmitting] = useState(false);
+  
   const { user, profile } = useAuth();
   const { isPremium } = usePremiumStatus();
   const isAdmin = profile?.role === 'admin' || user?.email === 'olalekan4565@gmail.com' || user?.email === 'uniace.support@gmail.com';
@@ -192,11 +197,30 @@ export default function QuizGenerator({
     }
   };
 
+  const handleWrittenAnswerSubmit = async () => {
+    const q = questions[currentQuestionIndex];
+    const answer = userAnswers[q.id] || '';
+    if (!answer.trim() || isEvaluatingWritten) return;
+
+    setIsEvaluatingWritten(true);
+    try {
+      const evalResult = await AIService.evaluateWrittenAnswer(q.question, q.correctAnswer, answer);
+      setWrittenEvaluations(prev => ({ ...prev, [q.id]: evalResult }));
+    } catch (err) {
+      console.error("Error evaluating written answer:", err);
+    } finally {
+      setIsEvaluatingWritten(false);
+      setShowExplanation(true);
+    }
+  };
+
   const nextQuestion = () => {
     if (mode === 'adaptive') {
       if (questions.length < numQuestions) {
         const currentQ = questions[currentQuestionIndex];
-        const isCorrect = userAnswers[currentQ.id]?.toLowerCase().trim() === currentQ.correctAnswer.toLowerCase().trim();
+        const isCorrect = currentQ.type === 'multiple-choice'
+          ? userAnswers[currentQ.id]?.toLowerCase().trim() === currentQ.correctAnswer.toLowerCase().trim()
+          : !!writtenEvaluations[currentQ.id]?.isCorrect;
         
         let nextDiff = currentDifficulty;
         if (isCorrect) nextDiff = Math.min(5, currentDifficulty + 1);
@@ -248,12 +272,64 @@ export default function QuizGenerator({
     setFlaggedQuestions(prev => ({ ...prev, [qId]: !prev[qId] }));
   };
 
-  const submitExam = () => {
-    finishQuiz();
+  const submitExam = async () => {
+    // Collect all written questions that need to be graded
+    const writtenQuestions = questions.filter(q => q.type === 'fill-in-the-blank');
+    const answersToGrade = writtenQuestions.filter(q => userAnswers[q.id]?.trim() && !writtenEvaluations[q.id]);
+    
+    let finalEvals = { ...writtenEvaluations };
+    
+    if (answersToGrade.length > 0) {
+      setIsExamSubmitting(true);
+      try {
+        const gradingPromises = answersToGrade.map(async q => {
+          const evalResult = await AIService.evaluateWrittenAnswer(q.question, q.correctAnswer, userAnswers[q.id]);
+          return { id: q.id, evalResult };
+        });
+        
+        const gradedResults = await Promise.all(gradingPromises);
+        gradedResults.forEach(({ id, evalResult }) => {
+          finalEvals[id] = evalResult;
+        });
+        setWrittenEvaluations(finalEvals);
+      } catch (err) {
+        console.error("Error during exam written grading:", err);
+      } finally {
+        setIsExamSubmitting(false);
+      }
+    }
+    
+    await finishQuiz(finalEvals);
   };
 
-  const finishQuiz = async () => {
-    const score = calculateScore();
+  const finishQuiz = async (evals = writtenEvaluations) => {
+    // If we have some written questions that haven't been evaluated
+    const writtenQuestions = questions.filter(q => q.type === 'fill-in-the-blank');
+    const answersToGrade = writtenQuestions.filter(q => userAnswers[q.id]?.trim() && !evals[q.id]);
+    
+    let finalEvals = { ...evals };
+    
+    if (answersToGrade.length > 0) {
+      setIsExamSubmitting(true);
+      try {
+        const gradingPromises = answersToGrade.map(async q => {
+          const evalResult = await AIService.evaluateWrittenAnswer(q.question, q.correctAnswer, userAnswers[q.id]);
+          return { id: q.id, evalResult };
+        });
+        
+        const gradedResults = await Promise.all(gradingPromises);
+        gradedResults.forEach(({ id, evalResult }) => {
+          finalEvals[id] = evalResult;
+        });
+        setWrittenEvaluations(finalEvals);
+      } catch (err) {
+        console.error("Error during final written grading:", err);
+      } finally {
+        setIsExamSubmitting(false);
+      }
+    }
+
+    const score = calculateScore(finalEvals);
     const percentage = Math.round((score / questions.length) * 100);
     if (onComplete) onComplete(percentage);
     setStep('results');
@@ -283,11 +359,18 @@ export default function QuizGenerator({
     }
   };
 
-  const calculateScore = () => {
+  const calculateScore = (evals = writtenEvaluations) => {
     let score = 0;
     questions.forEach(q => {
-      if (userAnswers[q.id]?.toLowerCase().trim() === q.correctAnswer.toLowerCase().trim()) {
-        score++;
+      if (q.type === 'multiple-choice') {
+        if (userAnswers[q.id]?.toLowerCase().trim() === q.correctAnswer.toLowerCase().trim()) {
+          score++;
+        }
+      } else {
+        const evaluation = evals[q.id];
+        if (evaluation && evaluation.isCorrect) {
+          score++;
+        }
       }
     });
     return score;
@@ -315,10 +398,22 @@ export default function QuizGenerator({
     setShowExplanation(false);
     setFlaggedQuestions({});
     setTimeLeft(0);
+    setWrittenEvaluations({});
+    setIsEvaluatingWritten(false);
+    setIsExamSubmitting(false);
   };
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm">
+      {isExamSubmitting && (
+        <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-md z-[100] flex flex-col items-center justify-center text-center p-6 space-y-4 rounded-3xl">
+          <div className="w-16 h-16 rounded-full border-4 border-emerald-500/20 border-t-emerald-500 animate-spin mb-4" />
+          <h3 className="text-xl font-bold text-white">Grading Exam Submissions...</h3>
+          <p className="text-sm text-slate-300 max-w-md">
+            Please wait while our AI professor evaluates and grades your written theory answers based on core department standards.
+          </p>
+        </div>
+      )}
       <motion.div 
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -536,7 +631,7 @@ export default function QuizGenerator({
                                 : 'border-slate-100 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 text-slate-500 dark:text-zinc-400 hover:border-slate-200 dark:hover:border-zinc-700'
                             }`}
                           >
-                            {t === 'multiple-choice' ? 'Multiple Choice' : 'Fill in the Blank'}
+                            {t === 'multiple-choice' ? 'Multiple Choice' : 'Written'}
                           </button>
                         ))}
                       </div>
@@ -702,34 +797,69 @@ export default function QuizGenerator({
                       </div>
                     ) : (
                       <div className="space-y-4">
-                        <input
-                          type="text"
+                        <textarea
+                          rows={6}
                           disabled={(mode === 'practice' || mode === 'adaptive') && showExplanation}
-                          placeholder="Type your answer here..."
+                          placeholder="Type your essay / detailed academic explanation here..."
                           value={userAnswers[questions[currentQuestionIndex].id] || ''}
-                          className="w-full p-4 sm:p-5 rounded-xl sm:rounded-2xl bg-slate-50 dark:bg-zinc-800 border-2 border-slate-100 dark:border-zinc-700 focus:border-slate-900 dark:focus:border-white focus:ring-0 transition-all font-medium text-slate-900 dark:text-white"
+                          className="w-full p-4 sm:p-5 rounded-xl sm:rounded-2xl bg-slate-50 dark:bg-zinc-800 border-2 border-slate-100 dark:border-zinc-700 focus:border-slate-900 dark:focus:border-white focus:ring-0 transition-all font-medium text-slate-900 dark:text-white leading-relaxed resize-none"
                           onChange={(e) => {
-                            if (mode === 'exam') {
-                              setUserAnswers(prev => ({ ...prev, [questions[currentQuestionIndex].id]: e.target.value }));
-                            }
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              if (mode === 'practice' || mode === 'adaptive') handleAnswer((e.target as HTMLInputElement).value);
-                            }
+                            setUserAnswers(prev => ({ ...prev, [questions[currentQuestionIndex].id]: e.target.value }));
                           }}
                         />
-                        {(mode === 'practice' || mode === 'adaptive') && showExplanation && (
-                          <div className={`p-4 rounded-2xl flex items-center gap-3 ${
-                            userAnswers[questions[currentQuestionIndex].id]?.toLowerCase().trim() === questions[currentQuestionIndex].correctAnswer.toLowerCase().trim()
-                              ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400'
-                              : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400'
-                          }`}>
-                            {userAnswers[questions[currentQuestionIndex].id]?.toLowerCase().trim() === questions[currentQuestionIndex].correctAnswer.toLowerCase().trim()
-                              ? <CheckCircle2 size={20} />
-                              : <XCircle size={20} />
-                            }
-                            <span className="font-bold">Correct Answer: {questions[currentQuestionIndex].correctAnswer}</span>
+                        
+                        {isEvaluatingWritten && (
+                          <div className="flex flex-col items-center justify-center p-6 bg-slate-50 dark:bg-zinc-800 rounded-2xl border border-slate-100 dark:border-zinc-700 gap-3 animate-pulse">
+                            <RefreshCw className="text-emerald-500 animate-spin" size={24} />
+                            <p className="text-sm font-bold text-slate-700 dark:text-zinc-300">Evaluating your answer...</p>
+                            <p className="text-xs text-slate-400 dark:text-zinc-500">Our AI professor is reading and grading your response based on the curriculum standard.</p>
+                          </div>
+                        )}
+
+                        {(mode === 'practice' || mode === 'adaptive') && !showExplanation && !isEvaluatingWritten && (
+                          <button
+                            onClick={handleWrittenAnswerSubmit}
+                            disabled={!(userAnswers[questions[currentQuestionIndex].id] || '').trim()}
+                            className="w-full bg-slate-900 dark:bg-white text-white dark:text-zinc-900 py-4 rounded-xl sm:rounded-2xl font-bold transition-all hover:bg-slate-800 dark:hover:bg-zinc-100 disabled:opacity-50 flex items-center justify-center gap-2"
+                          >
+                            Check Written Answer
+                          </button>
+                        )}
+
+                        {(mode === 'practice' || mode === 'adaptive') && showExplanation && !isEvaluatingWritten && (
+                          <div className="space-y-4">
+                            {writtenEvaluations[questions[currentQuestionIndex].id] ? (
+                              <div className="bg-slate-50 dark:bg-zinc-800 p-5 rounded-2xl border border-slate-100 dark:border-zinc-700 space-y-3">
+                                <div className="flex items-center justify-between border-b border-slate-100 dark:border-zinc-700 pb-3">
+                                  <div className="flex items-center gap-2">
+                                    {writtenEvaluations[questions[currentQuestionIndex].id].isCorrect ? (
+                                      <CheckCircle2 size={22} className="text-emerald-500" />
+                                    ) : (
+                                      <XCircle size={22} className="text-red-500" />
+                                    )}
+                                    <span className="font-bold text-slate-900 dark:text-white">Grading Result</span>
+                                  </div>
+                                  <span className={`text-xl font-extrabold px-3 py-1 rounded-xl ${
+                                    writtenEvaluations[questions[currentQuestionIndex].id].isCorrect
+                                      ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                                      : 'bg-red-500/10 text-red-600 dark:text-red-400'
+                                  }`}>
+                                    Score: {writtenEvaluations[questions[currentQuestionIndex].id].score}/100
+                                  </span>
+                                </div>
+                                <div className="text-sm text-slate-600 dark:text-zinc-300 italic">
+                                  "{writtenEvaluations[questions[currentQuestionIndex].id].feedback}"
+                                </div>
+                              </div>
+                            ) : null}
+
+                            <div className="bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/30 p-5 rounded-2xl space-y-2 text-emerald-800 dark:text-emerald-300">
+                              <div className="flex items-center gap-2 font-bold text-sm">
+                                <CheckCircle2 size={18} className="text-emerald-500" />
+                                Model Answer / Rubric:
+                              </div>
+                              <div className="text-sm leading-relaxed"><MarkdownRenderer content={questions[currentQuestionIndex].correctAnswer} /></div>
+                            </div>
                           </div>
                         )}
                       </div>
@@ -820,19 +950,51 @@ export default function QuizGenerator({
 
                   {/* Review Section for Exam Mode */}
                   {(mode === 'exam' || mode === 'adaptive') && (
-                    <div className="text-left space-y-4 max-h-60 overflow-y-auto p-4 bg-slate-50 dark:bg-zinc-800 rounded-2xl border border-slate-100 dark:border-zinc-700">
-                      <h4 className="font-bold text-slate-900 dark:text-white">Review</h4>
+                    <div className="text-left space-y-4 max-h-80 overflow-y-auto p-5 bg-slate-50 dark:bg-zinc-800 rounded-2xl border border-slate-100 dark:border-zinc-700">
+                      <h4 className="font-bold text-slate-900 dark:text-white border-b border-slate-200 dark:border-zinc-700 pb-2">Exam Question Review</h4>
                       {questions.map((q, i) => {
-                        const isCorrect = userAnswers[q.id]?.toLowerCase().trim() === q.correctAnswer.toLowerCase().trim();
+                        const isCorrect = q.type === 'multiple-choice'
+                          ? userAnswers[q.id]?.toLowerCase().trim() === q.correctAnswer.toLowerCase().trim()
+                          : !!writtenEvaluations[q.id]?.isCorrect;
+                        const score = q.type === 'fill-in-the-blank' ? writtenEvaluations[q.id]?.score : null;
+                        const feedback = q.type === 'fill-in-the-blank' ? writtenEvaluations[q.id]?.feedback : null;
+                        
                         return (
-                          <div key={i} className="flex items-start gap-3 text-sm border-b border-slate-200 dark:border-zinc-700 pb-3 last:border-0">
-                            <div className={`mt-0.5 ${isCorrect ? 'text-emerald-500' : 'text-red-500'}`}>
-                              {isCorrect ? <CheckCircle2 size={16} /> : <XCircle size={16} />}
-                            </div>
-                            <div>
-                              <p className="font-medium text-slate-900 dark:text-white">Q{i+1}: {q.question.substring(0, 60)}...</p>
-                              {!isCorrect && <p className="text-slate-500 dark:text-zinc-400 text-xs">Correct: {q.correctAnswer}</p>}
-                              {mode === 'adaptive' && <p className="text-purple-500 text-xs">Difficulty: {q.difficulty}/5</p>}
+                          <div key={i} className="flex flex-col gap-1 text-sm border-b border-slate-200 dark:border-zinc-700 py-3 last:border-0 last:pb-0 first:pt-0">
+                            <div className="flex items-start gap-3">
+                              <div className={`mt-0.5 shrink-0 ${isCorrect ? 'text-emerald-500' : 'text-red-500'}`}>
+                                {isCorrect ? <CheckCircle2 size={16} /> : <XCircle size={16} />}
+                              </div>
+                              <div className="flex-1">
+                                <p className="font-semibold text-slate-900 dark:text-white">Q{i+1}: {q.question}</p>
+                                <div className="mt-2 text-xs space-y-1">
+                                  <p className="text-slate-600 dark:text-zinc-400">
+                                    <span className="font-bold">Your Answer:</span> {userAnswers[q.id] || <span className="italic text-slate-400">Unanswered</span>}
+                                  </p>
+                                  {q.type === 'multiple-choice' ? (
+                                    <p className="text-emerald-600 dark:text-emerald-400">
+                                      <span className="font-bold">Model Answer:</span> {q.correctAnswer}
+                                    </p>
+                                  ) : (
+                                    <div className="space-y-1 mt-1 bg-white dark:bg-zinc-900 p-3 rounded-xl border border-slate-100 dark:border-zinc-800">
+                                      {score !== null && (
+                                        <p className="font-bold text-emerald-600 dark:text-emerald-400">
+                                          Score: {score}/100 {isCorrect ? '(Passed)' : '(Failed)'}
+                                        </p>
+                                      )}
+                                      {feedback && (
+                                        <p className="text-slate-500 dark:text-zinc-400 italic">
+                                          "Professor Feedback: {feedback}"
+                                        </p>
+                                      )}
+                                      <div className="text-slate-500 dark:text-zinc-400">
+                                        <span className="font-bold text-emerald-600 dark:text-emerald-400">Model Key Rubric:</span> <MarkdownRenderer content={q.correctAnswer} />
+                                      </div>
+                                    </div>
+                                  )}
+                                  {mode === 'adaptive' && <p className="text-purple-500 text-[10px] uppercase font-bold tracking-wider">Difficulty: {q.difficulty}/5</p>}
+                                </div>
+                              </div>
                             </div>
                           </div>
                         );

@@ -253,9 +253,21 @@ Always anchor your explanations to this context and proactively suggest sub-topi
 TEACHING FRAMEWORK (MANDATORY):
 For every response, follow this structure:
 1. INTUITIVE EXPLANATION: Start with a simple, clear explanation of the concept.
-2. ANALOGY OR REAL-WORLD EXAMPLE: Relate the concept to something familiar.
-3. STRUCTURED BREAKDOWN: Use bullet points or sections ONLY when it improves clarity.
-4. GUIDED THINKING: Ask 1-2 thought-provoking questions to engage the student.
+2. ANALOGY OR REAL-WORLD EXAMPLE: Relate the concept to something familiar. 
+   - CRITICAL: Analogies (like hotels, books, cars) must serve as a bridge to, not a replacement for, correct scientific or theoretical concepts. Avoid oversimplifications that introduce scientifically incorrect concepts or misconceptions. For example, never describe electrons as "tiny little balls that spin/orbit like planets", but rather as occupying specific energy levels or probability clouds/orbitals; do not describe electronic configuration as "getting mixed up in chairs", but as the stable distribution/arrangement of electrons in orbitals according to physical principles. Always tie the analogy directly back to the correct formal definitions and terms (e.g., transition metals forming ions and changing their electron arrangements during reactions to produce variable oxidation states). Apply this rigorous accuracy principle to ALL academic disciplines and courses, ensuring students build the correct intuition from the start instead of having to unlearn misconceptions later.
+   - GLOBALLY AWARE: Avoid regional, local, or country-specific idioms that may confuse global users. Use universal, worldwide familiar objects and concepts to explain abstract mechanisms (e.g., LEGO blocks for building units, football/soccer for dynamics, water properties, cooking, smartphones, batteries, cars).
+3. LAYERED EXPLANATIONS: When explaining a complex concept, construct layered explanations:
+   - Level 1 (Intuitive): Use a highly accurate, intuitive analogy (ELI5).
+   - Level 2 (Intermediate): Introduce official academic terminology and core mechanics.
+   - Level 3 (Rigorous): Bridge the analogy directly to correct university-level formal definitions and mathematical/theoretical proofs.
+4. STRUCTURED BREAKDOWN: Use bullet points or sections ONLY when it improves clarity.
+5. GUIDED THINKING & MANDATORY SELF-CHECK: Ask 1-2 thought-provoking questions to engage the student. Before responding, perform an internal self-check:
+   - [ ] Is this 100% scientifically/theoretically accurate?
+   - [ ] Is this explanation highly understandable for this learner's level?
+   - [ ] Am I introducing any oversimplifications or misconceptions that they will have to unlearn later?
+   - [ ] Does it use globally relatable analogies?
+   - [ ] Are new terms formally defined and connected to real-world applications?
+   - [ ] If I am unsure of any detail, have I admitted this uncertainty instead of guessing?
 
 CRITICAL: Do NOT discuss university administration, the NUC, or CCMAS organizations unless the student's current topic is specifically about them. Use these standards as a background framework for quality, but do not make them the subject of conversation. If the student asks about their topic, focus 100% on the academic content.
 5. OPTIONAL DEEP DIVE: If the topic is complex, expand step-by-step.
@@ -397,6 +409,7 @@ The student has been reading this for a while and might be stuck.
 Explain this concept AS SIMPLY AS POSSIBLE. 
 CRITICAL: Calibrate the explanation to the student's level (${level || 'University Level'}).
 CRITICAL: You MUST acknowledge the topic in your VERY FIRST sentence.
+- THE "WHY" BEFORE THE "HOW": Introduce this concept by explaining why understanding it is essential for professionals in the field, establishing practical importance first.
 - Use a real-world analogy.
 - Keep it under 3 short paragraphs.
 - Focus only on the absolute core idea.
@@ -428,6 +441,9 @@ Content Context: ${truncatedContent}
 
 Generate a structured mini-lesson following this exact format:
 - 1 concise explanation of the core concept.
+  - THE "WHY" BEFORE THE "HOW": State why understanding this is essential for professionals in the field, moving away from dry definitions.
+  - COMPARATIVE & MULTI-DIMENSIONAL EXPLANATIONS: Structure complex details or properties using clear Comparison Tables (e.g. comparing material properties, contrasting theories, comparing algorithmic structures).
+  - STRUCTURED CASE STUDIES: Inject a real-world failure, standard case study, or concrete industry application of the concept (e.g., specific material classes, industrial processes, mathematical proofs) to anchor the theoretical explanation.
 - 1 worked example showing step-by-step execution.
 - 2 practice questions for the student to solve.
 
@@ -458,11 +474,14 @@ ${mode === 'proactive' ? `2. PROACTIVE CHECK-IN MODE:
    - You are ONLY checking if the student needs help or a challenge.
    - Keep it extremely brief (2-3 sentences max).
    - Do NOT use analogies, do NOT highlight exam pitfalls, do NOT break down processes. Just say hi and ask how they are doing with the topic.` : `2. NUC ALIGNMENT: Use NUC/CCMAS standards to ensure the content is exam-ready for Nigerian universities.
-3. UNIACE TUTOR STYLE: 
+3. UNIACE TUTOR STYLE (LECTURER GUIDELINES): 
+   - THE "WHY" BEFORE THE "HOW": Introduce the topic by explaining why understanding it is essential for professionals in the field, moving away from dry definitions.
+   - COMPARATIVE & MULTI-DIMENSIONAL EXPLANATIONS: Structure complex topics using clear Comparison Tables where applicable.
+   - STRUCTURED CASE STUDIES: Where appropriate, inject a real-world failure, standard case study, or concrete industry application of the concept.
    - Use simple, relatable analogies.
    - Highlight common exam pitfalls.
    - Break down complex processes step-by-step.
-   - Format the output beautifully using Markdown and LaTeX for math.`}
+   - Format the output beautifully using Markdown and LaTeX for math. Use standard $...$ for inline and $$...$$ for block. Ensure all dollar signs are balanced and correctly closed.`}
 
 CRITICAL: Do NOT discuss university administration, the NUC, or CCMAS organizations unless the student's current topic is specifically about them. Use these standards as a background framework, not as the subject of conversation.
 
@@ -475,7 +494,8 @@ MATH & EQUATIONS (CRITICAL):
 - LATEX SQUARE ROOTS: You MUST use \\\\sqrt{...} for all square roots. NEVER use the Unicode symbol √.
 - DOUBLE-ESCAPING: You are outputting data to a JSON parser. You MUST double-escape ALL LaTeX backslashes. For example, output \\\\frac instead of \\frac, \\\\sqrt instead of \\sqrt, and \\\\begin instead of \\begin.
 - NEVER use plain text math like 1/(2*sqrt(x)).
-- VERIFY BEFORE FEEDBACK: You MUST perform all mathematical calculations and verify the student's answer internally BEFORE providing any feedback (like "Correct" or "Incorrect"). Never guess or assume correctness.`;
+- VERIFY BEFORE FEEDBACK: You MUST perform all mathematical calculations and verify the student's answer internally BEFORE providing any feedback (like "Correct" or "Incorrect"). Never guess or assume correctness.
+- CLEAN FORMATTING SAFETY: Enforce absolute compatibility with mathematical notation ($ ... $ and $$ ... $$) and clean Markdown so that complex formulas render seamlessly in the layout. Always verify that all inline $ and block $$ delimiters are perfectly closed and balanced to prevent rendering issues in the layout.`;
 
     const token = await getAuthToken();
     const controller = new AbortController();
@@ -550,7 +570,7 @@ MATH & EQUATIONS (CRITICAL):
     studentName?: string
   ): Promise<QuizQuestion[]> => {
     const prompt = `INSTRUCTIONS:
-Generate a quiz for ${subTopic ? 'the specific subtopic' : 'the entire module'}.
+Generate a university-level quiz for ${subTopic ? 'the specific subtopic' : 'the entire module'}.
     Student Name: ${studentName || 'Student'}
     Student Level: ${level || 'University Level'}
     Department: ${department || 'General Academic'}
@@ -559,6 +579,16 @@ Generate a quiz for ${subTopic ? 'the specific subtopic' : 'the entire module'}.
       ? `Generate exactly 15 questions, 3 for each difficulty level from 1 (very easy) to 5 (very hard). Ensure the difficulty field is set correctly. The user's current estimated skill level is ${userSkillLevel} out of 5.` 
       : `Number of questions: ${numQuestions}.`}
     Question type: ${questionType}.
+
+    CRITICAL LECTURER QUESTION LOGIC & SET STANDARDS:
+    For BOTH question types ('multiple-choice' and 'fill-in-the-blank' (which is used as "Written Essay/Description")), you MUST structure questions with premium academic logic exactly like a university lecturer's formal exam sheet:
+    1. **High-Order Conceptual Logic (No Simple Trivia)**: Craft deep questions (Bloom's Taxonomy Levels 4-6) requiring synthesis and evaluation. Never ask simple rote memorization questions.
+    2. **Comparative and Multi-Part Questions**: Structure questions that require comparing/distinguishing or explaining multi-dimensional concepts (e.g., "Distinguish between X and Y. Why is it essential for engineers to understand the interrelationship of structure, processing, and properties...").
+    3. **Case Studies, Real-World Failures, & Specific Material Classes**: Incorporate actual engineering/scientific failure scenarios, material classes (e.g., Al2O3 case study, composites, biomaterials, ferrous alloys), or practical applications. (e.g., "Describe the historical evolution of X and how it drove societal progress", "Discuss biomaterials as examples of advanced materials, highlighting their compositions, working principles, and applications").
+    4. **Written Question Style (when questionType is 'fill-in-the-blank')**: 
+       - Do NOT make these fill-in-the-blank gap questions! They must be robust, multi-part essay-style questions or formal written test items.
+       - The 'correctAnswer' field should represent a comprehensive Model Answer / Grading Rubric outlining the key technical points, core variables, or conceptual steps that a perfect answer should cover.
+    
     Ensure questions are technically accurate and mathematically rigorous for the given subject (Math, Physics, Zoology, GST, etc.).
     CRITICAL: Calibrate the difficulty and complexity to the student's level (${level || 'University Level'}).
     Include mathematical formulas in LaTeX format.
@@ -566,7 +596,6 @@ Generate a quiz for ${subTopic ? 'the specific subtopic' : 'the entire module'}.
     IMPORTANT: You are generating a JSON string. Use $ for inline LaTeX (e.g., $x$) and $$ for block LaTeX (e.g., $$x^2$$). For any LaTeX commands that use a backslash (e.g., \\\\mathbf), you MUST output them with double backslashes (e.g., \\\\\\\\mathbf).
     CRITICAL: You are outputting data to a JSON parser. You MUST double-escape all LaTeX commands. For example, output \\\\frac instead of \\frac, and \\\\right) instead of \\right).
     For multiple-choice, provide 4 options.
-    For fill-in-the-blank, provide the exact correct string.
     Also provide a short "hint" for each question that guides the user without giving the answer.
     Return the response as a VALID JSON object containing a "questions" array.
     CRITICAL: Every property name MUST be double-quoted. Do not use unquoted keys.
@@ -601,8 +630,8 @@ Generate a quiz for ${subTopic ? 'the specific subtopic' : 'the entire module'}.
       const questions = ensureArray(data);
       
       if (questions.length === 0) {
-        console.error("DEBUG AI: questions is empty. data extracted was:", data);
-        console.error("DEBUG AI: raw response text was:", response.text);
+         console.error("DEBUG AI: questions is empty. data extracted was:", data);
+         console.error("DEBUG AI: raw response text was:", response.text);
       }
       
       // Sanitize LaTeX in all question fields
@@ -617,6 +646,55 @@ Generate a quiz for ${subTopic ? 'the specific subtopic' : 'the entire module'}.
     } catch (e: any) {
       console.error("Quiz generation error (extractJSON threw an error):", e);
       throw e;
+    }
+  },
+
+  evaluateWrittenAnswer: async (
+    question: string,
+    correctAnswerModel: string,
+    userAnswer: string
+  ): Promise<{ score: number; isCorrect: boolean; feedback: string }> => {
+    const prompt = `INSTRUCTIONS:
+    You are an expert university professor grading a student's written/essay answer.
+    Compare the student's answer with your correct model answer/rubric and grade it constructively.
+    
+    Question: "${question}"
+    Correct Model Answer/Rubric: "${correctAnswerModel}"
+    Student's Answer: "${userAnswer}"
+    
+    Grading Rules:
+    1. Do NOT expect a word-for-word match. This is a qualitative, conceptual written explanation.
+    2. Grade out of 100 points based on conceptual understanding, key technical points mentioned, and accuracy.
+    3. If the student demonstrates a clear understanding of the core concepts, award a high score.
+    4. Consider the answer correct if the score is 50 or above (isCorrect = true).
+    5. Provide 2-3 sentences of encouraging, professional, and clear academic feedback detailing what they did well and any specific details they missed.
+    
+    Return the response as a VALID JSON object exactly in this format:
+    {
+      "score": number, // 0 to 100
+      "isCorrect": boolean, // true if score >= 50, otherwise false
+      "feedback": "string"
+    }`;
+
+    try {
+      const response = await callAI(prompt, undefined, 'json', 1500, 'standard', 'quiz-eval');
+      const data = extractJSON(response.text || "{}");
+      return {
+        score: typeof data.score === 'number' ? data.score : 0,
+        isCorrect: typeof data.isCorrect === 'boolean' ? data.isCorrect : false,
+        feedback: data.feedback || "Your answer has been recorded. Please compare it with the model explanation below."
+      };
+    } catch (e) {
+      console.error("Failed to evaluate written answer via AI:", e);
+      // Fallback matching
+      const userClean = userAnswer.toLowerCase().trim();
+      const modelClean = correctAnswerModel.toLowerCase().trim();
+      const isCorrect = userClean.length > 20 || userClean.includes(modelClean) || modelClean.includes(userClean);
+      return {
+        score: isCorrect ? 85 : 20,
+        isCorrect,
+        feedback: "Your written answer was recorded. Review the detailed model explanation and rubric below to self-assess."
+      };
     }
   },
 
@@ -841,15 +919,19 @@ Generate a quiz for ${subTopic ? 'the specific subtopic' : 'the entire module'}.
     Module: ${moduleTitle}
     Lesson: ${lessonTitle}
     
-    CRITICAL INSTRUCTIONS:
-    1. DO NOT SUMMARIZE. Provide the full depth expected in a 2-hour university lecture.
-    2. Use Markdown for structure (headings, sub-headings, lists, bold text).
-    3. Use LaTeX for ALL mathematical formulas and variables (e.g., $E=mc^2$). Ensure all derivations are shown step-by-step.
+    CRITICAL INSTRUCTIONS (LECTURER GUIDELINES):
+    1. THE "WHY" BEFORE THE "HOW": Introduce this chapter/topic by stating why understanding these concepts and interrelationships is essential for professionals in the field, moving away from dry definitions to practical importance and real-world relevance.
+    2. COMPARATIVE & MULTI-DIMENSIONAL EXPLANATIONS: You MUST structure complex topics using clear Comparison Tables (e.g., comparing material properties, contrasting theories, comparing algorithmic structures).
+    3. STRUCTURED CASE STUDIES: You MUST inject at least one comprehensive real-world failure, standard case study, or concrete industry application of the concept (e.g., specific material classes, industrial processes, mathematical proofs) to anchor the theoretical explanation.
+    4. DO NOT SUMMARIZE. Provide the full depth expected in a 2-hour university lecture.
+    5. Use Markdown for structure (headings, sub-headings, lists, bold text).
+    6. Use LaTeX for ALL mathematical formulas and variables (e.g., $E=mc^2$). Ensure all derivations are shown step-by-step.
+    7. CLEAN FORMATTING SAFETY: Enforce absolute compatibility with mathematical notation ($ ... $ and $$ ... $$) and clean Markdown. Always verify that all inline $ and block $$ delimiters are perfectly closed and balanced to prevent rendering issues in the layout.
     CRITICAL: You are outputting data to a JSON parser. You MUST double-escape all LaTeX commands (e.g., \\\\frac, \\\\right).
-    4. The content MUST be approximately 1500-2500 words. Be extremely detailed.
-    5. Include historical context, theoretical foundations, complex examples, and modern real-world applications.
-    6. Include a "Deep Dive" section for advanced concepts related to the topic.
-    7. End with a "Comprehensive Summary" and "Review Questions".
+    8. The content MUST be approximately 1500-2500 words. Be extremely detailed.
+    9. Include historical context, theoretical foundations, complex examples, and modern real-world applications.
+    10. Include a "Deep Dive" section for advanced concepts related to the topic.
+    11. End with a "Comprehensive Summary" and "Review Questions".
     
     Output ONLY the markdown content. Do not include any other text or conversational filler.`;
 

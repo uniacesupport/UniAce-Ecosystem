@@ -78,6 +78,31 @@ export default function ChatBot({
       setSparksRemaining(profile.ai_sparks);
     }
   }, [profile?.ai_sparks]);
+
+  const lastActiveSubTopicRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (activeSubTopic && activeSubTopic !== lastActiveSubTopicRef.current) {
+      lastActiveSubTopicRef.current = activeSubTopic;
+      
+      const infoText = `🎯 **Study Companion synchronized to:**\n\n**Course:** ${activeCourseId || 'N/A'}\n**Module:** ${activeModule || 'N/A'}\n**Sub-Topic:** ${activeSubTopic}\n\n*I am now reading this lesson material with you. Ask me to explain any part of it, give you an analogy, or test you on it!*`;
+      
+      setMessages((prev) => {
+        const lastMsg = prev[prev.length - 1];
+        if (lastMsg && lastMsg.role === 'model' && lastMsg.text.includes('Study Companion synchronized to') && lastMsg.text.includes(activeSubTopic)) {
+          return prev;
+        }
+        
+        // Filter out any older synchronization messages to keep the thread clean
+        const filtered = prev.filter(msg => !(msg.role === 'model' && msg.text.includes('Study Companion synchronized to')));
+        
+        return [...filtered, {
+          role: 'model',
+          text: infoText
+        }];
+      });
+    }
+  }, [activeSubTopic, activeModule, activeCourseId, setMessages]);
   const [showSettings, setShowSettings] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);

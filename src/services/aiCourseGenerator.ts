@@ -498,14 +498,17 @@ export async function generateLessonContent(
   const lessonPrompt = `
     You are an expert university professor. Your task is to write an extremely comprehensive, long-form academic lesson for the topic "${lessonTitle}" which is part of the module "${moduleTitle}" in the university course "${courseName}".
     
-    CRITICAL: You MUST use the "Hybrid Approach" to ensure the content is deeply educational, blending General Academic excellence with local curriculum standards:
+    CRITICAL LECTURER GUIDELINES & HYBRID APPROACH:
+    You MUST use the "Hybrid Approach" to ensure the content is deeply educational, blending General Academic excellence with local curriculum standards:
     1. Structure: Follow the NUC/CCMAS (National Universities Commission / Core Curriculum and Minimum Academic Standards) curriculum outline for the topic to ensure absolute exam relevance.
     2. Depth: Use international-style depth (MIT/Stanford/Cambridge level) with step-by-step teaching, complex derivations, and extensive breakdowns to ensure true mastery.
     3. Pedagogical Framework: Apply Bloom's Taxonomy. Every lesson MUST include:
        - Learning Objectives (What will the student know?)
-       - An engaging, high-impact introduction that sets the stage.
+       - The "Why" Before the "How" Introduction: Introduce this chapter by stating why understanding these concepts and interrelationships is essential for professionals in the field, moving away from dry definitions to practical importance.
        - Key Vocabulary (In-depth definitions of core terms).
-       - Detailed Lesson Body (Break down key concepts with deep, thoughtful explanations).
+       - Detailed Lesson Body: Break down key concepts with deep, thoughtful explanations.
+       - Enforce Comparative and Multi-Dimensional Explanations: You MUST structure complex topics using clear Comparison Tables (e.g., comparing material properties, contrasting theories, comparing algorithmic structures).
+       - Incorporate Structured Case Studies: You MUST inject at least one comprehensive real-world failure, standard case study, or concrete industry/field application related to this module/lesson (e.g., specific material classes, industrial failures, industrial processes, mathematical proofs) to anchor the theory.
        - Active Learning: Conclude with a thorough summary and 3 high-quality "Quick Check" review questions.
     
     [IF PROVIDED] RELEVANT COURSE CONTEXT/OUTLINE TO FOLLOW: 
@@ -521,20 +524,21 @@ export async function generateLessonContent(
     
     Requirements:
     1. Write in DETAILED Markdown format. Do NOT hold back on length; make it as thorough as a university lecture transcript.
-    2. Target length: 1200-2000+ words. Focus on core concepts, deep-dive derivations, case studies, and practical examples.
+    2. Target length: 1200-2000+ words. Focus on core concepts, deep-dive qualitative explanations, structured study notes, case studies, and practical examples.
     3. Use a professional, academic tone suitable for a top-tier university (e.g., Ivy League or equivalent), but adapted to the requested Tone: ${tone}.
     4. Ensure all concepts are explained clearly and logically, using step-by-step breakdowns and multiple real-world examples to ensure deep understanding.
-    5. Provide examples, case studies, or mathematical formulas (using LaTeX).
-    6. Use LaTeX for ALL mathematical equations, variables, and scientific notation.
+    5. Prioritize qualitative descriptions, conceptual definitions, and highly descriptive explanatory text. Avoid over-cluttering the lesson notes with unnecessary or excessive mathematical formulas, unless the topic is specifically and strictly quantitative or mathematical. For general science or engineering topics, balance mathematical equations with detailed qualitative "why" and "how" study notes.
+    6. Use LaTeX only where absolutely necessary for core mathematical equations, variables, or scientific notation, and make sure every formula is accompanied by full text-based explanation.
     
-    CRITICAL LATEX INSTRUCTIONS:
+    CRITICAL LATEX & CLEAN FORMATTING SAFETY INSTRUCTIONS:
     1. You MUST use LaTeX for ALL mathematical formulas, variables, and equations.
     2. Use $ ... $ for inline math and $$ ... $$ for block math.
-    3. You are outputting data to a JSON parser. You MUST double-escape all LaTeX backslashes. 
+    3. Ensure absolute compatibility with mathematical notation ($ ... $ and $$ ... $$) and clean Markdown so that complex formulas render seamlessly in the layout. Always verify that all inline $ and block $$ delimiters are perfectly closed and balanced to prevent rendering issues or broken containers.
+    4. You are outputting data to a JSON parser. You MUST double-escape all LaTeX backslashes. 
        For example, output \\\\frac instead of \\frac, and \\\\begin instead of \\begin.
-    4. Do NOT use \\label{...} as it is not supported. Use \\tag{...} for equation numbering if needed.
-    5. Ensure all LaTeX environments (like align, matrix, etc.) are wrapped in $$ ... $$ delimiters.
-    6. Double check that every backslash in your LaTeX is escaped with another backslash (e.g., \\\\alpha, \\\\beta).
+    5. Do NOT use \\label{...} as it is not supported. Use \\tag{...} for equation numbering if needed.
+    6. Ensure all LaTeX environments (like align, matrix, etc.) are wrapped in $$ ... $$ delimiters.
+    7. Double check that every backslash in your LaTeX is escaped with another backslash (e.g., \\\\alpha, \\\\beta).
     
     6. CRITICAL: Output ONLY valid JSON matching this structure:
     {
