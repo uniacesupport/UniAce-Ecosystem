@@ -2196,18 +2196,13 @@ const latexInstruction = `
        - CASE C: Degree(P) > Degree(Q) -> There is NO horizontal asymptote.
          * Subcase 1: If Degree(P) = Degree(Q) + 1, there is a slant (oblique) asymptote. You MUST NEVER call this a horizontal asymptote or say a horizontal asymptote exists.
          * Subcase 2: If Degree(P) > Degree(Q) + 1, there is a non-linear (quadratic, cubic, etc.) curved asymptote. There is NO horizontal asymptote.
-       - Example violation to avoid: Do NOT claim f(x) = (3x^2 + 2x)/(x-1) has a horizontal asymptote at y = 3. It has a slant asymptote (y = 3x + 5) and NO horizontal asymptote. The correct function with a horizontal asymptote at y = 3 is h(x) = e^x + 3 (since as x -> -infinity, e^x -> 0, so h(x) -> 3).
+       - Rationale: The horizontal asymptote of a rational function is strictly defined by the limit of the function as x approaches infinity. If the numerator's degree is greater than the denominator's degree, the limit is infinite, meaning no horizontal asymptote exists. Ensure your generated questions and options strictly reflect this principle dynamically for any function.
     
     2. FUNCTION DOMAINS:
        When calculating the domain of combined functions, find the domain of each constituent part and calculate their intersection (AND logic).
        - Division by Zero: The term 1 / g(x) requires g(x) != 0. It does NOT require g(x) > 0 unless g(x) is also under an even root.
        - Even Roots: The term sqrt(h(x)) requires h(x) >= 0.
-       - Example intersection: For f(x) = 1/x + sqrt(x - a):
-         * The term 1/x requires x != 0.
-         * The term sqrt(x - a) requires x >= a.
-         * If a > 0 (e.g., a = 4), then any x >= a is already strictly greater than 0 (and hence != 0).
-         * Therefore, the combined domain is simply x >= a, which in interval notation is the CLOSED interval [a, infinity).
-         * Example violation to avoid: Do NOT claim the domain of 1/x + sqrt(x - 4) is (4, infinity) by claiming x > 0 is required to avoid division by zero. x = 4 is perfectly valid (f(4) = 1/4 + 0 = 1/4). The correct answer is [4, infinity).
+       - Intersection Logic: Ensure that when taking the intersection of conditions (e.g., x != 0 and x >= a for some positive constant a), you accurately simplify the interval. Since any value greater than or equal to a positive constant is already non-zero, the restriction x != 0 is redundant for that interval, meaning the boundary value a is included in the domain. The interval MUST be closed at a (e.g., [a, infinity)). Always dynamically compute domain intervals from first principles.
     
     3. MANDATORY ANALYTICAL SELF-CHECK & STEP-BY-STEP PROOF:
        Before outputting any question, options, correct answer, or explanation, you MUST run a step-by-step mathematical or scientific verification from first principles to ensure:

@@ -1,7 +1,6 @@
 import { db } from '../firebase';
 import { collection, doc, getDoc, getDocs, setDoc, query, where, orderBy, writeBatch } from 'firebase/firestore';
 import { Course, Module, SubTopic, Quiz, Formula, CourseId } from '../types';
-import { patchQuiz } from '../utils/quizCorrector';
 
 export const sanitizeForFirestore = (obj: any): any => {
   if (obj === undefined) return null;
@@ -73,8 +72,7 @@ export const CourseService = {
   async getQuiz(courseId: string, moduleId: string): Promise<Quiz | null> {
     const quizSnap = await getDocs(collection(db, `courses/${courseId}/modules/${moduleId}/quizzes`));
     if (!quizSnap.empty) {
-      const quiz = { moduleId, ...quizSnap.docs[0].data() } as Quiz;
-      return patchQuiz(quiz);
+      return { moduleId, ...quizSnap.docs[0].data() } as Quiz;
     }
     return null;
   },

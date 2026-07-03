@@ -1,5 +1,4 @@
 import { Module, SubTopic, QuizQuestion, QuestionType, ChatMessage, CourseId, UserProgress, Flashcard, AIPersonality, TimetableEntry, ExamDate } from '../types';
-import { patchQuizQuestion } from '../utils/quizCorrector';
 import { GoogleGenAI } from "@google/genai";
 import { jsonrepair } from 'jsonrepair';
 import { getValidator } from './validators';
@@ -584,13 +583,17 @@ Generate a university-level quiz for ${subTopic ? 'the specific subtopic' : 'the
     CRITICAL LECTURER QUESTION LOGIC & SET STANDARDS:
     For BOTH question types ('multiple-choice' and 'fill-in-the-blank' (which is used as "Written Essay/Description")), you MUST structure questions with premium academic logic exactly like a university lecturer's formal exam sheet:
     1. **High-Order Conceptual Logic (No Simple Trivia)**: Craft deep questions (Bloom's Taxonomy Levels 4-6) requiring synthesis and evaluation. Never ask simple rote memorization questions.
-    2. **Comparative and Multi-Part Questions**: Structure questions that require comparing/distinguishing or explaining multi-dimensional concepts (e.g., "Distinguish between X and Y. Why is it essential for engineers to understand the interrelationship of structure, processing, and properties...").
-    3. **Case Studies, Real-World Failures, & Specific Material Classes**: Incorporate actual engineering/scientific failure scenarios, material classes (e.g., Al2O3 case study, composites, biomaterials, ferrous alloys), or practical applications. (e.g., "Describe the historical evolution of X and how it drove societal progress", "Discuss biomaterials as examples of advanced materials, highlighting their compositions, working principles, and applications").
-    4. **Written Question Style (when questionType is 'fill-in-the-blank')**: 
+    2. **STRICT FAITHFULNESS TO THE CONTENT MATERIAL**: All questions, scenarios, formulas, and options MUST be directly, strictly, and faithfully derived from the provided CONTENT MATERIAL below. Do NOT hallucinate concepts, subjects, or contexts that are absent from the provided material.
+    3. **Subject-Appropriate Questions (No Out-of-Context Scenarios)**:
+       - For Mathematics, Physics, and Quantitative Sciences: Focus strictly on mathematical proofs, derivations, application of equations/theorems, and rigorous algebraic/computational checks relevant to the course content. Do NOT invent unrelated engineering or material science stories (e.g., do NOT force "cooling of metallic alloys" or "Al2O3" onto a pure mathematics/calculus course unless that application is explicitly discussed in the provided text).
+       - For Engineering & Applied Sciences: Incorporate realistic case studies, real-world failure analysis, design trade-offs, and practical constraints based on the provided material.
+       - For Humanities & Social Sciences: Focus on comparative analysis, conceptual synthesis, historical frameworks, and evaluation of perspectives.
+    4. **Comparative and Multi-Part Questions**: Structure questions that require comparing/distinguishing or explaining multi-dimensional concepts (e.g., "Distinguish between X and Y based on the provided material").
+    5. **Written Question Style (when questionType is 'fill-in-the-blank')**: 
        - Do NOT make these fill-in-the-blank gap questions! They must be robust, multi-part essay-style questions or formal written test items.
        - The 'correctAnswer' field should represent a comprehensive Model Answer / Grading Rubric outlining the key technical points, core variables, or conceptual steps that a perfect answer should cover.
     
-    Ensure questions are technically accurate and mathematically rigorous for the given subject (Math, Physics, Zoology, GST, etc.).
+    Ensure questions are technically accurate and mathematically rigorous for the given subject (Math, Physics, Zoology, GST, etc.) as detailed in the content material.
     CRITICAL: Calibrate the difficulty and complexity to the student's level (${level || 'University Level'}).
     Include mathematical formulas in LaTeX format.
     LATEX SQUARE ROOTS: You MUST use \\\\sqrt{...} for all square roots. NEVER use the Unicode symbol √.
@@ -636,7 +639,7 @@ Generate a university-level quiz for ${subTopic ? 'the specific subtopic' : 'the
       }
       
       // Sanitize LaTeX in all question fields and apply dynamic mathematical corrections
-      return questions.map((q: any) => patchQuizQuestion({
+      return questions.map((q: any) => ({
         ...q,
         question: sanitizeLatex(q.question),
         options: q.options?.map((opt: string) => sanitizeLatex(opt)),
