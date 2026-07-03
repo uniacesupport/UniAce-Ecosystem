@@ -639,14 +639,17 @@ Generate a university-level quiz for ${subTopic ? 'the specific subtopic' : 'the
       }
       
       // Sanitize LaTeX in all question fields and apply dynamic mathematical corrections
-      return questions.map((q: any) => ({
-        ...q,
-        question: sanitizeLatex(q.question),
-        options: q.options?.map((opt: string) => sanitizeLatex(opt)),
-        correctAnswer: sanitizeLatex(q.correctAnswer),
-        explanation: sanitizeLatex(q.explanation),
-        hint: sanitizeLatex(q.hint)
-      }));
+      return questions.map((q: any) => {
+        if (!q || typeof q !== 'object') return q;
+        return {
+          ...q,
+          question: sanitizeLatex(q.question),
+          options: Array.isArray(q.options) ? q.options.map((opt: any) => sanitizeLatex(opt)) : q.options,
+          correctAnswer: sanitizeLatex(q.correctAnswer),
+          explanation: sanitizeLatex(q.explanation),
+          hint: sanitizeLatex(q.hint)
+        };
+      });
     } catch (e: any) {
       console.error("Quiz generation error (extractJSON threw an error):", e);
       throw e;
@@ -733,10 +736,11 @@ Generate a university-level quiz for ${subTopic ? 'the specific subtopic' : 'the
     const response = await callAI(prompt, undefined, 'json', 1000, 'quiz', 'quiz');
     try {
       const q = extractJSON(response.text || "{}");
+      if (!q || typeof q !== 'object') return q;
       return {
         ...q,
         question: sanitizeLatex(q.question),
-        options: q.options?.map((opt: string) => sanitizeLatex(opt)),
+        options: Array.isArray(q.options) ? q.options.map((opt: any) => sanitizeLatex(opt)) : q.options,
         correctAnswer: sanitizeLatex(q.correctAnswer),
         explanation: sanitizeLatex(q.explanation),
         hint: sanitizeLatex(q.hint)

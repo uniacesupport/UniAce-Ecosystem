@@ -31,8 +31,9 @@ const getAuthToken = async () => {
   }
 };
 
-export function sanitizeLatex(content: string): string {
-  if (!content) return content;
+export function sanitizeLatex(content: any): any {
+  if (content === null || content === undefined) return content;
+  if (typeof content !== 'string') return content;
   
   // 0. Remove markdown code block wrappers if the AI incorrectly wrapped the entire response
   let sanitized = content.replace(/^```(?:markdown)?\n([\s\S]*?)\n```$/g, '$1');
@@ -677,13 +678,16 @@ export async function generateModuleQuiz(
   
   // Sanitize LaTeX in questions and explanations
   if (result && result.questions && Array.isArray(result.questions)) {
-    result.questions = result.questions.map((q: any) => ({
-      ...q,
-      question: sanitizeLatex(q.question),
-      options: Array.isArray(q.options) ? q.options.map((opt: any) => sanitizeLatex(opt)) : q.options,
-      explanation: sanitizeLatex(q.explanation),
-      hint: sanitizeLatex(q.hint)
-    }));
+    result.questions = result.questions.map((q: any) => {
+      if (!q || typeof q !== 'object') return q;
+      return {
+        ...q,
+        question: sanitizeLatex(q.question),
+        options: Array.isArray(q.options) ? q.options.map((opt: any) => sanitizeLatex(opt)) : q.options,
+        explanation: sanitizeLatex(q.explanation),
+        hint: sanitizeLatex(q.hint)
+      };
+    });
   }
   
   // Normalize result: ensure it's an object with a 'questions' array
