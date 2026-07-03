@@ -137,10 +137,36 @@ function fixMarkdownTables(text: string): string {
 function preprocessMarkdownContent(text: string): string {
   if (!text) return '';
 
+  // 0. Disable indented code blocks by reducing any indentation that is 4 or more spaces to 2 spaces
+  // (unless it's inside a fenced code block with ```). This is because AI-generated lists/paragraphs
+  // often get accidentally indented by 4+ spaces, which standard markdown renders as preformatted code blocks.
+  const lines = text.split('\n');
+  let inFencedCodeBlock = false;
+  const processedLines = lines.map(line => {
+    if (line.trim().startsWith('```')) {
+      inFencedCodeBlock = !inFencedCodeBlock;
+      return line;
+    }
+    if (inFencedCodeBlock) {
+      return line;
+    }
+    const match = line.match(/^(\s+)(.*)/);
+    if (match) {
+      const indent = match[1];
+      const rest = match[2];
+      if (indent.includes('\t') || indent.length >= 4) {
+        // Replace with 2 spaces to preserve nesting under list items without triggering indented code block
+        return '  ' + rest;
+      }
+    }
+    return line;
+  });
+  let processed = processedLines.join('\n');
+
   // 1. Convert any mistakenly wrapped single-line paragraphs from math formatting to normal text
   // If a block $ ... $ has 3 or more spaces, and lacks clear mathematical characters/indicators, strip the outer dollar signs.
   // CRITICAL: We restrict matching to single lines to prevent an unclosed single dollar sign from crossing line boundaries and consuming the entire document.
-  let processed = text.replace(/\$([^$\n]+)\$/g, (match, p1) => {
+  processed = processed.replace(/\$([^$\n]+)\$/g, (match, p1) => {
     const trimmed = p1.trim();
     const spaceCount = (trimmed.match(/\s+/g) || []).length;
     const hasMathSymbols = /([=+\-*/^_{}\\]|\\frac|\\sqrt|\\sum|\\int|\\alpha|\\beta|\\theta|\\pi|\\sigma|\\lambda|\\delta|\\partial|\\infty|\\ge|\\le|\\ne|\\cdot|\\times)/.test(trimmed);
@@ -167,7 +193,8 @@ function preprocessMarkdownContent(text: string): string {
   // This avoids KaTeX trying to interpret regular text containing \something (like \delocalized) as a math macro
   const validCommands = new Set([
     'frac', 'sqrt', 'sum', 'int', 'alpha', 'beta', 'theta', 'pi', 'sigma', 'lambda', 'delta', 'partial', 'infinity', 'infty', 'ge', 'le', 'ne', 'times', 'div', 'pm', 'mp', 'approx', 'equiv', 'cdots', 'dots', 'overline', 'underline', 'hat', 'bar', 'tilde', 'vec', 'text', 'left', 'right', 'begin', 'end', 'align', 'matrix', 'pmatrix', 'bmatrix', 'vmatrix', 'Vmatrix', 'cases', 'del', 'nabla', 'degree', 'sin', 'cos', 'tan', 'log', 'ln', 'lim', 'micro', 'mu', 'rho', 'phi', 'psi', 'omega', 'gamma', 'delta', 'epsilon', 'zeta', 'eta', 'iota', 'kappa', 'nu', 'xi', 'omicron', 'tau', 'upsilon', 'chi', 'Gamma', 'Delta', 'Theta', 'Lambda', 'Xi', 'Pi', 'Sigma', 'Upsilon', 'Phi', 'Psi', 'Omega', 'cdot',
-    'rightarrow', 'leftarrow', 'to', 'leftrightarrow', 'Rightarrow', 'Leftarrow', 'Leftrightarrow', 'mathrm', 'mathbf', 'mathit', 'mathsf', 'mathtt', 'mathcal', 'mathbb', 'mathfrak', 'ce', 'deg', 'leq', 'geq', 'neq', 'cong', 'propto', 'sim', 'subset', 'supset', 'subseteq', 'supseteq', 'in', 'ni', 'notin'
+    'rightarrow', 'leftarrow', 'to', 'leftrightarrow', 'Rightarrow', 'Leftarrow', 'Leftrightarrow', 'mathrm', 'mathbf', 'mathit', 'mathsf', 'mathtt', 'mathcal', 'mathbb', 'mathfrak', 'ce', 'deg', 'leq', 'geq', 'neq', 'cong', 'propto', 'sim', 'subset', 'supset', 'subseteq', 'supseteq', 'in', 'ni', 'notin',
+    'cup', 'cap', 'forall', 'exists', 'implies', 'iff', 'varnothing', 'emptyset', 'setminus'
   ]);
 
   processed = processed.replace(/\\([a-zA-Z]+)/g, (match, word) => {
@@ -175,6 +202,40 @@ function preprocessMarkdownContent(text: string): string {
       return match; // Keep valid LaTeX command
     }
     return word; // Strip backslash from regular word (e.g., \delocalized -> delocalized)
+  });
+
+  // 4. Fix missing backslashes for all math/logic/set keywords inside math blocks or interval notations
+  const mathKeywords = [
+    'cup', 'cap', 'subset', 'supset', 'subseteq', 'supseteq', 'in', 'notin', 
+    'setminus', 'emptyset', 'varnothing', 'infty', 'forall', 'exists', 
+    'implies', 'iff', 'to', 'le', 'leq', 'ge', 'geq', 'ne', 'neq', 
+    'approx', 'times', 'pm', 'div', 'cdot', 'alpha', 'beta', 'gamma', 
+    'delta', 'theta', 'omega', 'pi', 'sigma', 'mu', 'lambda', 'tau', 
+    'phi', 'psi'
+  ];
+
+  const fixMathKeywords = (mathContent: string) => {
+    let fixed = mathContent;
+    for (const kw of mathKeywords) {
+      const regex = new RegExp(`(?<!\\\\)\\b${kw}\\b`, 'g');
+      fixed = fixed.replace(regex, `\\${kw}`);
+    }
+    return fixed;
+  };
+
+  // Inside $$...$$ block math
+  processed = processed.replace(/\$\$([\s\S]+?)\$\$/g, (match, mathContent) => {
+    return `$$${fixMathKeywords(mathContent)}$$`;
+  });
+
+  // Inside $...$ inline math
+  processed = processed.replace(/\$([^$\n]+?)\$/g, (match, mathContent) => {
+    return `$${fixMathKeywords(mathContent)}$`;
+  });
+
+  // For cases outside of math blocks that look exactly like interval notation (e.g. )cup( or ) cup ( )
+  processed = processed.replace(/(?<=[)\]])\s*(cup|cap)\s*(?=[([\]])/gi, (match, p1) => {
+    return p1.toLowerCase() === 'cup' ? '\\cup' : '\\cap';
   });
 
   return processed;

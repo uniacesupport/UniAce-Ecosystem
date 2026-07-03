@@ -36,6 +36,30 @@ export function sanitizeLatex(content: string): string {
   
   // 0. Remove markdown code block wrappers if the AI incorrectly wrapped the entire response
   let sanitized = content.replace(/^```(?:markdown)?\n([\s\S]*?)\n```$/g, '$1');
+
+  // 0.1. Disable indented code blocks by reducing any indentation that is 4 or more spaces to 2 spaces
+  // (unless it's inside a fenced code block with ```). This prevents accidental indented code blocks.
+  const lines = sanitized.split('\n');
+  let inFencedCodeBlock = false;
+  const processedLines = lines.map(line => {
+    if (line.trim().startsWith('```')) {
+      inFencedCodeBlock = !inFencedCodeBlock;
+      return line;
+    }
+    if (inFencedCodeBlock) {
+      return line;
+    }
+    const match = line.match(/^(\s+)(.*)/);
+    if (match) {
+      const indent = match[1];
+      const rest = match[2];
+      if (indent.includes('\t') || indent.length >= 4) {
+        return '  ' + rest;
+      }
+    }
+    return line;
+  });
+  sanitized = processedLines.join('\n');
   
   // 0.5. Replace Unicode square root √ with LaTeX \sqrt{}
   // Handle √ followed by parentheses, numbers, or variables, and ensure it catches cases without parentheses
@@ -104,10 +128,42 @@ export function sanitizeLatex(content: string): string {
   sanitized = sanitized.replace(/\\ttau/g, '\\tau');
   
   // 5.7 Cleanup AI over-applying LaTeX backslashes to common English words
-  // This happens when AI follows "double-escape backslashes" too literally for words like "in", "cup", "end"
-  sanitized = sanitized.replace(/\\in(\s+)/g, 'in$1');
-  sanitized = sanitized.replace(/\\cup(\s+)/g, 'cup$1');
+  // This happens when AI follows "double-escape backslashes" too literally for words like "end"
   sanitized = sanitized.replace(/\\end(\s+)/g, 'end$1');
+  
+  // 5.7.1 Fix missing backslashes for all math/logic/set keywords inside math blocks or interval notations
+  const mathKeywords = [
+    'cup', 'cap', 'subset', 'supset', 'subseteq', 'supseteq', 'in', 'notin', 
+    'setminus', 'emptyset', 'varnothing', 'infty', 'forall', 'exists', 
+    'implies', 'iff', 'to', 'le', 'leq', 'ge', 'geq', 'ne', 'neq', 
+    'approx', 'times', 'pm', 'div', 'cdot', 'alpha', 'beta', 'gamma', 
+    'delta', 'theta', 'omega', 'pi', 'sigma', 'mu', 'lambda', 'tau', 
+    'phi', 'psi'
+  ];
+
+  const fixMathKeywords = (mathContent: string) => {
+    let fixed = mathContent;
+    for (const kw of mathKeywords) {
+      const regex = new RegExp(`(?<!\\\\)\\b${kw}\\b`, 'g');
+      fixed = fixed.replace(regex, `\\${kw}`);
+    }
+    return fixed;
+  };
+
+  // Inside $$...$$ block math
+  sanitized = sanitized.replace(/\$\$([\s\S]+?)\$\$/g, (match, mathContent) => {
+    return `$$${fixMathKeywords(mathContent)}$$`;
+  });
+
+  // Inside $...$ inline math
+  sanitized = sanitized.replace(/\$([^$\n]+?)\$/g, (match, mathContent) => {
+    return `$${fixMathKeywords(mathContent)}$`;
+  });
+
+  // For cases outside of math blocks that look exactly like interval notation (e.g. )cup( or ) cup ( )
+  sanitized = sanitized.replace(/(?<=[)\]])\s*(cup|cap)\s*(?=[([\]])/gi, (match, p1) => {
+    return p1.toLowerCase() === 'cup' ? '\\cup' : '\\cap';
+  });
   
   // 5.8 Cleanup trailing backslashes that AI adds to the end of lines (LaTeX style newlines in markdown)
   // This happens when AI gets confused and uses \\ for newlines in regular text
