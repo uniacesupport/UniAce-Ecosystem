@@ -16,6 +16,7 @@ import CourseEditModal from './CourseEditModal';
 import CourseCreateModal from './CourseCreateModal';
 import ApiKeyManagerModal from './ApiKeyManagerModal';
 import { CurriculumManager } from './CurriculumManager';
+import { MathEditableInput } from './MathEditableInput';
 import { AIService } from '../services/ai';
 import { generateCourseContent, generateCourseSkeleton, generateModuleContent, generateCourseFormulas } from '../services/aiCourseGenerator';
 import { CourseService, sanitizeForFirestore } from '../services/courseService';
@@ -2768,25 +2769,23 @@ export default function AdminDashboard() {
                   <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
                     {courseSkeleton.modules.map((module: any, mIdx: number) => (
                       <div key={mIdx} className="p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700">
-                        <input 
-                          type="text" 
+                        <MathEditableInput 
                           value={module.title}
-                          onChange={(e) => {
+                          onChange={(val) => {
                             const newSkeleton = { ...courseSkeleton };
-                            newSkeleton.modules[mIdx].title = e.target.value;
+                            newSkeleton.modules[mIdx].title = val;
                             setCourseSkeleton(newSkeleton);
                           }}
                           className="w-full bg-transparent font-bold text-slate-900 dark:text-white mb-2 focus:outline-none focus:ring-1 focus:ring-indigo-500 rounded px-1"
                         />
                         <div className="pl-4 space-y-1 border-l-2 border-slate-200 dark:border-slate-700">
                           {module.lessonTitles.map((lesson: string, lIdx: number) => (
-                            <input 
+                            <MathEditableInput 
                               key={lIdx}
-                              type="text" 
                               value={lesson}
-                              onChange={(e) => {
+                              onChange={(val) => {
                                 const newSkeleton = { ...courseSkeleton };
-                                newSkeleton.modules[mIdx].lessonTitles[lIdx] = e.target.value;
+                                newSkeleton.modules[mIdx].lessonTitles[lIdx] = val;
                                 setCourseSkeleton(newSkeleton);
                               }}
                               className="w-full bg-transparent text-sm text-slate-600 dark:text-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500 rounded px-1"
