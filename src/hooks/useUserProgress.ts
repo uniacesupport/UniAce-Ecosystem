@@ -225,45 +225,67 @@ export function useUserProgress() {
           totalSparksReward += 50; 
         }
       });
+    }
 
-      // Update AI Sparks in Firestore
-      if (totalSparksReward > 0 && user && isOnline) {
-        try {
-          const userDocRef = doc(db, 'users', user.uid);
-          updateDoc(userDocRef, {
-            ai_sparks: increment(totalSparksReward)
-          }).catch(err => {
-            console.error("Error awarding sparks in Firestore:", err);
-          });
-          import('../services/logService').then(({ LogService }) => {
-            LogService.log('success', 'user', `Awarded ${totalSparksReward} AI Sparks for unlocking badges!`).catch(console.error);
-          });
-        } catch (err) {
-          console.error("Error awarding sparks:", err);
-        }
+    return { updatedAchievements, totalSparksReward };
+  };
+
+  const awardBadgeSparks = async (amount: number) => {
+    if (amount > 0 && user && isOnline) {
+      try {
+        const idToken = await user.getIdToken();
+        await fetch('/api/user/reward-badge', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${idToken}`
+          },
+          body: JSON.stringify({ amount })
+        });
+        import('../services/logService').then(({ LogService }) => {
+          LogService.log('success', 'user', `Awarded ${amount} AI Sparks for unlocking badges!`).catch(console.error);
+        });
+      } catch (err) {
+        console.error("Error awarding sparks:", err);
       }
     }
-    return updatedAchievements;
   };
 
   const addXp = (amount: number) => {
+    let sparksToAward = 0;
     setProgress(prev => {
       const newXp = prev.xp + amount;
       const newLevel = GamificationService.calculateLevel(newXp).level;
       
-      // Check for new badges
       const tempProgress = { ...prev, xp: newXp, level: newLevel };
       const newBadges = GamificationService.checkNewBadges(tempProgress);
       
-      const updatedAchievements = processNewBadges(prev.achievements, newBadges);
+      const { updatedAchievements, totalSparksReward } = processNewBadges(prev.achievements, newBadges);
+      sparksToAward = totalSparksReward;
 
       const finalProgress = { ...prev, xp: newXp, level: newLevel, achievements: updatedAchievements };
-      // If level up, save immediately
       if (newLevel > prev.level) {
         saveImmediately(finalProgress);
       }
       return finalProgress;
     });
+
+    if (sparksToAward > 0) {
+      awardBadgeSparks(sparksToAward);
+    }
+
+    if (user && isOnline) {
+      user.getIdToken().then(idToken => {
+        fetch('/api/user/reward-xp', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${idToken}`
+          },
+          body: JSON.stringify({ amount })
+        }).catch(err => console.error("Error rewarding XP on server:", err));
+      });
+    }
   };
 
   const checkAndUpdateStreak = () => {
@@ -302,7 +324,11 @@ export function useUserProgress() {
       const tempProgress = { ...prev, streak: newStreak, lastStudyDate: newLastStudyDate };
       const newBadges = GamificationService.checkNewBadges(tempProgress);
       
-      const updatedAchievements = processNewBadges(prev.achievements, newBadges);
+      const { updatedAchievements, totalSparksReward } = processNewBadges(prev.achievements, newBadges);
+      
+      if (totalSparksReward > 0) {
+        awardBadgeSparks(totalSparksReward);
+      }
 
       const finalProgress = { ...tempProgress, achievements: updatedAchievements };
       saveImmediately(finalProgress);
@@ -310,7 +336,8 @@ export function useUserProgress() {
     });
   };
 
-  const updateMastery = (topicId: string, score: number) => {
+  const updateMastery = async (topicId: string, score: number) => {
+    let sparksToAward = 0;
     setProgress(prev => {
       const currentMastery = prev.mastery[topicId] || 0;
       const newMastery = Math.max(currentMastery, score);
@@ -331,7 +358,8 @@ export function useUserProgress() {
 
       // Check for achievements
       const newBadges = GamificationService.checkNewBadges(tempProgress);
-      const updatedAchievements = processNewBadges(prev.achievements, newBadges);
+      const { updatedAchievements, totalSparksReward } = processNewBadges(prev.achievements, newBadges);
+      sparksToAward = totalSparksReward;
 
       const finalProgress = { 
         ...tempProgress,
@@ -344,6 +372,23 @@ export function useUserProgress() {
       }
       return finalProgress;
     });
+
+    if (sparksToAward > 0) {
+      awardBadgeSparks(sparksToAward);
+    }
+
+    if (user && isOnline) {
+      user.getIdToken().then(idToken => {
+        fetch('/api/user/update-mastery', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${idToken}`
+          },
+          body: JSON.stringify({ topicId, score })
+        }).catch(err => console.error("Error updating mastery on server:", err));
+      });
+    }
   };
 
   const recordStudyTime = (topicId: string, seconds: number) => {
@@ -410,9 +455,14 @@ export function useUserProgress() {
 
     if (user && isOnline) {
       try {
-        const userDocRef = doc(db, 'users', user.uid);
-        await updateDoc(userDocRef, {
-          enrolledCourses: arrayUnion(courseId)
+        const idToken = await user.getIdToken();
+        await fetch('/api/user/enroll-course', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${idToken}`
+          },
+          body: JSON.stringify({ courseId })
         });
 
         // Check if course content exists in Firestore
@@ -448,9 +498,14 @@ export function useUserProgress() {
 
     if (user && isOnline) {
       try {
-        const userDocRef = doc(db, 'users', user.uid);
-        await updateDoc(userDocRef, {
-          enrolledCourses: arrayRemove(courseId)
+        const idToken = await user.getIdToken();
+        await fetch('/api/user/unenroll-course', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${idToken}`
+          },
+          body: JSON.stringify({ courseId })
         });
       } catch (error: any) {
         console.error("Error updating enrolled courses:", error);

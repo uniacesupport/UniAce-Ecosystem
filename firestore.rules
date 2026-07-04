@@ -49,30 +49,30 @@ service cloud.firestore {
 
     function isValidUser(data) {
       return data.uid == request.auth.uid &&
-             (!('email' in data) || (data.email is string && data.email.size() < 200)) &&
-             (!('displayName' in data) || (data.displayName is string && data.displayName.size() < 100)) &&
-             (!('bio' in data) || (data.bio is string && data.bio.size() < 500)) &&
-             (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() < 2000)) &&
-             (!('role' in data) || (data.role in ['student', 'admin', 'tutor', 'moderator'])) &&
-             (!('plan_type' in data) || (data.plan_type in ['free', 'pro', 'scholar', 'exam_cram', 'semester'])) &&
-             (!('xp' in data) || (data.xp is number && data.xp >= 0)) &&
-             (!('level' in data) || (data.level is number && data.level >= 0)) &&
-             (!('streak' in data) || (data.streak is number && data.streak >= 0)) &&
-             (!('themeColor' in data) || (data.themeColor is string && data.themeColor.size() < 50)) &&
-             (!('rank' in data) || (data.rank is string && data.rank.size() < 50)) &&
-             (!('sessionId' in data) || (data.sessionId is string && data.sessionId.size() < 100)) &&
-             (!('fcmToken' in data) || (data.fcmToken is string && data.fcmToken.size() < 500)) &&
-             (!('lastStudyDate' in data) || (data.lastStudyDate is string && data.lastStudyDate.size() < 50)) &&
-             (!('mastery' in data) || (data.mastery is map)) &&
-             (!('achievements' in data) || (data.achievements is list && data.achievements.size() < 1000)) &&
-             (!('studyTime' in data) || (data.studyTime is map)) &&
-             (!('topicLastStudied' in data) || (data.topicLastStudied is map)) &&
-             (!('bookmarks' in data) || (data.bookmarks is list && data.bookmarks.size() < 1000)) &&
-             (!('enrolledCourses' in data) || (data.enrolledCourses is list && data.enrolledCourses.size() < 100)) &&
-             (!('assignments' in data) || (data.assignments is list && data.assignments.size() < 100)) &&
-             (!('learningProfile' in data) || (data.learningProfile is map)) &&
-             (!('last_nudge_date' in data) || (data.last_nudge_date is string && data.last_nudge_date.size() < 50)) &&
-             (!('last_nudge_message' in data) || (data.last_nudge_message is string && data.last_nudge_message.size() < 1000));
+             (!('email' in data) || data.email == null || (data.email is string && data.email.size() < 200)) &&
+             (!('displayName' in data) || data.displayName == null || (data.displayName is string && data.displayName.size() < 100)) &&
+             (!('bio' in data) || data.bio == null || (data.bio is string && data.bio.size() < 500)) &&
+             (!('photoURL' in data) || data.photoURL == null || (data.photoURL is string && data.photoURL.size() < 2000)) &&
+             (!('role' in data) || data.role == null || (data.role in ['student', 'admin', 'tutor', 'moderator'])) &&
+             (!('plan_type' in data) || data.plan_type == null || (data.plan_type in ['free', 'pro', 'scholar', 'exam_cram', 'semester'])) &&
+             (!('xp' in data) || data.xp == null || (data.xp is number && data.xp >= 0)) &&
+             (!('level' in data) || data.level == null || (data.level is number && data.level >= 0)) &&
+             (!('streak' in data) || data.streak == null || (data.streak is number && data.streak >= 0)) &&
+             (!('themeColor' in data) || data.themeColor == null || (data.themeColor is string && data.themeColor.size() < 50)) &&
+             (!('rank' in data) || data.rank == null || (data.rank is string && data.rank.size() < 50)) &&
+             (!('sessionId' in data) || data.sessionId == null || (data.sessionId is string && data.sessionId.size() < 100)) &&
+             (!('fcmToken' in data) || data.fcmToken == null || (data.fcmToken is string && data.fcmToken.size() < 500)) &&
+             (!('lastStudyDate' in data) || data.lastStudyDate == null || (data.lastStudyDate is string && data.lastStudyDate.size() < 50)) &&
+             (!('mastery' in data) || data.mastery == null || (data.mastery is map)) &&
+             (!('achievements' in data) || data.achievements == null || (data.achievements is list && data.achievements.size() < 1000)) &&
+             (!('studyTime' in data) || data.studyTime == null || (data.studyTime is map)) &&
+             (!('topicLastStudied' in data) || data.topicLastStudied == null || (data.topicLastStudied is map)) &&
+             (!('bookmarks' in data) || data.bookmarks == null || (data.bookmarks is list && data.bookmarks.size() < 1000)) &&
+             (!('enrolledCourses' in data) || data.enrolledCourses == null || (data.enrolledCourses is list && data.enrolledCourses.size() < 100)) &&
+             (!('assignments' in data) || data.assignments == null || (data.assignments is list && data.assignments.size() < 100)) &&
+             (!('learningProfile' in data) || data.learningProfile == null || (data.learningProfile is map)) &&
+             (!('last_nudge_date' in data) || data.last_nudge_date == null || (data.last_nudge_date is string && data.last_nudge_date.size() < 50)) &&
+             (!('last_nudge_message' in data) || data.last_nudge_message == null || (data.last_nudge_message is string && data.last_nudge_message.size() < 1000));
     }
 
     function isValidStudyPlan(data) {
@@ -155,7 +155,7 @@ service cloud.firestore {
       
       allow update: if isOwner(userId) && 
                       isValidUser(request.resource.data) &&
-                      (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'plan_type', 'subscription_expiry', 'subscription_status', 'subscription_start_date', 'last_spark_reset', 'last_payment_ref']) || isAdmin());
+                      (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'plan_type', 'subscription_expiry', 'subscription_status', 'subscription_start_date', 'last_spark_reset', 'last_payment_ref', 'xp', 'level', 'ai_sparks', 'mastery', 'achievements', 'enrolledCourses']) || isAdmin());
       
       allow create: if isOwner(userId) && 
                       isValidUser(request.resource.data) &&

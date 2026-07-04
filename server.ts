@@ -3626,6 +3626,146 @@ app.post('/api/user/reward-sparks', verifyAuth, async (req, res) => {
   }
 });
 
+// 4b. Badge Reward Endpoint
+app.post('/api/user/reward-badge', verifyAuth, async (req, res) => {
+  const { amount } = req.body;
+  const uid = (req as any).user.uid;
+  const app = getAdminApp();
+
+  if (!app || !uid) {
+    return res.status(503).json({ error: 'Service unavailable' });
+  }
+
+  const numAmount = parseInt(amount);
+  if (isNaN(numAmount) || numAmount <= 0 || numAmount > 1000) {
+    return res.status(400).json({ error: 'Invalid reward amount' });
+  }
+
+  try {
+    const userRef = app.firestore().collection('users').doc(uid);
+    await userRef.update({
+      ai_sparks: admin.firestore.FieldValue.increment(numAmount)
+    });
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('Badge Reward Error:', error.message);
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// 5. XP Reward Endpoint
+app.post('/api/user/reward-xp', verifyAuth, async (req, res) => {
+  const { amount } = req.body;
+  const uid = (req as any).user.uid;
+  const app = getAdminApp();
+
+  if (!app || !uid) {
+    return res.status(503).json({ error: 'Service unavailable' });
+  }
+
+  const numAmount = parseInt(amount);
+  if (isNaN(numAmount) || numAmount <= 0 || numAmount > 1000) {
+    return res.status(400).json({ error: 'Invalid XP amount' });
+  }
+
+  try {
+    const userRef = app.firestore().collection('users').doc(uid);
+    await userRef.update({
+      xp: admin.firestore.FieldValue.increment(numAmount)
+    });
+
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('Error rewarding XP:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 6. Update Mastery Endpoint
+app.post('/api/user/update-mastery', verifyAuth, async (req, res) => {
+  const { topicId, score } = req.body;
+  const uid = (req as any).user.uid;
+  const app = getAdminApp();
+
+  if (!app || !uid) {
+    return res.status(503).json({ error: 'Service unavailable' });
+  }
+
+  const numScore = parseInt(score);
+  if (isNaN(numScore) || numScore < 0 || numScore > 100) {
+    return res.status(400).json({ error: 'Invalid mastery score' });
+  }
+
+  try {
+    const userRef = app.firestore().collection('users').doc(uid);
+    await app.firestore().runTransaction(async (t) => {
+      const userDoc = await t.get(userRef);
+      if (!userDoc.exists) throw new Error('User not found');
+      
+      const currentMasteryMap = userDoc.data()?.mastery || {};
+      const currentScore = currentMasteryMap[topicId] || 0;
+      const newScore = Math.max(currentScore, numScore);
+
+      const updateData: any = {
+        [`mastery.${topicId}`]: newScore,
+        [`topicLastStudied.${topicId}`]: new Date().toISOString(),
+        lastStudyDate: new Date().toISOString()
+      };
+
+      t.update(userRef, updateData);
+    });
+
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('Error updating mastery:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 7. Course Enrollment Endpoint
+app.post('/api/user/enroll-course', verifyAuth, async (req, res) => {
+  const { courseId } = req.body;
+  const uid = (req as any).user.uid;
+  const app = getAdminApp();
+
+  if (!app || !uid || !courseId) {
+    return res.status(400).json({ error: 'Invalid request' });
+  }
+
+  try {
+    const userRef = app.firestore().collection('users').doc(uid);
+    await userRef.update({
+      enrolledCourses: admin.firestore.FieldValue.arrayUnion(courseId)
+    });
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('Error enrolling course:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 8. Course Unenrollment Endpoint
+app.post('/api/user/unenroll-course', verifyAuth, async (req, res) => {
+  const { courseId } = req.body;
+  const uid = (req as any).user.uid;
+  const app = getAdminApp();
+
+  if (!app || !uid || !courseId) {
+    return res.status(400).json({ error: 'Invalid request' });
+  }
+
+  try {
+    const userRef = app.firestore().collection('users').doc(uid);
+    await userRef.update({
+      enrolledCourses: admin.firestore.FieldValue.arrayRemove(courseId)
+    });
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('Error unenrolling course:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // --- Struggle Analytics Endpoints ---
 
 // 1. Log Struggle Event
