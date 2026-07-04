@@ -3766,6 +3766,45 @@ app.post('/api/user/unenroll-course', verifyAuth, async (req, res) => {
   }
 });
 
+// 9. Record Study Time Endpoint
+app.post('/api/user/record-study-time', verifyAuth, async (req, res) => {
+  const { topicId, seconds } = req.body;
+  const uid = (req as any).user.uid;
+  const app = getAdminApp();
+
+  if (!app || !uid || !topicId) {
+    return res.status(400).json({ error: 'Invalid request' });
+  }
+
+  const numSeconds = parseInt(seconds);
+  if (isNaN(numSeconds) || numSeconds <= 0 || numSeconds > 3600) {
+    return res.status(400).json({ error: 'Invalid duration' });
+  }
+
+  try {
+    const userRef = app.firestore().collection('users').doc(uid);
+    await app.firestore().runTransaction(async (t) => {
+      const userDoc = await t.get(userRef);
+      if (!userDoc.exists) throw new Error('User not found');
+      
+      const currentStudyTimeMap = userDoc.data()?.studyTime || {};
+      const currentSeconds = currentStudyTimeMap[topicId] || 0;
+
+      const updateData: any = {
+        [`studyTime.${topicId}`]: currentSeconds + numSeconds,
+        lastStudyDate: new Date().toISOString()
+      };
+
+      t.update(userRef, updateData);
+    });
+
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('Error recording study time:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // --- Struggle Analytics Endpoints ---
 
 // 1. Log Struggle Event

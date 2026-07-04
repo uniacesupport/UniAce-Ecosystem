@@ -40,7 +40,7 @@ interface MarkdownRendererProps {
 }
 
 function fixMarkdownTables(text: string): string {
-  if (!text) return '';
+  if (typeof text !== 'string' || !text) return '';
   
   // Split content by newlines to inspect line-by-line
   const lines = text.split('\n');
@@ -135,7 +135,7 @@ function fixMarkdownTables(text: string): string {
 }
 
 function preprocessMarkdownContent(text: string): string {
-  if (!text) return '';
+  if (typeof text !== 'string' || !text) return '';
 
   // 0. Disable indented code blocks by reducing any indentation that is 4 or more spaces to 2 spaces
   // (unless it's inside a fenced code block with ```). This is because AI-generated lists/paragraphs

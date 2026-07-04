@@ -133,6 +133,10 @@ const ensureArray = (data: any, fallback: any[] = []): any[] => {
 import { sanitizeLatex } from './aiCourseGenerator';
 
 export const AIService = {
+  generateContent: async (prompt: string, systemInstruction?: string) => {
+    const res = await callAI(prompt, systemInstruction, undefined, undefined, 'standard', 'general');
+    return res.text;
+  },
   generateImage: async (prompt: string, aspectRatio: "1:1" | "3:4" | "4:3" | "9:16" | "16:9" = "1:1") => {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) throw new Error("Gemini API Key is required for image generation.");

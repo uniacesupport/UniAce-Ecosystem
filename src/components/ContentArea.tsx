@@ -1,12 +1,13 @@
 import { Module, SubTopic, UserProgress } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { BookOpen, ChevronRight, Brain, Menu, Volume2, Loader2, ArrowLeft, Sparkles, Wand2, Lock, Calculator as CalcIcon } from 'lucide-react';
+import { BookOpen, ChevronRight, Brain, Menu, Volume2, Loader2, ArrowLeft, Sparkles, Wand2, Lock, Calculator as CalcIcon, List } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import QuizGenerator from './QuizGenerator';
 import QuickCheck from './QuickCheck';
 import MarkdownRenderer from './MarkdownRenderer';
 import PricingModal from './PricingModal';
 import MiniTeacherModal from './MiniTeacherModal';
+import QuickSummaryModal from './QuickSummaryModal';
 import { AIService } from '../services/ai';
 import { generateLessonContent, sanitizeLatex } from '../services/aiCourseGenerator';
 import { LogService } from '../services/logService';
@@ -61,6 +62,7 @@ export default function ContentArea({
   const [generationStep, setGenerationStep] = useState(0);
   const [showPricingModal, setShowPricingModal] = useState(false);
   const [isMiniTeacherOpen, setIsMiniTeacherOpen] = useState(false);
+  const [isQuickSummaryOpen, setIsQuickSummaryOpen] = useState(false);
   const [miniTeacherMode, setMiniTeacherMode] = useState<'default' | 'simpler' | 'quiz' | 'proactive'>('default');
   const [isProactiveQuiz, setIsProactiveQuiz] = useState(false);
   const hasCheckedInRef = useRef<Set<string>>(new Set());
@@ -334,6 +336,14 @@ export default function ContentArea({
             <span>{isSpeaking ? 'Speaking...' : 'Listen'}</span>
           </button>
 
+          <button
+            onClick={() => setIsQuickSummaryOpen(true)}
+            className="flex items-center gap-2 px-3 py-1 rounded-md text-sm font-medium transition-all active:scale-95 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-900/50"
+          >
+            <List size={14} />
+            <span className="hidden sm:inline">Summary</span>
+          </button>
+
           <div className="relative">
             <button
               onClick={() => handleOpenMiniTeacher('default')}
@@ -519,6 +529,13 @@ export default function ContentArea({
         subTopic={{ ...activeSubTopic, content: fetchedLesson?.content || '' }}
         mode={miniTeacherMode}
         progress={progress}
+      />
+
+      <QuickSummaryModal
+        isOpen={isQuickSummaryOpen}
+        onClose={() => setIsQuickSummaryOpen(false)}
+        topicTitle={activeSubTopic.title}
+        content={fetchedLesson?.content || ''}
       />
     </div>
   );
