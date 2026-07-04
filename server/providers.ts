@@ -929,8 +929,11 @@ export class CohereProvider implements ModelProvider {
       const lastMessage = messages[messages.length - 1].content;
 
       try {
+        const dbModel = await this.rotator.getModel();
+        const selectedModel = dbModel || (options.complexity === 'high' ? 'command-r-plus-08-2024' : 'command-r-08-2024');
+
         const response = await cohere.chat({
-          model: options.complexity === 'high' ? 'command-r-plus-08-2024' : 'command-r',
+          model: selectedModel,
           message: lastMessage,
           chatHistory: chatHistory as any,
           temperature: 0.5,
@@ -966,8 +969,11 @@ export class CohereProvider implements ModelProvider {
       const lastMessage = messages[messages.length - 1].content;
 
       try {
+        const dbModel = await this.rotator.getModel();
+        const selectedModel = dbModel || (options.complexity === 'high' ? 'command-r-plus-08-2024' : 'command-r-08-2024');
+
         const stream = await cohere.chatStream({
-          model: options.complexity === 'high' ? 'command-r-plus-08-2024' : 'command-r',
+          model: selectedModel,
           message: lastMessage,
           chatHistory: chatHistory as any,
           temperature: 0.5,

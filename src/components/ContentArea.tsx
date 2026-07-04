@@ -96,6 +96,7 @@ export default function ContentArea({
 
   // Load content dynamically (Lazy Loading)
   useEffect(() => {
+    setFetchedLesson(null);
     const loadContent = async () => {
       if (!courseId || !db) return;
       

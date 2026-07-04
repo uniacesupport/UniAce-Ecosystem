@@ -23,6 +23,16 @@ export default function QuickSummaryModal({ isOpen, onClose, topicTitle, content
       
       setIsGenerating(true);
       setError(null);
+
+      // Gracefully handle unavailable content
+      if (content.includes("Content Not Available") || content.includes("hasn't been generated yet") || content.trim().length < 50) {
+        if (isMounted) {
+          setSummary("### Summary Not Available\n\nPlease ensure the lesson content is fully loaded or generated before requesting a quick summary.");
+          setIsGenerating(false);
+        }
+        return;
+      }
+
       try {
         const prompt = `Generate a highly concise, high-level bullet-point recap of the following academic sub-topic titled "${topicTitle}". 
 Limit the summary to 4-5 key takeaways. Make it easy to scan and understand quickly. 
@@ -30,7 +40,11 @@ Use Markdown formatting with bullet points.
 
 Content:
 ${content}`;
-        const response = await AIService.generateContent(prompt);
+
+        const systemInstruction = `You are a specialized academic summary generator. Your sole function is to distill the provided educational text into 4-5 highly concise, high-level bullet-point takeaways.
+CRITICAL: Do NOT introduce yourself, do NOT say "Sure, here is the summary", and do NOT act as a chat assistant or welcome the student. Output ONLY the markdown bullet points. Do NOT output any introductory or concluding text.`;
+
+        const response = await AIService.generateContent(prompt, systemInstruction);
         if (isMounted) {
           setSummary(response);
         }
