@@ -232,6 +232,8 @@ export function useUserProgress() {
           const userDocRef = doc(db, 'users', user.uid);
           updateDoc(userDocRef, {
             ai_sparks: increment(totalSparksReward)
+          }).catch(err => {
+            console.error("Error awarding sparks in Firestore:", err);
           });
           import('../services/logService').then(({ LogService }) => {
             LogService.log('success', 'user', `Awarded ${totalSparksReward} AI Sparks for unlocking badges!`).catch(console.error);
