@@ -666,7 +666,7 @@ const getAndValidateSparks = async (uid: string, email: string | undefined): Pro
 
     // Send welcome email outside the transaction to avoid duplicates on retries
     if (isNewUser && email) {
-      MailService.sendWelcomeEmail(email, email.split('@')[0]).catch(err => {
+      MailService.sendWelcomeEmail(email, email.split('@')[0], systemConfig.trialDays || 7).catch(err => {
         console.error('Failed to send welcome email:', err);
       });
     }
@@ -810,7 +810,7 @@ app.post('/api/admin/send-email', verifyAuth, async (req, res) => {
 app.post('/api/admin/send-reminder', verifyAuth, async (req, res) => {
   try {
     const adminUser = (req as any).user;
-    const { to, displayName, daysLeft } = req.body;
+    const { to, displayName, daysLeft, trialDays } = req.body;
 
     // Check if requester is admin
     const adminDoc = await getAdminApp().firestore().collection('users').doc(adminUser.uid).get();
@@ -822,7 +822,8 @@ app.post('/api/admin/send-reminder', verifyAuth, async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields: to, displayName, daysLeft' });
     }
 
-    await MailService.sendTrialReminderEmail(to, displayName, daysLeft);
+    const resolvedTrialDays = trialDays || systemConfig.trialDays || 7;
+    await MailService.sendTrialReminderEmail(to, displayName, daysLeft, resolvedTrialDays);
 
     // Log the activity
     await getAdminApp().firestore().collection('system_logs').add({
@@ -2129,7 +2130,8 @@ app.post('/api/admin/update-user-role', verifyAuth, async (req, res) => {
 let systemConfig = {
   aiKillswitch: false,
   strictAcademicFilter: true,
-  autoFallback: true
+  autoFallback: true,
+  trialDays: 7
 };
 
 // Get System Config
@@ -2184,25 +2186,15 @@ app.post('/api/admin/test-email', verifyAuth, async (req, res) => {
   
   if (!isAdmin) return res.status(403).json({ error: 'Forbidden' });
   
-  const { to, template } = req.body;
+  const { to, template, trialDays } = req.body;
   if (!to) return res.status(400).json({ error: 'Recipient email is required' });
 
   try {
     if (template === 'welcome') {
-      await MailService.sendWelcomeEmail(to, to.split('@')[0]);
+      const days = trialDays || systemConfig.trialDays || 7;
+      await MailService.sendWelcomeEmail(to, to.split('@')[0], days);
     } else {
-      const html = `
-        <div style="font-family: sans-serif; padding: 20px; color: #1e293b;">
-          <h1 style="color: #10b981;">UniAce System Health Check</h1>
-          <p>This is a test email sent from the UniAce Admin Diagnostic Tool.</p>
-          <div style="background: #f1f5f9; padding: 15px; border-radius: 10px; margin: 20px 0;">
-            <p style="margin: 0; font-size: 14px;"><strong>Timestamp:</strong> ${new Date().toISOString()}</p>
-            <p style="margin: 5px 0 0; font-size: 14px;"><strong>Status:</strong> SMTP Connection Verified</p>
-          </div>
-          <p style="font-size: 12px; color: #64748b;">If you received this, your email delivery system is working correctly.</p>
-        </div>
-      `;
-      await MailService.sendEmail(to, 'UniAce System Health Check 🛡️', html);
+      await MailService.sendDiagnosticTestEmail(to);
     }
 
     // Log the activity
@@ -4588,7 +4580,7 @@ async function startServer() {
 
             // Send welcome email outside the transaction to avoid duplicates on retries
             if (isNewUser && user.email) {
-              MailService.sendWelcomeEmail(user.email, user.email.split('@')[0]).catch(err => {
+              MailService.sendWelcomeEmail(user.email, user.email.split('@')[0], systemConfig.trialDays || 7).catch(err => {
                 console.error('Failed to send welcome email (WS):', err);
               });
             }

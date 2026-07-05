@@ -101,7 +101,7 @@ export default function AdminDashboard() {
   const [isIngesting, setIsIngesting] = useState(false);
   const [ingestionStatus, setIngestionStatus] = useState('');
   const [kbStats, setKbStats] = useState({ totalChunks: 0 });
-  const [activeTab, setActiveTab] = useState<'overview' | 'courses' | 'users' | 'rag' | 'communications' | 'settings' | 'logs' | 'question-bank' | 'curriculum-health' | 'curriculum-manager' | 'curriculum-requests' | 'api-debugger' | 'affiliates'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'courses' | 'users' | 'rag' | 'communications' | 'settings' | 'logs' | 'question-bank' | 'curriculum-health' | 'curriculum-manager' | 'curriculum-requests' | 'api-debugger' | 'affiliates' | 'analytics'>('overview');
 
   useEffect(() => {
     // Redirect if current tab is not allowed for the role
@@ -189,9 +189,13 @@ export default function AdminDashboard() {
   const [lastAiUpdate, setLastAiUpdate] = useState<Date | null>(null);
   const [isRoleGuideOpen, setIsRoleGuideOpen] = useState(false);
   const [isCreateCourseModalOpen, setIsCreateCourseModalOpen] = useState(false);
-  const [activeCommTab, setActiveCommTab] = useState<'broadcast' | 'email' | 'history'>('broadcast');
+  const [activeCommTab, setActiveCommTab] = useState<'broadcast' | 'email' | 'settings' | 'history'>('broadcast');
   const [targetAudience, setTargetAudience] = useState<'all' | 'students' | 'tutors' | 'moderators' | 'department'>('all');
   const [selectedTemplate, setSelectedTemplate] = useState<string>('');
+  const [emailMode, setEmailMode] = useState<'custom' | 'welcome' | 'reminder'>('custom');
+  const [commWelcomeTrialDays, setCommWelcomeTrialDays] = useState<number>(7);
+  const [commStudentName, setCommStudentName] = useState<string>('');
+  const [commDaysLeft, setCommDaysLeft] = useState<number>(1);
   const [selectedProviderForKeyManager, setSelectedProviderForKeyManager] = useState<string | null>(null);
 
   // New state for manual input and review
@@ -246,7 +250,8 @@ export default function AdminDashboard() {
   const [systemConfig, setSystemConfig] = useState({
     aiKillswitch: false,
     strictAcademicFilter: true,
-    autoFallback: true
+    autoFallback: true,
+    trialDays: 7
   });
 
   useEffect(() => {
@@ -385,10 +390,10 @@ export default function AdminDashboard() {
   };
 
   useEffect(() => {
-    if (user && isLiveLogs && (activeTab === 'logs' || activeTab === 'overview')) {
+    if (user && isLiveLogs && (activeTab === 'logs' || activeTab === 'overview' || activeTab === 'analytics')) {
       const unsubscribe = LogService.subscribeToLogs((fetchedLogs) => {
         setLogs(fetchedLogs);
-      }, activeTab === 'overview' ? 10 : logLimit, logFilter);
+      }, (activeTab === 'overview' || activeTab === 'analytics') ? 200 : logLimit, logFilter);
       return () => unsubscribe();
     }
   }, [user, isLiveLogs, activeTab, logLimit, logFilter]);
@@ -947,6 +952,7 @@ export default function AdminDashboard() {
       let sparks = 0;
       let masterySum = 0;
       let topicCount = 0;
+      const courseCounts: Record<string, number> = {};
       
       querySnapshot.forEach((doc) => {
         const data = doc.data();
@@ -957,13 +963,37 @@ export default function AdminDashboard() {
             topicCount++;
           });
         }
+        if (data.enrolledCourses && Array.isArray(data.enrolledCourses)) {
+          data.enrolledCourses.forEach((cId: string) => {
+            courseCounts[cId] = (courseCounts[cId] || 0) + 1;
+          });
+        }
       });
+
+      let popularCourseName = '';
+      let maxCount = 0;
+      Object.entries(courseCounts).forEach(([cId, count]) => {
+        if (count > maxCount) {
+          maxCount = count;
+          const courseObj = courses[cId];
+          popularCourseName = courseObj ? (courseObj.title || courseObj.id || cId) : cId;
+        }
+      });
+
+      if (!popularCourseName) {
+        const firstCourse = Object.values(courses)[0];
+        if (firstCourse) {
+          popularCourseName = firstCourse.title || firstCourse.id || 'GST 111';
+        } else {
+          popularCourseName = 'GST 111';
+        }
+      }
 
       setSystemStats({
         totalSparksConsumed: sparks,
         totalQuestionsAsked: Math.floor(sparks / 10),
         averageMastery: topicCount > 0 ? Math.round(masterySum / topicCount) : 0,
-        popularCourse: 'GST 111' // More realistic for Nigerian context
+        popularCourse: popularCourseName
       });
     } catch (error) {
       console.error("Error fetching system stats:", error);
@@ -1310,6 +1340,70 @@ export default function AdminDashboard() {
     }
   };
 
+  const [isSendingWelcomeEmail, setIsSendingWelcomeEmail] = useState(false);
+  const [isSendingTrialReminderEmail, setIsSendingTrialReminderEmail] = useState(false);
+
+  const handleSendWelcomeEmail = async (toEmail: string, name: string, trialDays: number) => {
+    setIsSendingWelcomeEmail(true);
+    try {
+      const idToken = await auth.currentUser?.getIdToken();
+      const res = await fetch('/api/admin/test-email', {
+        method: 'POST',
+        headers: { 
+          'Authorization': `Bearer ${idToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ 
+          to: toEmail, 
+          template: 'welcome', 
+          trialDays: trialDays
+        })
+      });
+      if (res.ok) {
+        showToast("Welcome Email sent successfully!", "success");
+      } else {
+        const data = await res.json();
+        showToast(`Failed to send Welcome Email: ${data.error || 'Unknown error'}`, "error");
+      }
+    } catch (error: any) {
+      console.error("Error sending Welcome Email:", error);
+      showToast(`Error sending Welcome Email: ${error.message}`, "error");
+    } finally {
+      setIsSendingWelcomeEmail(false);
+    }
+  };
+
+  const handleSendTrialReminderEmail = async (toEmail: string, name: string, daysLeft: number, trialDays: number) => {
+    setIsSendingTrialReminderEmail(true);
+    try {
+      const idToken = await auth.currentUser?.getIdToken();
+      const res = await fetch('/api/admin/send-reminder', {
+        method: 'POST',
+        headers: { 
+          'Authorization': `Bearer ${idToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ 
+          to: toEmail, 
+          displayName: name, 
+          daysLeft: daysLeft,
+          trialDays: trialDays
+        })
+      });
+      if (res.ok) {
+        showToast("Trial Expiration Reminder sent successfully!", "success");
+      } else {
+        const data = await res.json();
+        showToast(`Failed to send Trial Expiration Reminder: ${data.error || 'Unknown error'}`, "error");
+      }
+    } catch (error: any) {
+      console.error("Error sending Trial Expiration Reminder:", error);
+      showToast(`Error sending Trial Expiration Reminder: ${error.message}`, "error");
+    } finally {
+      setIsSendingTrialReminderEmail(false);
+    }
+  };
+
   const handleDebugEmail = async () => {
     setIsDebuggingEmail(true);
     try {
@@ -1344,6 +1438,116 @@ export default function AdminDashboard() {
     moderators: 0,
     activeToday: 0
   });
+
+  // Memoized platform analytics data utilizing real-time Firestore collections
+  const analyticsChartData = React.useMemo(() => {
+    const dayList = [];
+    const now = new Date();
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+      dayList.push(d);
+    }
+
+    const getLogDate = (l: any) => {
+      if (!l.timestamp) return null;
+      if (l.timestamp.toDate) return l.timestamp.toDate();
+      if (l.timestamp.seconds) return new Date(l.timestamp.seconds * 1000);
+      return new Date(l.timestamp);
+    };
+
+    const dailyRealLogs: Record<string, { ai: number; user: number; admin: number; system: number; activeUsers: Set<string>; enrollments: number }> = {};
+    
+    dayList.forEach(day => {
+      dailyRealLogs[day.toDateString()] = {
+        ai: 0,
+        user: 0,
+        admin: 0,
+        system: 0,
+        activeUsers: new Set<string>(),
+        enrollments: 0
+      };
+    });
+
+    logs.forEach(l => {
+      const logDate = getLogDate(l);
+      if (!logDate) return;
+      const dateStr = logDate.toDateString();
+      
+      if (dailyRealLogs[dateStr] !== undefined) {
+        const category = l.category || 'system';
+        if (category === 'ai') dailyRealLogs[dateStr].ai++;
+        else if (category === 'user') dailyRealLogs[dateStr].user++;
+        else if (category === 'admin') dailyRealLogs[dateStr].admin++;
+        else dailyRealLogs[dateStr].system++;
+
+        const userIdent = l.userId || l.userEmail || 'anonymous';
+        if (userIdent !== 'system' && userIdent !== 'anonymous') {
+          dailyRealLogs[dateStr].activeUsers.add(userIdent);
+        }
+
+        if (l.message && (l.message.includes('Enrolled') || l.message.includes('enrolled') || l.message.includes('Enroll') || l.message.includes('enroll'))) {
+          dailyRealLogs[dateStr].enrollments++;
+        }
+      }
+    });
+
+    const currentTotalEnrollments = users.reduce((acc, u) => acc + (u.enrolledCourses?.length || 0), 0);
+
+    const engagementTrend: any[] = [];
+    const dauTrend: any[] = [];
+    const enrollmentTrend: any[] = [];
+
+    let cumulativeEnrollment = currentTotalEnrollments;
+
+    for (let i = 6; i >= 0; i--) {
+      const day = dayList[i];
+      const dateStr = day.toDateString();
+      const dayReal = dailyRealLogs[dateStr];
+      const isToday = i === 6;
+
+      const userCount = dayReal?.user || 0;
+      const aiCount = dayReal?.ai || 0;
+      const adminCount = dayReal?.admin || 0;
+      const systemCount = dayReal?.system || 0;
+
+      engagementTrend.unshift({
+        date: day.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        weekday: day.toLocaleDateString('en-US', { weekday: 'short' }),
+        'Student Actions': userCount,
+        'AI Tutor Hits': aiCount,
+        'Admin Actions': adminCount,
+        'System Services': systemCount,
+        Total: userCount + aiCount + adminCount + systemCount
+      });
+
+      let dauValue = dayReal?.activeUsers.size || 0;
+      if (isToday) {
+        dauValue = Math.max(dauValue, userStats.activeToday);
+      }
+
+      dauTrend.unshift({
+        date: day.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        weekday: day.toLocaleDateString('en-US', { weekday: 'short' }),
+        DAU: dauValue,
+        'Unique Logged Users': dayReal?.activeUsers.size || 0
+      });
+
+      enrollmentTrend.unshift({
+        date: day.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        Enrollments: Math.max(cumulativeEnrollment, 0),
+        New: dayReal?.enrollments || 0
+      });
+
+      const enrollsOnThisDay = dayReal?.enrollments || 0;
+      cumulativeEnrollment = Math.max(cumulativeEnrollment - enrollsOnThisDay, 0);
+    }
+
+    return {
+      engagementTrend,
+      dauTrend,
+      enrollmentTrend
+    };
+  }, [logs, users, courses, userStats, systemStats]);
 
   const [curriculumRequests, setCurriculumRequests] = useState<any[]>([]);
   const [isLoadingRequests, setIsLoadingRequests] = useState(false);
@@ -2118,6 +2322,7 @@ export default function AdminDashboard() {
         <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-hide">
           {[
             { id: 'overview', label: 'Overview', icon: Activity, show: true },
+            { id: 'analytics', label: 'Platform Analytics', icon: BarChart3, show: true },
             { id: 'courses', label: 'Courses & AI', icon: BookOpen, show: permissions.canManageCourses },
             { id: 'question-bank', label: 'Question Bank', icon: FileQuestion, show: permissions.canManageCourses },
             { id: 'rag', label: 'Knowledge Base', icon: Database, show: permissions.canManageCourses },
@@ -2329,7 +2534,10 @@ export default function AdminDashboard() {
                   )}
                 </div>
                 
-                <button className="w-full mt-6 py-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900/50 text-slate-600 dark:text-slate-300 text-sm font-bold hover:bg-slate-100 dark:hover:bg-slate-800 transition-all border border-slate-200 dark:border-slate-700 flex items-center justify-center gap-2">
+                <button 
+                  onClick={() => setActiveTab('analytics')}
+                  className="w-full mt-6 py-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900/50 text-slate-600 dark:text-slate-300 text-sm font-bold hover:bg-slate-100 dark:hover:bg-slate-800 transition-all border border-slate-200 dark:border-slate-700 flex items-center justify-center gap-2"
+                >
                   <BarChart3 size={18} />
                   Full Analytics Report
                 </button>
@@ -4742,33 +4950,26 @@ export default function AdminDashboard() {
 
       {activeTab === 'communications' && (
         <div className="space-y-8">
+          {/* Sub-tab Navigation */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-4 bg-white dark:bg-slate-800 p-2 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 w-fit">
-              {(['broadcast', 'email', 'history'] as const).map((tab) => (
+            <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-900 p-1.5 rounded-2xl border border-slate-200/60 dark:border-slate-800 w-fit">
+              {(['broadcast', 'email', 'settings', 'history'] as const).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveCommTab(tab)}
-                  className={`px-6 py-2 rounded-xl font-bold capitalize transition-all ${
+                  className={`px-5 py-2 rounded-xl text-sm font-bold capitalize transition-all ${
                     activeCommTab === tab 
-                      ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-500/30' 
-                      : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700'
+                      ? 'bg-emerald-600 text-white shadow-md shadow-emerald-500/25' 
+                      : 'text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800'
                   }`}
                 >
-                  {tab}
+                  {tab === 'email' ? 'Branded Email Hub' : tab === 'settings' ? 'SMTP & Trial Settings' : tab}
                 </button>
               ))}
             </div>
-            
-            <button 
-              onClick={handleDebugEmail}
-              disabled={isDebuggingEmail}
-              className="flex items-center justify-center gap-2 px-6 py-3 rounded-2xl font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all border border-slate-200 dark:border-slate-700 shadow-sm active:scale-95 disabled:opacity-50"
-            >
-              {isDebuggingEmail ? <Loader2 size={18} className="animate-spin" /> : <Activity size={18} />}
-              Email Diagnostic
-            </button>
           </div>
 
+          {/* BROADCAST TAB */}
           {activeCommTab === 'broadcast' && (
             <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700 h-full flex flex-col">
               <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
@@ -4809,19 +5010,46 @@ export default function AdminDashboard() {
             </div>
           )}
 
+          {/* BRANDED EMAIL HUB */}
           {activeCommTab === 'email' && (
-            <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700 h-full flex flex-col">
-              <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
-                <FileText className="text-emerald-500" size={24} />
-                Direct Email Communication
-              </h3>
-              <p className="text-sm text-slate-500 mb-6">
-                Send a branded personal email to a specific student.
-              </p>
-              <div className="space-y-4 flex-grow flex flex-col">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+              {/* Controls Column */}
+              <div className="lg:col-span-5 space-y-6">
+                <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-700">
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+                    <FileText className="text-emerald-500" size={20} />
+                    Select Delivery Mode
+                  </h3>
+                  
+                  <div className="grid grid-cols-1 gap-2">
+                    {[
+                      { id: 'custom', label: 'Custom Composer', desc: 'Handwrite bespoke HTML-supported email.' },
+                      { id: 'welcome', label: 'Dynamic Welcome Template', desc: 'Branded onboarding email.' },
+                      { id: 'reminder', label: 'Trial Expiration Template', desc: 'Pre-formatted urgency warning.' }
+                    ].map((mode) => (
+                      <button
+                        key={mode.id}
+                        onClick={() => setEmailMode(mode.id as any)}
+                        className={`text-left p-4 rounded-xl border transition-all ${
+                          emailMode === mode.id 
+                            ? 'bg-emerald-50 dark:bg-emerald-950/20 border-emerald-500 text-slate-900 dark:text-white ring-1 ring-emerald-500' 
+                            : 'bg-slate-50 hover:bg-slate-100 dark:bg-slate-900/50 dark:hover:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                        }`}
+                      >
+                        <p className="font-bold text-sm">{mode.label}</p>
+                        <p className="text-xs text-slate-400 mt-1">{mode.desc}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Main Dynamic Inputs */}
+                <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-700 space-y-4">
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">Email Parameters</h3>
+                  
+                  {/* Common Recipient Input */}
                   <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Student Email (Recipient)</label>
+                    <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Student Recipient Email</label>
                     <input 
                       type="email"
                       placeholder="student@example.com" 
@@ -4830,209 +5058,831 @@ export default function AdminDashboard() {
                       className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                     />
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Sender Name (Branding)</label>
-                    <input 
-                      type="text"
-                      placeholder="UniAce Team" 
-                      value={emailFromName}
-                      onChange={(e) => setEmailFromName(e.target.value)}
-                      className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Subject Line</label>
-                  <input 
-                    type="text"
-                    placeholder="Important Update Regarding Your Account" 
-                    value={emailSubject}
-                    onChange={(e) => setEmailSubject(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
-                </div>
-                <div className="space-y-2 flex-grow flex flex-col">
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Email Body (HTML supported)</label>
-                  <textarea 
-                    placeholder="Hi student, we noticed you've been doing great in your courses..." 
-                    value={emailBody}
-                    onChange={(e) => setEmailBody(e.target.value)}
-                    className="w-full flex-grow min-h-[150px] bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none"
-                  />
-                </div>
-                <div className="flex justify-end pt-4">
-                  <button 
-                    onClick={handleSendEmail}
-                    disabled={isSendingEmail || !emailTo || !emailSubject || !emailBody}
-                    className="w-full md:w-auto px-8 py-3 rounded-2xl font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-500/30 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
-                  >
-                    {isSendingEmail ? <Loader2 size={20} className="animate-spin" /> : <Plus size={20} />}
-                    Send Branded Email
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
 
-          {activeCommTab === 'history' && (
-            <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700">
-              <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-6">Communication History</h3>
-              <p className="text-slate-500">History log will be displayed here.</p>
-            </div>
-          )}
-          {emailDebugInfo && (
-            <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700">
-              <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-6">Email Debug Information</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {[
-                  { label: 'SMTP Host', value: emailDebugInfo.config.host, present: !!emailDebugInfo.config.host },
-                  { label: 'SMTP User', value: emailDebugInfo.config.user, present: !!emailDebugInfo.config.user },
-                  { label: 'SMTP Pass', value: emailDebugInfo.config.hasPass ? '********' : 'Missing', present: emailDebugInfo.config.hasPass },
-                  { label: 'From Email', value: emailDebugInfo.config.from, present: !!emailDebugInfo.config.from },
-                ].map((item, idx) => (
-                  <div key={idx} className="bg-slate-50 dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">{item.label}</p>
-                    <p className={`text-sm font-mono truncate ${item.present ? 'text-slate-900 dark:text-white' : 'text-rose-500 font-bold'}`}>
-                      {item.value || 'Not Configured'}
-                    </p>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-6">
-                <h4 className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Connection Test</h4>
-                <div className={`p-4 rounded-2xl border ${emailDebugInfo.connection.success ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800' : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'}`}>
-                  <p className={`text-sm font-bold ${emailDebugInfo.connection.success ? 'text-emerald-700 dark:text-emerald-300' : 'text-red-700 dark:text-red-300'}`}>
-                    {emailDebugInfo.connection.success ? 'Success' : 'Failed'}
-                  </p>
-                  <p className="text-xs font-mono mt-1 text-slate-600 dark:text-slate-400 break-all">
-                    {emailDebugInfo.connection.message}
-                  </p>
-                  {!emailDebugInfo.connection.success && emailDebugInfo.connection.message?.includes('535') && (
-                    <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 p-4 rounded-2xl mt-4">
-                      <div className="flex items-center gap-2 text-amber-800 dark:text-amber-200 font-bold mb-2">
-                        <AlertCircle size={18} />
-                        Authentication Tip
+                  {/* CUSTOM EMAIL FIELDS */}
+                  {emailMode === 'custom' && (
+                    <>
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Sender Brand Name</label>
+                        <input 
+                          type="text"
+                          placeholder="UniAce Team" 
+                          value={emailFromName}
+                          onChange={(e) => setEmailFromName(e.target.value)}
+                          className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        />
                       </div>
-                      <p className="text-sm text-amber-700 dark:text-amber-300">
-                        Error 535 usually means incorrect credentials. If you are using Gmail, make sure you are using a <strong>16-character App Password</strong>, not your regular account password.
-                      </p>
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Subject Line</label>
+                        <input 
+                          type="text"
+                          placeholder="Important updates for your UniAce Account" 
+                          value={emailSubject}
+                          onChange={(e) => setEmailSubject(e.target.value)}
+                          className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Email Body (HTML supported)</label>
+                        <textarea 
+                          placeholder="Type personal content here..." 
+                          value={emailBody}
+                          onChange={(e) => setEmailBody(e.target.value)}
+                          className="w-full min-h-[150px] bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none"
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  {/* WELCOME EMAIL FIELDS */}
+                  {emailMode === 'welcome' && (
+                    <>
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Student Display Name</label>
+                        <input 
+                          type="text"
+                          placeholder="E.g. John Doe" 
+                          value={commStudentName}
+                          onChange={(e) => setCommStudentName(e.target.value)}
+                          className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Trial Duration (Days)</label>
+                        <input 
+                          type="number"
+                          min="1"
+                          max="90"
+                          value={commWelcomeTrialDays}
+                          onChange={(e) => setCommWelcomeTrialDays(parseInt(e.target.value) || 7)}
+                          className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  {/* TRIAL REMINDER FIELDS */}
+                  {emailMode === 'reminder' && (
+                    <>
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Student Display Name</label>
+                        <input 
+                          type="text"
+                          placeholder="E.g. Jane Smith" 
+                          value={commStudentName}
+                          onChange={(e) => setCommStudentName(e.target.value)}
+                          className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Days Left</label>
+                          <select 
+                            value={commDaysLeft}
+                            onChange={(e) => setCommDaysLeft(parseInt(e.target.value) || 1)}
+                            className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                          >
+                            <option value="1">1 Day Left</option>
+                            <option value="2">2 Days Left</option>
+                            <option value="3">3 Days Left</option>
+                            <option value="4">4 Days Left</option>
+                            <option value="5">5 Days Left</option>
+                          </select>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Total Trial Days</label>
+                          <input 
+                            type="number"
+                            min="1"
+                            value={commWelcomeTrialDays}
+                            onChange={(e) => setCommWelcomeTrialDays(parseInt(e.target.value) || 7)}
+                            className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                          />
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  {/* Dispatch buttons */}
+                  <div className="pt-4">
+                    {emailMode === 'custom' && (
+                      <button 
+                        onClick={handleSendEmail}
+                        disabled={isSendingEmail || !emailTo || !emailSubject || !emailBody}
+                        className="w-full px-8 py-3.5 rounded-2xl font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-500/30 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+                      >
+                        {isSendingEmail ? <Loader2 size={20} className="animate-spin" /> : <Send size={18} />}
+                        Send Custom Branded Email
+                      </button>
+                    )}
+
+                    {emailMode === 'welcome' && (
+                      <button 
+                        onClick={() => handleSendWelcomeEmail(emailTo, commStudentName || emailTo.split('@')[0], commWelcomeTrialDays)}
+                        disabled={isSendingWelcomeEmail || !emailTo}
+                        className="w-full px-8 py-3.5 rounded-2xl font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-500/30 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+                      >
+                        {isSendingWelcomeEmail ? <Loader2 size={20} className="animate-spin" /> : <Zap size={18} />}
+                        Send Branded Welcome Email
+                      </button>
+                    )}
+
+                    {emailMode === 'reminder' && (
+                      <button 
+                        onClick={() => handleSendTrialReminderEmail(emailTo, commStudentName || emailTo.split('@')[0], commDaysLeft, commWelcomeTrialDays)}
+                        disabled={isSendingTrialReminderEmail || !emailTo}
+                        className="w-full px-8 py-3.5 rounded-2xl font-bold bg-amber-500 hover:bg-amber-600 text-white shadow-lg shadow-amber-500/30 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+                      >
+                        {isSendingTrialReminderEmail ? <Loader2 size={20} className="animate-spin" /> : <Clock size={18} />}
+                        Send Trial Expiration Reminder
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Dynamic Live Preview Column */}
+              <div className="lg:col-span-7 bg-slate-100 dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800 rounded-[2.2rem] p-6 shadow-inner flex flex-col gap-4">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Interactive Branded Live Preview</h4>
+                  <span className="px-2.5 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                    SMTP Template Output
+                  </span>
+                </div>
+
+                {/* Subject Header mock */}
+                <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/60 rounded-2xl p-4 text-xs space-y-1.5 shadow-sm">
+                  <p><span className="text-slate-400 font-medium">To:</span> <span className="font-mono text-slate-700 dark:text-slate-300">{emailTo || 'student@example.com'}</span></p>
+                  <p><span className="text-slate-400 font-medium">From:</span> <span className="font-semibold text-slate-700 dark:text-slate-300">{emailMode === 'custom' ? emailFromName || 'UniAce Team' : 'UniAce Team'} &lt;no-reply@uniace.app&gt;</span></p>
+                  <p className="border-t border-slate-100 dark:border-slate-700/50 pt-1.5 mt-1.5">
+                    <span className="text-slate-400 font-medium">Subject:</span>{' '}
+                    <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                      {emailMode === 'custom' && (emailSubject || 'Important Update Regarding Your Account')}
+                      {emailMode === 'welcome' && `Welcome to UniAce, ${commStudentName || 'Student'}! 🚀 Your ${commWelcomeTrialDays}-Day Premium Trial Starts Now`}
+                      {emailMode === 'reminder' && `Your UniAce Premium Trial Ends in ${commDaysLeft} Day${commDaysLeft === 1 ? '' : 's'}! ⏳`}
+                    </span>
+                  </p>
+                </div>
+
+                {/* Visual rendering box */}
+                <div className="bg-white text-[#1e293b] rounded-2xl p-6 shadow-sm border border-slate-200 max-h-[500px] overflow-y-auto font-sans leading-relaxed text-sm">
+                  {/* Custom email preview */}
+                  {emailMode === 'custom' && (
+                    <div className="space-y-4">
+                      {emailBody ? (
+                        <div dangerouslySetInnerHTML={{ __html: emailBody.replace(/\n/g, '<br />') }} />
+                      ) : (
+                        <p className="text-slate-400 italic">No custom body text specified. Type inside the text box to preview live.</p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Welcome email preview */}
+                  {emailMode === 'welcome' && (
+                    <div className="max-w-[500px] mx-auto">
+                      <div className="text-center mb-6">
+                        <div className="text-3xl mb-1">🎓</div>
+                        <h1 className="text-[#10b981] text-2xl font-extrabold m-0">UniAce</h1>
+                        <p className="text-[#64748b] text-xs m-0">Your AI-Powered Academic Companion</p>
+                      </div>
+
+                      <div className="bg-[#f8fafc] rounded-3xl p-6 border border-[#e2e8f0] space-y-4">
+                        <h2 className="text-lg font-bold text-slate-800 mt-0">Hi {commStudentName || 'Student'}, welcome to the future of studying! 🎓</h2>
+                        
+                        <p className="text-sm text-slate-600">You've just unlocked <strong>{commWelcomeTrialDays} Days of UniAce Premium</strong>. That means unlimited AI Tutor access, smart quizzes, and personalized study plans are all yours for the next week.</p>
+
+                        <div className="bg-[#ecfdf5] border-l-4 border-[#10b981] p-4 rounded-r-lg">
+                          <p className="m-0 font-bold text-[#065f46] text-xs">Your first "Aha!" moment is waiting.</p>
+                          <p className="m-0 text-xs text-[#047857] mt-1">Don't let "blank page syndrome" slow you down. Try asking your first question right now!</p>
+                        </div>
+
+                        <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">What to do first:</h3>
+                        <ul className="list-disc pl-5 text-xs text-slate-600 space-y-1">
+                          <li><strong>Ask a tough question:</strong> Paste that physics problem or math derivation you've been stuck on.</li>
+                          <li><strong>Generate a Quiz:</strong> Turn any topic into a 5-minute practice session.</li>
+                          <li><strong>Install the App:</strong> Add UniAce to your home screen for 1-tap access.</li>
+                        </ul>
+
+                        <div className="text-center pt-2">
+                          <span className="bg-[#10b981] text-white px-6 py-2.5 rounded-xl text-xs font-bold inline-block cursor-pointer">
+                            Open My AI Tutor 🚀
+                          </span>
+                        </div>
+
+                        <p className="text-[10px] text-[#94a3b8] text-center mt-4">
+                          Your trial ends in {commWelcomeTrialDays} days. We'll remind you before it expires so you don't miss a beat.
+                        </p>
+                      </div>
+
+                      <div className="text-center mt-6 pt-4 border-t border-slate-100 text-[11px] text-[#64748b] space-y-1">
+                        <p className="m-0">&copy; {new Date().getFullYear()} UniAce Ecosystem. All rights reserved.</p>
+                        <p className="text-[#94a3b8] m-0"><strong>Security Note:</strong> UniAce will never ask you to download a .exe or .apk file.</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Reminder email preview */}
+                  {emailMode === 'reminder' && (
+                    <div className="max-w-[500px] mx-auto">
+                      <div className="text-center mb-6">
+                        <div className="text-3xl mb-1">🎓</div>
+                        <h1 className="text-[#10b981] text-2xl font-extrabold m-0">UniAce</h1>
+                        <p className="text-[#64748b] text-xs m-0">Your AI-Powered Academic Companion</p>
+                      </div>
+
+                      <div className="bg-[#fffbeb] rounded-3xl p-6 border border-[#fde68a] space-y-4">
+                        <h2 className="text-lg font-bold text-[#92400e] mt-0">Time is flying, {commStudentName || 'Student'}! ⏳</h2>
+                        
+                        <p className="text-sm text-slate-600">Your {commWelcomeTrialDays}-day UniAce Premium trial is coming to an end. In just <strong>{commDaysLeft} day{commDaysLeft === 1 ? '' : 's'}</strong>, you'll lose access to your advanced study tools.</p>
+
+                        <div className="bg-white border border-[#fde68a] p-4 rounded-xl space-y-2">
+                          <p className="m-0 font-bold text-slate-800 text-xs">What you'll lose access to:</p>
+                          <ul className="list-disc pl-5 text-xs text-slate-500 space-y-1">
+                            <li><strong>Unlimited AI Tutoring:</strong> No more instant help with complex formulas.</li>
+                            <li><strong>Smart Quiz Generation:</strong> Back to manual practice.</li>
+                            <li><strong>Personalized Study Plans:</strong> Your roadmap to an "A" will be locked.</li>
+                          </ul>
+                        </div>
+
+                        <p className="text-xs font-bold text-center text-slate-700">Don't lose your momentum. Upgrade now to keep mastering your courses!</p>
+
+                        <div className="text-center pt-2">
+                          <span className="bg-[#10b981] text-white px-6 py-2.5 rounded-xl text-xs font-bold inline-block cursor-pointer">
+                            Keep My Premium Access 🚀
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="text-center mt-6 pt-4 border-t border-slate-100 text-[11px] text-[#64748b] space-y-1">
+                        <p className="m-0">&copy; {new Date().getFullYear()} UniAce Ecosystem. All rights reserved.</p>
+                        <p className="text-[#94a3b8] m-0"><strong>Pro Tip:</strong> You can upgrade anytime from your Profile settings.</p>
+                      </div>
                     </div>
                   )}
                 </div>
               </div>
+            </div>
+          )}
 
-              <div className="mt-8 pt-8 border-t border-slate-100 dark:border-slate-700">
-                <h4 className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-4">Send Diagnostic Test Email</h4>
-                <div className="flex flex-col sm:flex-row gap-3">
-                  <input 
-                    type="email"
-                    id="test-email-recipient"
-                    placeholder="recipient@example.com"
-                    defaultValue={auth.currentUser?.email || ''}
-                    className="flex-grow bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
+          {/* SMTP & TRIAL POLICY SETTINGS TAB */}
+          {activeCommTab === 'settings' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
+              {/* Left Settings: Default Trial Duration Policy */}
+              <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700 space-y-6">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 rounded-2xl bg-indigo-50 dark:bg-indigo-950/30 text-indigo-500">
+                    <Clock size={24} />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-white">Default Trial Policy</h3>
+                    <p className="text-xs text-slate-400">Configure global welcome period parameters</p>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="p-4 bg-slate-50 dark:bg-slate-900 rounded-2xl border border-slate-200/60 dark:border-slate-800">
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Global Default Welcome Period</p>
+                    <p className="text-3xl font-black text-indigo-600 dark:text-indigo-400">
+                      {systemConfig.trialDays || 7} Days
+                    </p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+                      New students receive this many premium trial days automatically upon sign up. Welcome and expiration warning templates will synchronize with this configuration.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Adjust Default Trial Days</label>
+                    <div className="flex gap-3">
+                      <input 
+                        type="number"
+                        min="1"
+                        max="365"
+                        defaultValue={systemConfig.trialDays || 7}
+                        id="policy-trial-days-input"
+                        className="w-24 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white font-mono font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                      <button
+                        onClick={() => {
+                          const val = (document.getElementById('policy-trial-days-input') as HTMLInputElement).value;
+                          const parsed = parseInt(val);
+                          if (parsed > 0) {
+                            updateSystemConfig({ trialDays: parsed });
+                            showToast(`Saved Default Trial Period: ${parsed} days!`, 'success');
+                          } else {
+                            showToast('Please enter a positive number', 'error');
+                          }
+                        }}
+                        className="flex-grow px-6 py-3 rounded-xl font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-500/20 transition-all active:scale-95"
+                      >
+                        Save Configuration
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Settings: SMTP Server Diagnostics & Connections */}
+              <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700 space-y-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 text-emerald-500">
+                      <Activity size={24} />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-bold text-slate-900 dark:text-white">SMTP Diagnostics</h3>
+                      <p className="text-xs text-slate-400">Test SMTP transport connections</p>
+                    </div>
+                  </div>
+
                   <button 
-                    onClick={() => {
-                      const email = (document.getElementById('test-email-recipient') as HTMLInputElement).value;
-                      if (email) handleSendTestEmail(email);
-                      else showToast("Please enter a recipient email", "error");
-                    }}
-                    disabled={isSendingTestEmail}
-                    className="px-6 py-3 rounded-xl font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-500/30 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+                    onClick={handleDebugEmail}
+                    disabled={isDebuggingEmail}
+                    className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition-all border border-slate-200 dark:border-slate-700 shadow-sm disabled:opacity-50"
                   >
-                    {isSendingTestEmail ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
-                    Send Test Email
+                    {isDebuggingEmail ? <Loader2 size={14} className="animate-spin" /> : <Activity size={14} />}
+                    Verify Server SMTP
                   </button>
                 </div>
-                <p className="text-xs text-slate-500 mt-3 italic">
-                  This will send a system health check email using the current SMTP configuration.
-                </p>
+
+                {emailDebugInfo ? (
+                  <div className="space-y-4">
+                    {/* SMTP Credentials Detail */}
+                    <div className="grid grid-cols-2 gap-3 text-xs">
+                      {[
+                        { label: 'SMTP Host', value: emailDebugInfo.config.host, present: !!emailDebugInfo.config.host },
+                        { label: 'SMTP User', value: emailDebugInfo.config.user, present: !!emailDebugInfo.config.user },
+                        { label: 'SMTP Pass', value: emailDebugInfo.config.hasPass ? '********' : 'Missing', present: emailDebugInfo.config.hasPass },
+                        { label: 'From Email', value: emailDebugInfo.config.from, present: !!emailDebugInfo.config.from },
+                      ].map((item, idx) => (
+                        <div key={idx} className="bg-slate-50 dark:bg-slate-900 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">{item.label}</p>
+                          <p className={`font-mono truncate ${item.present ? 'text-slate-800 dark:text-slate-200' : 'text-rose-500 font-bold'}`}>
+                            {item.value || 'Not Configured'}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Connection Test Outcome */}
+                    <div className={`p-4 rounded-2xl border text-xs ${emailDebugInfo.connection.success ? 'bg-emerald-50 dark:bg-emerald-950/10 border-emerald-200 dark:border-emerald-800/80' : 'bg-red-50 dark:bg-red-950/10 border-red-200 dark:border-red-800/80'}`}>
+                      <p className={`font-bold ${emailDebugInfo.connection.success ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400'}`}>
+                        Connection Status: {emailDebugInfo.connection.success ? 'Online & Verified ✓' : 'Failed ❌'}
+                      </p>
+                      <p className="font-mono mt-1 text-slate-500 dark:text-slate-400 break-all leading-normal">
+                        {emailDebugInfo.connection.message}
+                      </p>
+                      {!emailDebugInfo.connection.success && emailDebugInfo.connection.message?.includes('535') && (
+                        <div className="bg-amber-50 dark:bg-amber-950/15 border border-amber-200/80 dark:border-amber-900/40 p-3.5 rounded-xl mt-3 text-amber-800 dark:text-amber-200">
+                          <p className="font-bold flex items-center gap-1.5 mb-1">
+                            <AlertCircle size={14} /> Authentication Tip
+                          </p>
+                          <p className="leading-normal">
+                            Error 535 usually means incorrect credentials. If you are using Gmail, make sure you are using a 16-character App Password, not your regular account password.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Dynamic Diagnostic Health Mail Sender */}
+                    <div className="pt-4 border-t border-slate-100 dark:border-slate-700/60">
+                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Send Diagnostic Health Email</h4>
+                      <div className="flex gap-2">
+                        <input 
+                          type="email"
+                          id="diagnostic-recipient-field"
+                          placeholder="recipient@example.com"
+                          defaultValue={auth.currentUser?.email || ''}
+                          className="flex-grow bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        />
+                        <button 
+                          onClick={() => {
+                            const email = (document.getElementById('diagnostic-recipient-field') as HTMLInputElement).value;
+                            if (email) handleSendTestEmail(email);
+                            else showToast("Please enter a recipient email", "error");
+                          }}
+                          disabled={isSendingTestEmail}
+                          className="px-5 py-2.5 rounded-xl text-sm font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-500/20 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-1.5"
+                        >
+                          {isSendingTestEmail ? <Loader2 size={16} className="animate-spin" /> : <Send size={14} />}
+                          Send Diagnostic
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-8 text-center bg-slate-50 dark:bg-slate-900/40 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 text-slate-400">
+                    <p className="text-sm">Click "Verify Server SMTP" to load SMTP transport credentials and run diagnostics.</p>
+                  </div>
+                )}
               </div>
             </div>
           )}
 
-          <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700 h-full flex flex-col">
-              <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
-                <Clock className="text-amber-500" size={24} />
-                Trial Expiration Reminder
-              </h3>
-              <p className="text-sm text-slate-500 mb-6">
-                Send a pre-formatted reminder to students whose 7-day trial is ending.
-              </p>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 flex-grow">
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Student Email</label>
-                  <input 
-                    type="email"
-                    placeholder="student@example.com" 
-                    id="reminder-email"
-                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Student Name</label>
-                  <input 
-                    type="text"
-                    placeholder="Scholar Name" 
-                    id="reminder-name"
-                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Days Left</label>
-                  <select 
-                    id="reminder-days"
-                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-                  >
-                    <option value="1">1 Day Left</option>
-                    <option value="2">2 Days Left</option>
-                    <option value="3">3 Days Left</option>
-                  </select>
-                </div>
-              </div>
-              <div className="flex justify-end pt-4">
-                <button 
-                  onClick={async () => {
-                    const email = (document.getElementById('reminder-email') as HTMLInputElement).value;
-                    const name = (document.getElementById('reminder-name') as HTMLInputElement).value;
-                    const days = (document.getElementById('reminder-days') as HTMLSelectElement).value;
-                    
-                    if (!email || !name) {
-                      showToast('Please provide email and name', 'error');
-                      return;
-                    }
+          {/* HISTORIC TAB */}
+          {activeCommTab === 'history' && (
+            <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700">
+              <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-6">Communication History</h3>
+              <p className="text-slate-500 text-sm">Delivery statistics and historically broadcast logs are managed dynamically in Firestore.</p>
+            </div>
+          )}
+        </div>
+      )}
 
-                    setIsSendingEmail(true);
-                    try {
-                      const idToken = await auth.currentUser?.getIdToken();
-                      const res = await fetch('/api/admin/send-reminder', {
-                        method: 'POST',
-                        headers: { 
-                          'Authorization': `Bearer ${idToken}`,
-                          'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({ to: email, displayName: name, daysLeft: parseInt(days) })
-                      });
-                      if (res.ok) {
-                        showToast('Reminder sent successfully!', 'success');
-                      } else {
-                        showToast('Failed to send reminder', 'error');
-                      }
-                    } catch (err) {
-                      showToast('Error sending reminder', 'error');
-                    } finally {
-                      setIsSendingEmail(false);
-                    }
-                  }}
-                  disabled={isSendingEmail}
-                  className="w-full md:w-auto px-8 py-3 rounded-2xl font-bold bg-amber-500 hover:bg-amber-600 text-white shadow-lg shadow-amber-500/30 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  {isSendingEmail ? <Loader2 size={20} className="animate-spin" /> : <Clock size={20} />}
-                  Send Trial Reminder
-                </button>
+      {activeTab === 'analytics' && (
+        <div className="space-y-8 animate-fade-in">
+          {/* Header */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white dark:bg-slate-800 p-8 rounded-[2.5rem] border border-slate-200 dark:border-slate-700 shadow-sm">
+            <div>
+              <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-3">
+                <BarChart3 className="text-indigo-600 dark:text-indigo-400" size={32} />
+                Platform Analytics & Visual Insights
+              </h2>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">
+                Real-time tracking of student engagement, daily active users, and academic course growth.
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={async () => {
+                  showToast("Syncing analytics with database...", "info");
+                  await fetchUsers();
+                  await fetchLogs();
+                  await fetchSystemStats();
+                  showToast("Analytics refreshed!", "success");
+                }}
+                className="px-5 py-3 rounded-2xl font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-sm transition-all flex items-center gap-2 shadow-sm border border-slate-200 dark:border-slate-600 active:scale-95"
+              >
+                <RefreshCw size={18} />
+                Refresh Insights
+              </button>
+            </div>
+          </div>
+
+          {/* Quick Metrics Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {/* DAU Card */}
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden group">
+              <div className="absolute top-0 right-0 p-6 opacity-5 group-hover:opacity-15 transition-opacity">
+                <Users size={64} className="text-indigo-600 dark:text-indigo-400" />
+              </div>
+              <div className="bg-indigo-50 dark:bg-indigo-950/40 w-12 h-12 rounded-2xl flex items-center justify-center text-indigo-600 dark:text-indigo-400 mb-6">
+                <Users size={24} />
+              </div>
+              <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Daily Active Users (DAU)</div>
+              <div className="text-3xl font-black text-slate-900 dark:text-white mt-1">
+                {userStats.activeToday}
+              </div>
+              <div className="mt-4 flex items-center gap-1.5 text-xs font-bold text-emerald-500">
+                <span className="bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-md">+{userStats.total > 0 ? Math.round((userStats.activeToday / userStats.total) * 100) : 0}% ratio</span>
+                <span className="text-slate-400">stickiness index</span>
               </div>
             </div>
 
+            {/* Total Interactions Card */}
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden group">
+              <div className="absolute top-0 right-0 p-6 opacity-5 group-hover:opacity-15 transition-opacity">
+                <Activity size={64} className="text-emerald-600 dark:text-emerald-400" />
+              </div>
+              <div className="bg-emerald-50 dark:bg-emerald-950/40 w-12 h-12 rounded-2xl flex items-center justify-center text-emerald-600 dark:text-emerald-400 mb-6">
+                <Activity size={24} />
+              </div>
+              <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Weekly Interactions</div>
+              <div className="text-3xl font-black text-slate-900 dark:text-white mt-1">
+                {logs.length.toLocaleString()}
+              </div>
+              <div className="mt-4 flex items-center gap-1.5 text-xs font-bold text-emerald-500">
+                <span className="bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-md">Live feed</span>
+                <span className="text-slate-400">unfiltered activity</span>
+              </div>
+            </div>
+
+            {/* Course Enrollment Card */}
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden group">
+              <div className="absolute top-0 right-0 p-6 opacity-5 group-hover:opacity-15 transition-opacity">
+                <BookOpen size={64} className="text-amber-600 dark:text-amber-400" />
+              </div>
+              <div className="bg-amber-50 dark:bg-amber-950/40 w-12 h-12 rounded-2xl flex items-center justify-center text-amber-600 dark:text-amber-400 mb-6">
+                <BookOpen size={24} />
+              </div>
+              <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Enrolled Courses</div>
+              <div className="text-3xl font-black text-slate-900 dark:text-white mt-1">
+                {users.reduce((acc, u) => acc + (u.enrolledCourses?.length || 0), 0).toLocaleString()}
+              </div>
+              <div className="mt-4 flex items-center gap-1.5 text-xs font-bold text-amber-500">
+                <span className="bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded-md">
+                  {users.length > 0 ? (users.reduce((acc, u) => acc + (u.enrolledCourses?.length || 0), 0) / users.length).toFixed(1) : 0} avg
+                </span>
+                <span className="text-slate-400">per student</span>
+              </div>
+            </div>
+
+            {/* AI Spark Burn Rate */}
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden group">
+              <div className="absolute top-0 right-0 p-6 opacity-5 group-hover:opacity-15 transition-opacity">
+                <Zap size={64} className="text-purple-600 dark:text-purple-400" />
+              </div>
+              <div className="bg-purple-50 dark:bg-purple-950/40 w-12 h-12 rounded-2xl flex items-center justify-center text-purple-600 dark:text-purple-400 mb-6">
+                <Zap size={24} />
+              </div>
+              <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">AI Spark Intensity</div>
+              <div className="text-3xl font-black text-slate-900 dark:text-white mt-1">
+                {systemStats.totalSparksConsumed.toLocaleString()}
+              </div>
+              <div className="mt-4 flex items-center gap-1.5 text-xs font-bold text-purple-500">
+                <span className="bg-purple-50 dark:bg-purple-950/40 px-2 py-0.5 rounded-md">
+                  {Math.round(systemStats.totalSparksConsumed / Math.max(users.length, 1)).toLocaleString()} avg
+                </span>
+                <span className="text-slate-400">sparks per user</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Charts Row 1: DAU & Engagement */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* Chart 1: Daily Active Users (DAU) over Time */}
+            <div className="bg-white dark:bg-slate-800 p-8 rounded-[2.5rem] border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col">
+              <div className="mb-6">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <Users className="text-indigo-600 dark:text-indigo-400" size={24} />
+                    Daily Active Users (DAU) Trend
+                  </h3>
+                  <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 px-2.5 py-1 rounded-full border border-indigo-100 dark:border-indigo-900/50">
+                    Last 7 Days
+                  </span>
+                </div>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">
+                  Daily active users participating on the platform.
+                </p>
+              </div>
+
+              <div className="h-[300px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={analyticsChartData.dauTrend}>
+                    <defs>
+                      <linearGradient id="dauGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.25} />
+                        <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" strokeOpacity={0.5} />
+                    <XAxis 
+                      dataKey="date" 
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: 600 }} 
+                      dy={10} 
+                    />
+                    <YAxis 
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: 600 }} 
+                      dx={-10} 
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        borderRadius: '16px',
+                        border: 'none',
+                        boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)',
+                        backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                        backdropFilter: 'blur(8px)'
+                      }}
+                      itemStyle={{ fontWeight: 600 }}
+                    />
+                    <Area 
+                      type="monotone" 
+                      dataKey="DAU" 
+                      stroke="#6366f1" 
+                      fillOpacity={1} 
+                      fill="url(#dauGradient)" 
+                      strokeWidth={3} 
+                      activeDot={{ r: 6, strokeWidth: 0 }} 
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Chart 2: User Engagement Trends */}
+            <div className="bg-white dark:bg-slate-800 p-8 rounded-[2.5rem] border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col">
+              <div className="mb-6">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <Activity className="text-emerald-600 dark:text-emerald-400" size={24} />
+                    User Engagement Categories
+                  </h3>
+                  <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2.5 py-1 rounded-full border border-emerald-100 dark:border-emerald-900/50">
+                    Activity Breakdown
+                  </span>
+                </div>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">
+                  Distribution of educational interactions, AI responses, and administrator processes.
+                </p>
+              </div>
+
+              <div className="h-[300px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={analyticsChartData.engagementTrend} barGap={4}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" strokeOpacity={0.5} />
+                    <XAxis 
+                      dataKey="date" 
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: 600 }} 
+                      dy={10} 
+                    />
+                    <YAxis 
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: 600 }} 
+                      dx={-10} 
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        borderRadius: '16px',
+                        border: 'none',
+                        boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)',
+                        backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                        backdropFilter: 'blur(8px)'
+                      }}
+                      itemStyle={{ fontWeight: 600 }}
+                    />
+                    <Legend iconType="circle" wrapperStyle={{ fontSize: 12, fontWeight: 600, paddingTop: 10 }} />
+                    <Bar dataKey="Student Actions" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="AI Tutor Hits" fill="#a855f7" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="Admin Actions" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+
+          {/* Charts Row 2: Course Enrollments over Time */}
+          <div className="bg-white dark:bg-slate-800 p-8 rounded-[2.5rem] border border-slate-200 dark:border-slate-700 shadow-sm">
+            <div className="mb-6">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <BookOpen className="text-amber-600 dark:text-amber-400" size={24} />
+                  Cumulative Course Enrollment Growth
+                </h3>
+                <span className="text-xs font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-2.5 py-1 rounded-full border border-amber-100 dark:border-amber-900/50">
+                  Adoption Curve
+                </span>
+              </div>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">
+                Cumulative count of academic course registrations across the platform over time.
+              </p>
+            </div>
+
+            <div className="h-[320px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={analyticsChartData.enrollmentTrend}>
+                  <defs>
+                    <linearGradient id="enrollGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.25} />
+                      <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" strokeOpacity={0.5} />
+                  <XAxis 
+                    dataKey="date" 
+                    axisLine={false} 
+                    tickLine={false} 
+                    tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: 600 }} 
+                    dy={10} 
+                  />
+                  <YAxis 
+                    axisLine={false} 
+                    tickLine={false} 
+                    tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: 600 }} 
+                    dx={-10} 
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      borderRadius: '16px',
+                      border: 'none',
+                      boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)',
+                      backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                      backdropFilter: 'blur(8px)'
+                    }}
+                    itemStyle={{ fontWeight: 600 }}
+                  />
+                  <Area 
+                    type="monotone" 
+                    dataKey="Enrollments" 
+                    stroke="#f59e0b" 
+                    fillOpacity={1} 
+                    fill="url(#enrollGradient)" 
+                    strokeWidth={4} 
+                    activeDot={{ r: 6, strokeWidth: 0 }} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Deep Insight Tables Row */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* Top Active Students */}
+            <div className="bg-white dark:bg-slate-800 p-8 rounded-[2.5rem] border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col">
+              <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
+                <Trophy className="text-yellow-500" size={24} />
+                Most Active Scholars
+              </h3>
+              <div className="overflow-x-auto flex-1">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-100 dark:border-slate-700 text-xs font-black uppercase text-slate-400 tracking-wider">
+                      <th className="pb-4 pl-2">Student</th>
+                      <th className="pb-4">Sparks Consumed</th>
+                      <th className="pb-4 text-right pr-2">Rank</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-700/50">
+                    {users
+                      .slice()
+                      .sort((a, b) => (b.total_sparks_used || 0) - (a.total_sparks_used || 0))
+                      .slice(0, 5)
+                      .map((u, idx) => (
+                        <tr key={idx} className="group hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
+                          <td className="py-4 pl-2">
+                            <div className="flex items-center gap-3">
+                              <div className="w-9 h-9 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold flex items-center justify-center text-sm border border-slate-200 dark:border-slate-600">
+                                {u.displayName ? u.displayName.charAt(0).toUpperCase() : u.email.charAt(0).toUpperCase()}
+                              </div>
+                              <div>
+                                <div className="font-bold text-slate-800 dark:text-slate-200 text-sm group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                                  {u.displayName || 'Active Student'}
+                                </div>
+                                <div className="text-xs text-slate-400 truncate max-w-[150px] md:max-w-[200px]">
+                                  {u.email}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="py-4 font-black text-slate-700 dark:text-slate-300 text-sm">
+                            {(u.total_sparks_used || 0).toLocaleString()}
+                          </td>
+                          <td className="py-4 text-right pr-2">
+                            <span className={`inline-flex items-center justify-center w-6 h-6 rounded-lg text-xs font-black ${
+                              idx === 0 ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-950/40 dark:text-yellow-400' :
+                              idx === 1 ? 'bg-slate-100 text-slate-800 dark:bg-slate-700 dark:text-slate-300' :
+                              idx === 2 ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-500' :
+                              'bg-slate-50 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+                            }`}>
+                              #{idx + 1}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    {users.length === 0 && (
+                      <tr>
+                        <td colSpan={3} className="py-8 text-center text-slate-400 text-sm font-medium">
+                          No active students found.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Department Adoption */}
+            <div className="bg-white dark:bg-slate-800 p-8 rounded-[2.5rem] border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col">
+              <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
+                <Layers className="text-indigo-500" size={24} />
+                Departmental Adoption
+              </h3>
+              <div className="space-y-4 flex-1 flex flex-col justify-center">
+                {departments.map((dept, idx) => {
+                  const deptUsersCount = users.filter(u => u.department === dept).length;
+                  const percent = users.length > 0 ? Math.round((deptUsersCount / users.length) * 100) : 0;
+                  
+                  return (
+                    <div key={idx} className="group">
+                      <div className="flex justify-between text-sm font-bold mb-1.5">
+                        <span className="text-slate-700 dark:text-slate-300">{dept}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-medium text-slate-400">({deptUsersCount} {deptUsersCount === 1 ? 'user' : 'users'})</span>
+                          <span className="text-slate-600 dark:text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                            {percent}%
+                          </span>
+                        </div>
+                      </div>
+                      <div className="h-3 w-full bg-slate-100 dark:bg-slate-900/40 rounded-full overflow-hidden">
+                        <div 
+                          className="h-full bg-gradient-to-r from-indigo-500 to-indigo-600 rounded-full transition-all duration-1000" 
+                          style={{ width: `${percent}%` }} 
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+                {departments.length === 0 && (
+                  <p className="text-sm text-slate-400 text-center py-4">No departments defined.</p>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       )}
       </div>
