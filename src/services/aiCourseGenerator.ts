@@ -564,7 +564,7 @@ export async function generateLessonContent(
        - The "Why" Before the "How" Introduction: Introduce this chapter by stating why understanding these concepts and interrelationships is essential for professionals in the field, moving away from dry definitions to practical importance.
        - Key Vocabulary (In-depth definitions of core terms).
        - Detailed Lesson Body: Break down key concepts with deep, thoughtful explanations.
-       - Enforce Comparative and Multi-Dimensional Explanations: You MUST structure complex topics using clear Comparison Tables (e.g., comparing material properties, contrasting theories, comparing algorithmic structures).
+       - Enforce Comparative and Multi-Dimensional Explanations: You MUST structure complex topics using clear Comparison Tables (e.g., comparing material properties, contrasting theories, comparing algorithmic structures). Ensure all Markdown tables follow the standard GFM format with a proper header row, separator row (|---|), and data rows. Never compress tables into a single line.
        - Incorporate Structured Case Studies: You MUST inject at least one comprehensive real-world failure, standard case study, or concrete industry/field application related to this module/lesson (e.g., specific material classes, industrial failures, industrial processes, mathematical proofs) to anchor the theory.
        - Active Learning: Conclude with a thorough summary and 3 high-quality "Quick Check" review questions.
     

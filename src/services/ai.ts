@@ -447,13 +447,14 @@ Content Context: ${truncatedContent}
 Generate a structured mini-lesson following this exact format:
 - 1 concise explanation of the core concept.
   - THE "WHY" BEFORE THE "HOW": State why understanding this is essential for professionals in the field, moving away from dry definitions.
-  - COMPARATIVE & MULTI-DIMENSIONAL EXPLANATIONS: Structure complex details or properties using clear Comparison Tables (e.g. comparing material properties, contrasting theories, comparing algorithmic structures).
+  - COMPARATIVE & MULTI-DIMENSIONAL EXPLANATIONS: Structure complex details or properties using clear Comparison Tables. Ensure tables use valid Markdown GFM format with proper header and separator rows (|---|).
   - STRUCTURED CASE STUDIES: Inject a real-world failure, standard case study, or concrete industry application of the concept (e.g., specific material classes, industrial processes, mathematical proofs) to anchor the theoretical explanation.
 - 1 worked example showing step-by-step execution.
 - 2 practice questions for the student to solve.
 
 CRITICAL: Calibrate the depth and complexity to the student's level (${level || 'University Level'}).
 CRITICAL: You MUST acknowledge the topic in your VERY FIRST sentence.
+CRITICAL: Ensure Markdown tables are valid and not compressed into single lines.
 Format the output beautifully using Markdown and LaTeX for math.
       `;
     }
@@ -481,7 +482,7 @@ ${mode === 'proactive' ? `2. PROACTIVE CHECK-IN MODE:
    - Do NOT use analogies, do NOT highlight exam pitfalls, do NOT break down processes. Just say hi and ask how they are doing with the topic.` : `2. NUC ALIGNMENT: Use NUC/CCMAS standards to ensure the content is exam-ready for Nigerian universities.
 3. UNIACE TUTOR STYLE (LECTURER GUIDELINES): 
    - THE "WHY" BEFORE THE "HOW": Introduce the topic by explaining why understanding it is essential for professionals in the field, moving away from dry definitions.
-   - COMPARATIVE & MULTI-DIMENSIONAL EXPLANATIONS: Structure complex topics using clear Comparison Tables where applicable.
+   - COMPARATIVE & MULTI-DIMENSIONAL EXPLANATIONS: Structure complex topics using clear Comparison Tables where applicable. Ensure tables are properly formatted in Markdown.
    - STRUCTURED CASE STUDIES: Where appropriate, inject a real-world failure, standard case study, or concrete industry application of the concept.
    - Use simple, relatable analogies.
    - Highlight common exam pitfalls.

@@ -42,21 +42,56 @@ interface MarkdownRendererProps {
 function fixMarkdownTables(text: string): string {
   if (typeof text !== 'string' || !text) return '';
   
+  // First, handle some common merging issues before splitting into lines
+  let processed = text;
+  
+  // A. Fix cases where text is immediately followed by a table without a newline
+  // e.g., "Table below:| Header |" -> "Table below:\n\n| Header |"
+  processed = processed.replace(/([a-zA-Z0-9:])(\| [^|\n]+ \|)/g, '$1\n\n$2');
+  
+  // B. Fix cases where header and separator are on the same line
+  // e.g., "| H1 | H2 | |---|---|" -> "| H1 | H2 |\n|---|---|"
+  // We look for the pattern | ... | followed by | ---
+  processed = processed.replace(/(\| [^|\n]+ \|)\s*(\|?\s*[-:]{3,})/g, '$1\n$2');
+
   // Split content by newlines to inspect line-by-line
-  const lines = text.split('\n');
+  const lines = processed.split('\n');
   const processedLines: string[] = [];
   
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+    let line = lines[i];
     
+    // Detect and fix mangled separator rows that contain words (like "using", "the", "example")
+    // If a line has pipes and many dashes, it's likely a separator even if it has letters
+    if (line.includes('|') && (line.match(/-/g) || []).length > 5 && /[a-zA-Z]/.test(line)) {
+       const segments = line.split('|');
+       const cleanedSegments = segments.map((segment, idx) => {
+         if (idx === 0 || idx === segments.length - 1) {
+           if (idx === 0 && segment.trim() === '') return '';
+           if (idx === segments.length - 1 && segment.trim() === '') return '';
+         }
+         // If it contains dashes, it's meant to be a separator cell
+         if (segment.includes('-')) {
+           // Replace all alphanumeric and special chars with space, keep - and :
+           return segment.replace(/[^:-]/g, '').padStart(3, '-');
+         }
+         return segment;
+       });
+       line = cleanedSegments.join('|');
+       if (!line.startsWith('|')) line = '|' + line;
+       if (!line.endsWith('|')) line = line + '|';
+    }
+
     // Check if the line is a compressed table:
-    // It contains multiple row dividers "| |" or "||" and has many pipes
+    // It contains multiple row dividers "||" or "|  |" and has many pipes
     const pipeCount = (line.match(/\|/g) || []).length;
-    const hasRowDividers = /\|\s*\|/g.test(line);
+    // Safer row divider detection: || or at least 3 spaces between pipes
+    const hasRowDividers = /\|\|\s*\|/g.test(line) || /\|\s{3,}\|/g.test(line);
     
-    if (pipeCount > 8 && hasRowDividers) {
+    if (pipeCount > 10 && hasRowDividers) {
       // Split the compressed line into separate row chunks
-      const chunks = line.split(/\s*\|\s*\|\s*/);
+      // We look for where the AI might have joined rows
+      const chunks = line.split(/\|{2,}/);
       
       const reconstructedRows = chunks.map((chunk) => {
         let trimmed = chunk.trim();
@@ -81,29 +116,46 @@ function fixMarkdownTables(text: string): string {
   
   const processedText = processedLines.join('\n');
   
-  // Now align columns of any table in the text
+  // Now align columns and ensure valid separator rows
   const finalLines = processedText.split('\n');
   const alignedLines: string[] = [];
   let inTable = false;
   let tableHeaderCols = 0;
   
   for (let i = 0; i < finalLines.length; i++) {
-    const line = finalLines[i].trim();
-    const isTableRow = line.startsWith('|') && line.endsWith('|') && (line.match(/\|/g) || []).length > 1;
+    const rawLine = finalLines[i];
+    const line = rawLine.trim();
+    
+    // A row is part of a table if it has pipes and starts/ends with pipes (roughly)
+    const isTableRow = (line.startsWith('|') || (line.includes('|') && line.endsWith('|'))) && (line.match(/\|/g) || []).length > 1;
     
     if (isTableRow) {
-      // Split by pipe, remove empty first and last elements
-      const rawCols = line.split('|').map(c => c.trim());
-      const cols = rawCols.slice(1, rawCols.length - 1);
+      // If table just started, ensure there's a blank line before it
+      if (!inTable && alignedLines.length > 0 && alignedLines[alignedLines.length - 1].trim() !== '') {
+        alignedLines.push('');
+      }
+
+      // Split by pipe, remove empty first and last elements if they are just whitespace
+      let rawCols = line.split('|');
+      if (rawCols[0].trim() === '') rawCols.shift();
+      if (rawCols.length > 0 && rawCols[rawCols.length - 1].trim() === '') rawCols.pop();
+      
+      const cols = rawCols.map(c => c.trim());
       
       if (!inTable) {
         inTable = true;
         tableHeaderCols = cols.length;
-        alignedLines.push(line);
+        alignedLines.push('| ' + cols.join(' | ') + ' |');
       } else {
-        const isSeparator = cols.every(col => /^[:\s-]*$/.test(col));
+        // Check if this row is meant to be a separator
+        const isSeparator = cols.every(col => /^[:\s-]*$/.test(col)) || (cols.length >= tableHeaderCols && cols.some(col => col.includes('---')));
+        
         if (isSeparator) {
-          let adjustedCols = [...cols];
+          let adjustedCols = cols.map(col => {
+            let c = col.replace(/[^:-]/g, '');
+            return c.length < 3 ? '---' : c;
+          });
+          
           if (adjustedCols.length < tableHeaderCols) {
             while (adjustedCols.length < tableHeaderCols) {
               adjustedCols.push('---');
@@ -125,9 +177,11 @@ function fixMarkdownTables(text: string): string {
         }
       }
     } else {
-      inTable = false;
-      tableHeaderCols = 0;
-      alignedLines.push(finalLines[i]);
+      if (inTable && line === '') {
+        inTable = false;
+        tableHeaderCols = 0;
+      }
+      alignedLines.push(rawLine);
     }
   }
   
