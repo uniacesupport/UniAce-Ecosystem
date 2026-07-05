@@ -1,3 +1,4 @@
+import { UNIACE_SYSTEM_PROMPT, LATEX_INSTRUCTION } from '../shared/prompts';
 import { Module, SubTopic, QuizQuestion, QuestionType, ChatMessage, CourseId, UserProgress, Flashcard, AIPersonality, TimetableEntry, ExamDate } from '../types';
 import { GoogleGenAI } from "@google/genai";
 import { jsonrepair } from 'jsonrepair';

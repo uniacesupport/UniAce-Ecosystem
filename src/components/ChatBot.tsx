@@ -45,7 +45,7 @@ export default function ChatBot({
 }: ChatBotProps) {
   const { user, updateProfileData, signInWithGoogle } = useAuth();
   const { isConnected: isWsConnected, sendMessage: sendWsMessage } = useWebSocketChat();
-  const isAdmin = profile?.role === 'admin' || user?.email === 'olalekan4565@gmail.com' || user?.email === 'uniace.support@gmail.com';
+  const isAdmin = profile?.role === 'admin' || (import.meta.env.VITE_ADMIN_EMAILS || '').split(',').includes(user?.email || '');
 
   const [isOpen, setIsOpen] = useState(false);
   const [input, setInput] = useState(() => localStorage.getItem('chat_input_backup') || "");

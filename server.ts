@@ -29,6 +29,51 @@ import { getCachedResponse, setCachedResponse } from './server/cache';
 import { MailService } from './server/mailService';
 import { telemetry } from './server/telemetry';
 
+
+// --- ADMIN AUTHORIZATION UTILITY ---
+export function isAdminEmail(email: string | undefined | null): boolean {
+  if (!email) return false;
+  const adminEmails = (process.env.ADMIN_EMAILS || '').split(',').map(e => e.trim().toLowerCase());
+  return adminEmails.includes(email.toLowerCase());
+}
+
+
+import { z } from 'zod';
+
+const AiGenerateSchema = z.object({
+  prompt: z.any().optional(),
+  systemInstruction: z.string().max(50000).optional(),
+  responseFormat: z.enum(['json', 'text']).optional(),
+  maxTokens: z.number().max(32000).optional(),
+  complexity: z.enum(['standard', 'high', 'quiz']).optional(),
+  taskType: z.string().max(50).optional(),
+  preferredProvider: z.string().max(50).optional()
+});
+
+const ChatSchema = z.object({
+  message: z.string().max(50000),
+  image: z.string().optional(),
+  history: z.array(z.any()).optional(),
+  context: z.string().max(100000).optional(),
+  complexity: z.enum(['standard', 'high']).optional(),
+  isHintRequest: z.boolean().optional(),
+  masteryLevel: z.number().optional(),
+  personality: z.string().max(50).optional(),
+  currentSparks: z.number().optional(),
+  planType: z.string().max(50).optional()
+});
+
+const StreamSchema = z.object({
+  prompt: z.any(),
+  systemInstruction: z.string().max(50000).optional(),
+  complexity: z.enum(['standard', 'high', 'quiz']).optional(),
+  taskType: z.string().max(50).optional(),
+  preferredProvider: z.string().max(50).optional(),
+  responseFormat: z.enum(['json', 'text']).optional()
+});
+
+import { logger } from './server/logger';
+import { setupAdminRoutes } from './server/routes/admin';
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -65,11 +110,14 @@ async function generateWithTelemetry(provider: CircuitBreaker, messages: any[], 
 
 // Global Error Handlers for the process
 process.on('uncaughtException', (err) => {
-  console.error('UNCAUGHT EXCEPTION:', err);
+  logger.fatal({ err }, 'CRITICAL: UNCAUGHT EXCEPTION');
+  // Give it a moment to flush logs then exit cleanly to allow supervisor to restart
+  setTimeout(() => process.exit(1), 1000);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-  console.error('UNHANDLED REJECTION at:', promise, 'reason:', reason);
+  logger.fatal({ promise, reason }, 'CRITICAL: UNHANDLED REJECTION');
+  setTimeout(() => process.exit(1), 1000);
 });
 
 const allowedOrigins = [
@@ -123,8 +171,10 @@ const populateUser = async (req: express.Request, res: express.Response, next: e
     const decodedToken = await app.auth().verifyIdToken(token);
     (req as any).user = decodedToken;
     next();
-  } catch (error) {
-    next();
+  } catch (error: any) {
+    // Only swallow if it's a normal populate, but let's log it or actually we should reject if token is present but invalid?
+    // The prompt says "token verification failures should be explicitly rejected rather than silently falling back to anonymous/free-tier behavior"
+    return res.status(401).json({ error: 'Unauthorized: Invalid token provided during populateUser', details: error.message });
   }
 };
 
@@ -137,7 +187,7 @@ const apiLimiter = rateLimit({
   legacyHeaders: false, // Disable the `X-RateLimit-*` headers
   skip: (req: any) => {
     const email = req.user?.email;
-    return email === 'uniace.support@gmail.com' || email === 'olalekan4565@gmail.com' || req.user?.role === 'admin';
+    return isAdminEmail(email) || req.user?.role === 'admin';
   }
 });
 
@@ -336,7 +386,7 @@ const aiGenerationLimiter = rateLimit({
   legacyHeaders: false,
   skip: (req: any) => {
     const email = req.user?.email;
-    return email === 'uniace.support@gmail.com' || email === 'olalekan4565@gmail.com' || req.user?.role === 'admin';
+    return isAdminEmail(email) || req.user?.role === 'admin';
   }
 });
 
@@ -349,7 +399,7 @@ const courseGenerationLimiter = rateLimit({
   legacyHeaders: false,
   skip: (req: any) => {
     const email = req.user?.email;
-    return email === 'uniace.support@gmail.com' || email === 'olalekan4565@gmail.com' || req.user?.role === 'admin';
+    return isAdminEmail(email) || req.user?.role === 'admin';
   }
 });
 
@@ -475,15 +525,20 @@ const verifyAuth = async (req: express.Request, res: express.Response, next: exp
   try {
     const app = getAdminApp();
     if (!app) {
-      console.warn('Auth verification skipped: No Firebase app available.');
-      (req as any).user = { uid: 'demo-user-' + token.substring(0, 8), email: 'demo@example.com' };
-      return next();
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn('Auth verification skipped: No Firebase app available. Using demo user.');
+        (req as any).user = { uid: 'demo-user-' + token.substring(0, 8), email: 'demo@example.com' };
+        return next();
+      } else {
+        console.error('CRITICAL: Firebase app not initialized in production.');
+        return res.status(500).json({ error: 'Internal Server Error: Authentication service unavailable.' });
+      }
     }
     const decodedToken = await app.auth().verifyIdToken(token);
     (req as any).user = decodedToken;
     next();
   } catch (error: any) {
-    console.error('Auth Error:', error.message);
+    logger.error({ err: error }, 'Auth Error during verifyAuth');
     return res.status(401).json({ 
       error: 'Unauthorized: Invalid token',
       details: error.message,
@@ -523,7 +578,7 @@ const getAndValidateSparks = async (uid: string, email: string | undefined): Pro
           uid,
           ai_sparks: 50,
           plan_type: 'free',
-          role: (email === 'uniace.support@gmail.com' || email === 'olalekan4565@gmail.com') ? 'admin' : 'student',
+          role: (isAdminEmail(email)) ? 'admin' : 'student',
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
           last_spark_reset: todayStr
         };
@@ -574,7 +629,7 @@ const getAndValidateSparks = async (uid: string, email: string | undefined): Pro
       }
 
       // Auto-promote specific email for dev purposes
-      if ((email === 'uniace.support@gmail.com' || email === 'olalekan4565@gmail.com') && role !== 'admin') {
+      if ((isAdminEmail(email)) && role !== 'admin') {
         role = 'admin';
         t.update(userRef, { role: 'admin' });
       }
@@ -1125,7 +1180,14 @@ app.get('/api/chat/nudge', verifyAuth, async (req, res) => {
 
 app.post('/api/chat', verifyAuth, async (req, res) => {
   console.log('API /api/chat called');
-  const { message, image, history, context, complexity = 'standard', isHintRequest = false, masteryLevel = 0, personality = 'encouraging', currentSparks = 50, planType = 'free' } = req.body;
+  
+  // Zod Validation
+  const parseResult = ChatSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    return res.status(400).json({ error: 'Invalid input', details: parseResult.error.format() });
+  }
+  
+  const { message, image, history, context, complexity = 'standard', isHintRequest = false, masteryLevel = 0, personality = 'encouraging', currentSparks = 50, planType = 'free' } = parseResult.data;
   const uid = (req as any).user.uid;
 
   // --- Phase 1: Maximum Pre-Authorization Model ---
@@ -1723,7 +1785,7 @@ app.get('/api/admin/system-config', verifyAuth, async (req, res) => {
       rate_limits: {
         standard: '100 requests per 15 minutes',
         admin: 'Unlimited (with exceptions)',
-        support_emails: ['uniace.support@gmail.com']
+        support_emails: [(process.env.SUPPORT_EMAIL || 'support@example.com')]
       },
       active_features: {
         telemetry: true,
@@ -2079,8 +2141,7 @@ app.get('/api/admin/config', verifyAuth, async (req, res) => {
     const userDoc = await app.firestore().collection('users').doc(user.uid).get();
     const userData = userDoc.data();
     const isAdmin = userData?.role === 'admin' || 
-                    user.email === 'uniace.support@gmail.com' || 
-                    user.email === 'olalekan4565@gmail.com';
+                    isAdminEmail(user.email);
     
     if (!isAdmin) return res.status(403).json({ error: 'Forbidden' });
     res.json(systemConfig);
@@ -2096,8 +2157,7 @@ app.get('/api/admin/debug-email', verifyAuth, async (req, res) => {
   const userDoc = await getAdminApp().firestore().collection('users').doc(user.uid).get();
   const userData = userDoc.data();
   const isAdmin = userData?.role === 'admin' || 
-                  user.email === 'uniace.support@gmail.com' || 
-                  user.email === 'olalekan4565@gmail.com';
+                  isAdminEmail(user.email);
   
   if (!isAdmin) return res.status(403).json({ error: 'Forbidden' });
   
@@ -2120,8 +2180,7 @@ app.post('/api/admin/test-email', verifyAuth, async (req, res) => {
   const userDoc = await getAdminApp().firestore().collection('users').doc(user.uid).get();
   const userData = userDoc.data();
   const isAdmin = userData?.role === 'admin' || 
-                  user.email === 'uniace.support@gmail.com' || 
-                  user.email === 'olalekan4565@gmail.com';
+                  isAdminEmail(user.email);
   
   if (!isAdmin) return res.status(403).json({ error: 'Forbidden' });
   
@@ -2267,7 +2326,14 @@ app.post('/api/ai/generate', verifyAuth, async (req, res) => {
   if (systemConfig.aiKillswitch) {
     return res.status(503).json({ error: 'AI services are currently disabled by administrator.' });
   }
-  const { prompt, systemInstruction, responseFormat, maxTokens, complexity, taskType } = req.body;
+  
+  // Zod Validation
+  const parseResult = AiGenerateSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    return res.status(400).json({ error: 'Invalid input', details: parseResult.error.format() });
+  }
+  
+  const { prompt, systemInstruction, responseFormat, maxTokens, complexity, taskType } = parseResult.data;
   
   try {
     const messages = [];
@@ -2298,7 +2364,7 @@ app.post('/api/ai/generate', verifyAuth, async (req, res) => {
         userContext += `\nUpcoming Timetable: ${JSON.stringify(timetable.slice(0, 5))}.`;
       }
     } catch (err) {
-      console.warn("Failed to fetch user context for AI:", err);
+      logger.warn({ err }, "Failed to fetch user context for AI");
     }
 
     const isJsonMode = typeof req !== 'undefined' && req.body && req.body.responseFormat === 'json';
@@ -2420,7 +2486,14 @@ app.post('/api/ai/stream', verifyAuth, async (req, res) => {
   if (systemConfig.aiKillswitch) {
     return res.status(503).json({ error: 'AI services are currently disabled by administrator.' });
   }
-  const { prompt, systemInstruction, complexity = 'standard', taskType } = req.body;
+
+  // Zod Validation
+  const parseResult = StreamSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    return res.status(400).json({ error: 'Invalid input', details: parseResult.error.format() });
+  }
+
+  const { prompt, systemInstruction, complexity = 'standard', taskType } = parseResult.data;
   
   try {
     const messages = [];
@@ -2451,7 +2524,7 @@ app.post('/api/ai/stream', verifyAuth, async (req, res) => {
         userContext += `\nUpcoming Timetable: ${JSON.stringify(timetable.slice(0, 5))}.`;
       }
     } catch (err) {
-      console.warn("Failed to fetch user context for AI:", err);
+      logger.warn({ err }, "Failed to fetch user context for AI");
     }
 
     const isJsonMode = typeof req !== 'undefined' && req.body && req.body.responseFormat === 'json';
@@ -2600,7 +2673,7 @@ app.post('/api/ai/stream', verifyAuth, async (req, res) => {
     res.end();
 
   } catch (error: any) {
-    console.error('OpenRouter Stream Error:', error);
+    logger.error({ err: error }, 'OpenRouter Stream Error');
     if (!res.headersSent) {
       res.status(500).json({ error: 'Failed to stream response due to an internal error.' });
     } else {
@@ -3546,7 +3619,7 @@ app.post('/api/admin/adjust-sparks', verifyAuth, async (req, res) => {
     const userEmail = (req as any).user.email;
 
     // Auto-promote specific email for dev purposes
-    if (userEmail === 'uniace.support@gmail.com' || userEmail === 'olalekan4565@gmail.com') {
+    if (isAdminEmail(userEmail)) {
         if (adminDoc.exists && adminDoc.data()?.role !== 'admin') {
              await adminDoc.ref.update({ role: 'admin' });
              console.log(`Auto-promoted ${userEmail} to admin.`);
@@ -3850,7 +3923,7 @@ app.get('/api/admin/struggle-analytics', verifyAuth, async (req, res) => {
     const userEmail = (req as any).user.email;
 
     let isAdmin = false;
-    if (userEmail === 'uniace.support@gmail.com' || userEmail === 'olalekan4565@gmail.com') {
+    if (isAdminEmail(userEmail)) {
       isAdmin = true;
     } else if (adminDoc.exists && adminDoc.data()?.role === 'admin') {
       isAdmin = true;
@@ -3904,7 +3977,7 @@ app.get('/api/admin/chat-analytics', verifyAuth, async (req, res) => {
     const userEmail = (req as any).user.email;
 
     let isAdmin = false;
-    if (userEmail === 'uniace.support@gmail.com' || userEmail === 'olalekan4565@gmail.com') {
+    if (isAdminEmail(userEmail)) {
       isAdmin = true;
     } else if (adminDoc.exists && adminDoc.data()?.role === 'admin') {
       isAdmin = true;
@@ -4059,7 +4132,7 @@ app.post('/api/admin/broadcast-whatsapp', verifyAuth, async (req, res) => {
     const adminDoc = await app.firestore().collection('users').doc(adminUid).get();
     const userEmail = (req as any).user.email;
 
-    if (userEmail !== 'uniace.support@gmail.com' && userEmail !== 'olalekan4565@gmail.com' && (!adminDoc.exists || adminDoc.data()?.role !== 'admin')) {
+    if (!isAdminEmail(userEmail) && (!adminDoc.exists || adminDoc.data()?.role !== 'admin')) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
@@ -4416,8 +4489,14 @@ async function startServer() {
     try {
       const app = getAdminApp();
       if (!app) {
-        console.warn('Auth verification skipped (WS): No Firebase app available.');
-        user = { uid: 'demo-user-' + token.substring(0, 8), email: 'demo@example.com' };
+        if (process.env.NODE_ENV !== 'production') {
+          console.warn('Auth verification skipped (WS): No Firebase app available.');
+          user = { uid: 'demo-user-' + token.substring(0, 8), email: 'demo@example.com' };
+        } else {
+          console.error('CRITICAL: Firebase app not initialized in production.');
+          ws.close(1011, 'Auth service unavailable');
+          return;
+        }
       } else {
         user = await app.auth().verifyIdToken(token);
       }
@@ -4457,7 +4536,7 @@ async function startServer() {
                    uid: user.uid,
                    ai_sparks: 50 - SPARK_COST,
                    plan_type: 'free',
-                   role: (user.email === 'uniace.support@gmail.com' || user.email === 'olalekan4565@gmail.com') ? 'admin' : 'student',
+                   role: (isAdminEmail(user.email)) ? 'admin' : 'student',
                    createdAt: admin.firestore.FieldValue.serverTimestamp(),
                    last_spark_reset: todayStr
                  };
@@ -4477,7 +4556,7 @@ async function startServer() {
               let updates: any = {};
 
               // Auto-promote specific email for dev purposes
-              if ((user.email === 'uniace.support@gmail.com' || user.email === 'olalekan4565@gmail.com') && role !== 'admin') {
+              if ((isAdminEmail(user.email)) && role !== 'admin') {
                   updates.role = 'admin';
                   role = 'admin';
                   console.log(`Auto-promoted ${user.email} to admin (WS).`);

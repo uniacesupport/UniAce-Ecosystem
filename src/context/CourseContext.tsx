@@ -53,7 +53,7 @@ export function CourseProvider({ children }: { children: React.ReactNode }) {
       if (!user) return;
       
       // Check if user is admin based on email (matching firestore rules)
-      const isAdmin = user.email === 'uniace.support@gmail.com' || user.email === 'olalekan4565@gmail.com';
+      const isAdmin = (import.meta.env.VITE_ADMIN_EMAILS || '').split(',').includes(user.email);
       if (!isAdmin) return;
 
       try {

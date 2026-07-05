@@ -61,7 +61,7 @@ export default function QuizGenerator({
   
   const { user, profile } = useAuth();
   const { isPremium } = usePremiumStatus();
-  const isAdmin = profile?.role === 'admin' || user?.email === 'olalekan4565@gmail.com' || user?.email === 'uniace.support@gmail.com';
+  const isAdmin = profile?.role === 'admin' || (import.meta.env.VITE_ADMIN_EMAILS || '').split(',').includes(user?.email || '');
   const isLocked = !isPremium && !isAdmin;
   
   // Exam Mode State

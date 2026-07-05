@@ -362,7 +362,7 @@ export default function HelpSupport({ onBack }: HelpSupportProps) {
                 
                 <div className="space-y-4 pt-4">
                   {[
-                    { icon: Mail, label: "Email Support", value: "uniace.support@gmail.com" },
+                    { icon: Mail, label: "Email Support", value: import.meta.env.VITE_SUPPORT_EMAIL || "support@example.com" },
                     { icon: MessageSquare, label: "Live Chat", value: "Available 9am - 6pm" }
                   ].map((item, i) => (
                     <div key={i} className="flex items-center gap-4">

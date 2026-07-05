@@ -8,7 +8,7 @@ export const TrialExpirationBanner = () => {
   const { user, profile } = useAuth();
   const [isVisible, setIsVisible] = useState(true);
 
-  const isAdminEmail = user?.email === 'olalekan4565@gmail.com' || user?.email === 'uniace.support@gmail.com';
+  const isAdminEmail = (import.meta.env.VITE_ADMIN_EMAILS || '').split(',').includes(user?.email || '');
   const isStaff = ['admin', 'moderator', 'tutor'].includes(profile?.role || '') || isAdminEmail;
   const isFreePlan = profile?.plan_type === 'free';
 

@@ -72,7 +72,8 @@ export default function ContentArea({
   const { refreshCourses } = useCourses();
   const { user, profile } = useAuth();
   const { isPremium } = usePremiumStatus();
-  const isAdmin = profile?.role === 'admin' || user?.email === 'olalekan4565@gmail.com' || user?.email === 'uniace.support@gmail.com';
+  const adminEmails = (import.meta.env.VITE_ADMIN_EMAILS || '').split(',').map((e: string) => e.trim().toLowerCase());
+  const isAdmin = profile?.role === 'admin' || (user?.email && adminEmails.includes(user.email.toLowerCase()));
   const isLocked = !isPremium && !isAdmin;
 
   const activeSubTopicIndex = module.subTopics.findIndex(st => st.id === activeSubTopicId);

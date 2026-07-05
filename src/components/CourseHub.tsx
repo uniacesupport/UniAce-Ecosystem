@@ -30,7 +30,7 @@ export default function CourseHub({ onSelectCourse, onProfileClick, onViewSelect
   const { user, profile, isConfigured } = useAuth();
   const { courses, loading: coursesLoading } = useCourses();
   const { isPremium } = usePremiumStatus();
-  const isAdmin = profile?.role === 'admin' || user?.email === 'olalekan4565@gmail.com' || user?.email === 'uniace.support@gmail.com';
+  const isAdmin = profile?.role === 'admin' || (import.meta.env.VITE_ADMIN_EMAILS || '').split(',').includes(user?.email || '');
   
   const [activeTab, setActiveTab] = useState<Tab>('your-courses');
   const [searchQuery, setSearchQuery] = useState('');

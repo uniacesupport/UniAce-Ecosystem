@@ -29,7 +29,7 @@ interface StudyPlanProps {
 export default function StudyPlan({ progress, syllabus }: StudyPlanProps) {
   const { user, profile } = useAuth();
   const { isPremium } = usePremiumStatus();
-  const isAdmin = profile?.role === 'admin' || user?.email === 'olalekan4565@gmail.com' || user?.email === 'uniace.support@gmail.com';
+  const isAdmin = profile?.role === 'admin' || (import.meta.env.VITE_ADMIN_EMAILS || '').split(',').includes(user?.email || '');
   const isLocked = !isPremium && !isAdmin;
   
   const [plan, setPlan] = useState<StudyPlanData | null>(null);

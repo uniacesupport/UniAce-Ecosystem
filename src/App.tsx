@@ -270,7 +270,7 @@ function AppContent() {
   }
 
   if (window.location.pathname === '/admin/login') {
-    const isAdmin = profile?.role === 'admin' || user?.email === 'olalekan4565@gmail.com' || user?.email === 'uniace.support@gmail.com';
+    const isAdmin = profile?.role === 'admin' || (import.meta.env.VITE_ADMIN_EMAILS || '').split(',').includes(user?.email || '');
     if (!isAdmin) {
       window.location.href = '/';
       return null;
@@ -288,7 +288,7 @@ function AppContent() {
   }
 
   if (window.location.pathname === '/admin/dashboard') {
-    const isAdmin = profile?.role === 'admin' || user?.email === 'olalekan4565@gmail.com' || user?.email === 'uniace.support@gmail.com';
+    const isAdmin = profile?.role === 'admin' || (import.meta.env.VITE_ADMIN_EMAILS || '').split(',').includes(user?.email || '');
     if (!isAdmin) {
       window.location.href = '/';
       return null;
@@ -638,7 +638,7 @@ function AppContent() {
 
         {activeView === 'admin-dashboard' && (
           (() => {
-            const isAdmin = profile?.role === 'admin' || user?.email === 'olalekan4565@gmail.com' || user?.email === 'uniace.support@gmail.com';
+            const isAdmin = profile?.role === 'admin' || (import.meta.env.VITE_ADMIN_EMAILS || '').split(',').includes(user?.email || '');
             
             if (!isAdmin) {
               return <Dashboard 

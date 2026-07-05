@@ -36,7 +36,7 @@ export default function UserProfile({ onBack, onNavigate }: UserProfileProps) {
   const { theme, toggleTheme } = useTheme();
   const isDarkMode = theme === 'dark';
 
-  const isAdmin = profile?.role === 'admin' || user?.email === 'olalekan4565@gmail.com' || user?.email === 'uniace.support@gmail.com';
+  const isAdmin = profile?.role === 'admin' || (import.meta.env.VITE_ADMIN_EMAILS || '').split(',').includes(user?.email || '');
   const isTutor = profile?.role === 'tutor' || isAdmin;
 
   const [isEditingProfile, setIsEditingProfile] = useState(false);

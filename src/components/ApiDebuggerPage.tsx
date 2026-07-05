@@ -245,7 +245,7 @@ export const ApiDebuggerPage = ({ onBack, showToast }: { onBack: () => void, sho
   };
 
   const presets = [
-    { name: 'Welcome Email', method: 'POST', url: '/api/admin/test-email', body: '{\n  "to": "uniace.support@gmail.com",\n  "template": "welcome"\n}' },
+    { name: 'Welcome Email', method: 'POST', url: '/api/admin/test-email', body: '{\n  "to": "support@example.com",\n  "template": "welcome"\n}' },
     { name: 'AI Status', method: 'GET', url: '/api/admin/ai-status' },
     { name: 'System Config', method: 'GET', url: '/api/admin/system-config' },
     { name: 'Debug Email', method: 'GET', url: '/api/admin/debug-email' },

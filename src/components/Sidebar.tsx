@@ -54,7 +54,7 @@ export default function Sidebar({
   const { user, profile, signInWithGoogle, logout } = useAuth();
   const { theme: appTheme, toggleTheme } = useTheme();
   const { isPremium, isTrialActive } = usePremiumStatus();
-  const isAdmin = profile?.role === 'admin' || user?.email === 'olalekan4565@gmail.com' || user?.email === 'uniace.support@gmail.com';
+  const isAdmin = profile?.role === 'admin' || (import.meta.env.VITE_ADMIN_EMAILS || '').split(',').includes(user?.email || '');
   const sparks = profile?.ai_sparks ?? null;
   const isLocked = !isPremium && !isAdmin;
   const theme = THEME_COLORS[profile?.themeColor || 'emerald'] || THEME_COLORS.emerald;
