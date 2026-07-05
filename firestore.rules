@@ -140,10 +140,7 @@ service cloud.firestore {
     }
 
     match /study_plans/{userId} {
-      allow read, write: if isAdmin() || isTutor();
-      allow get: if isOwner(userId);
-      allow create: if isOwner(userId) && isValidStudyPlan(request.resource.data) && hasRequiredFields(['id', 'userId', 'timetable', 'exams', 'sessions', 'lastGenerated']);
-      allow update: if isOwner(userId) && isValidStudyPlan(request.resource.data) && request.resource.data.userId == resource.data.userId;
+      allow read, write: if isOwner(userId) || isAdmin() || isTutor();
     }
 
     match /users/{userId} {

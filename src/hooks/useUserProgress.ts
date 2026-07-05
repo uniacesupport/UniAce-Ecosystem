@@ -162,7 +162,7 @@ export function useUserProgress() {
             subscription_start_date, last_spark_reset, last_payment_ref, 
             ai_sparks, ...allowedProgress 
           } = progress as any;
-          setDoc(userDocRef, allowedProgress, { merge: true }).catch(err => {
+          setDoc(userDocRef, { ...allowedProgress, uid: user.uid }, { merge: true }).catch(err => {
             console.error("Error syncing initial user progress to Firestore:", err);
           });
         }
@@ -193,7 +193,7 @@ export function useUserProgress() {
 
       // Use a timeout to debounce writes slightly
       const timeoutId = setTimeout(() => {
-        setDoc(userDocRef, allowedProgress, { merge: true }).catch(err => {
+        setDoc(userDocRef, { ...allowedProgress, uid: user.uid }, { merge: true }).catch(err => {
           console.error("Error persisting user progress to Firestore:", err);
         });
       }, 1000); // Increased debounce to 1s to reduce writes
@@ -208,7 +208,7 @@ export function useUserProgress() {
           subscription_start_date, last_spark_reset, last_payment_ref, 
           ai_sparks, ...allowedProgressUnload 
         } = progress as any;
-        setDoc(userDocRef, allowedProgressUnload, { merge: true }).catch(() => {});
+        setDoc(userDocRef, { ...allowedProgressUnload, uid: user.uid }, { merge: true }).catch(() => {});
       };
       window.addEventListener('beforeunload', handleBeforeUnload);
 
@@ -229,7 +229,7 @@ export function useUserProgress() {
         subscription_start_date, last_spark_reset, last_payment_ref, 
         ai_sparks, ...allowedProgress 
       } = newProgress as any;
-      await setDoc(userDocRef, allowedProgress, { merge: true });
+      await setDoc(userDocRef, { ...allowedProgress, uid: user.uid }, { merge: true });
     } catch (err) {
       console.error("Error in immediate sync:", err);
     }

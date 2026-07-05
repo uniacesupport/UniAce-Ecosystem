@@ -212,7 +212,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         'subscription_status', 
         'subscription_start_date',
         'last_spark_reset',
-        'last_payment_ref'
+        'last_payment_ref',
+        'xp',
+        'level'
       ];
       protectedFields.forEach(field => delete dataToSave[field]);
       

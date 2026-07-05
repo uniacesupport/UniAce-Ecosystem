@@ -47,23 +47,30 @@ export const AdaptiveRecalibratorModal: React.FC<AdaptiveRecalibratorModalProps>
   const evaluatePerformance = async () => {
     if (!user) return;
     
-    // Check if they have an active study plan first
-    const docRef = doc(db, 'user_study_plans', user.uid);
-    const docSnap = await getDoc(docRef);
-    if (!docSnap.exists()) {
-      setStep('no_plan');
-      return;
-    }
+    try {
+      // Check if they have an active study plan first
+      const docRef = doc(db, 'study_plans', user.uid);
+      const docSnap = await getDoc(docRef);
+      if (!docSnap.exists()) {
+        setStep('no_plan');
+        return;
+      }
 
-    if (score < 60) {
-      // Trigger Booster Lesson Injection automatically
-      triggerBoosterInjection();
-    } else if (score === 100) {
-      // Offer Fast Track
-      setStep('fast_track_offer');
-    } else {
-      // Decent score, no major remediation or fast-track needed
-      onClose();
+      if (score < 60) {
+        // Trigger Booster Lesson Injection automatically
+        triggerBoosterInjection();
+      } else if (score === 100) {
+        // Offer Fast Track
+        setStep('fast_track_offer');
+      } else {
+        // Decent score, no major remediation or fast-track needed
+        onClose();
+      }
+    } catch (err) {
+      console.error('Error evaluating performance or fetching study plan:', err);
+      // Fallback gracefully so we don't block the UI with an unhandled exception
+      setError('Could not verify study plan. Please make sure you are online.');
+      setStep('no_plan');
     }
   };
 
@@ -78,7 +85,7 @@ export const AdaptiveRecalibratorModal: React.FC<AdaptiveRecalibratorModalProps>
       setBoosterData(booster);
 
       // Save to active study plan in Firestore
-      const docRef = doc(db, 'user_study_plans', user.uid);
+      const docRef = doc(db, 'study_plans', user.uid);
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
         const activePlan = docSnap.data();
@@ -121,7 +128,7 @@ export const AdaptiveRecalibratorModal: React.FC<AdaptiveRecalibratorModalProps>
       const advancedPlan = await AIService.generateFastTrackPlan(progress, syllabus, topicTitle);
       
       // Save updated fast-track plan in Firestore
-      const docRef = doc(db, 'user_study_plans', user.uid);
+      const docRef = doc(db, 'study_plans', user.uid);
       await setDoc(docRef, advancedPlan);
       
       setStep('fast_track_success');
