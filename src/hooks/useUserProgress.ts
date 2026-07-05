@@ -156,7 +156,13 @@ export function useUserProgress() {
       } else {
         // If new user, sync local progress to Firestore
         if (isOnline) {
-          setDoc(userDocRef, progress, { merge: true }).catch(err => {
+          const { 
+            xp, level, mastery, achievements, enrolledCourses, 
+            role, plan_type, subscription_expiry, subscription_status, 
+            subscription_start_date, last_spark_reset, last_payment_ref, 
+            ai_sparks, ...allowedProgress 
+          } = progress as any;
+          setDoc(userDocRef, allowedProgress, { merge: true }).catch(err => {
             console.error("Error syncing initial user progress to Firestore:", err);
           });
         }
@@ -178,9 +184,16 @@ export function useUserProgress() {
     
     if (user && isOnline) {
       const userDocRef = doc(db, 'users', user.uid);
+      const { 
+        xp, level, mastery, achievements, enrolledCourses, 
+        role, plan_type, subscription_expiry, subscription_status, 
+        subscription_start_date, last_spark_reset, last_payment_ref, 
+        ai_sparks, ...allowedProgress 
+      } = progress as any;
+
       // Use a timeout to debounce writes slightly
       const timeoutId = setTimeout(() => {
-        setDoc(userDocRef, progress, { merge: true }).catch(err => {
+        setDoc(userDocRef, allowedProgress, { merge: true }).catch(err => {
           console.error("Error persisting user progress to Firestore:", err);
         });
       }, 1000); // Increased debounce to 1s to reduce writes
@@ -189,7 +202,13 @@ export function useUserProgress() {
       const handleBeforeUnload = () => {
         // We can't use async setDoc here reliably, but we can try a beacon or just hope the debounce handled it
         // Actually, for critical data, we should have a 'flush' mechanism
-        setDoc(userDocRef, progress, { merge: true }).catch(() => {});
+        const { 
+          xp, level, mastery, achievements, enrolledCourses, 
+          role, plan_type, subscription_expiry, subscription_status, 
+          subscription_start_date, last_spark_reset, last_payment_ref, 
+          ai_sparks, ...allowedProgressUnload 
+        } = progress as any;
+        setDoc(userDocRef, allowedProgressUnload, { merge: true }).catch(() => {});
       };
       window.addEventListener('beforeunload', handleBeforeUnload);
 
@@ -204,7 +223,13 @@ export function useUserProgress() {
     if (!user || !isOnline) return;
     try {
       const userDocRef = doc(db, 'users', user.uid);
-      await setDoc(userDocRef, newProgress, { merge: true });
+      const { 
+        xp, level, mastery, achievements, enrolledCourses, 
+        role, plan_type, subscription_expiry, subscription_status, 
+        subscription_start_date, last_spark_reset, last_payment_ref, 
+        ai_sparks, ...allowedProgress 
+      } = newProgress as any;
+      await setDoc(userDocRef, allowedProgress, { merge: true });
     } catch (err) {
       console.error("Error in immediate sync:", err);
     }
