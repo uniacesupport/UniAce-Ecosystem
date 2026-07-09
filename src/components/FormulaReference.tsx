@@ -250,13 +250,13 @@ export default function FormulaReference({ onBack, activeCourseId, formulas: ini
                   }}
                   className="w-full pl-4 pr-10 py-4 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-2xl focus:border-slate-900 dark:focus:border-white focus:ring-0 transition-all shadow-sm font-bold text-slate-900 dark:text-white appearance-none cursor-pointer"
                 >
-                  {filteredCourses.map(course => (
+                  {courseList.map(course => (
                     <option key={course.id} value={course.id}>
                       {course.title}
                     </option>
                   ))}
-                  {filteredCourses.length === 0 && (
-                    <option value="">No matching courses</option>
+                  {courseList.length === 0 && (
+                    <option value="">No courses available</option>
                   )}
                 </select>
                 <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
