@@ -240,6 +240,32 @@ export default function FormulaReference({ onBack, activeCourseId, formulas: ini
             </div>
 
             <div className="flex flex-col sm:flex-row items-center gap-4 w-full md:w-auto">
+              <div className="relative w-full md:w-64">
+                <select
+                  value={selectedCourseId || ''}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setSelectedCourseId(val ? val as CourseId : null);
+                    setSelectedCategory('All');
+                  }}
+                  className="w-full pl-4 pr-10 py-4 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-2xl focus:border-slate-900 dark:focus:border-white focus:ring-0 transition-all shadow-sm font-bold text-slate-900 dark:text-white appearance-none cursor-pointer"
+                >
+                  {filteredCourses.map(course => (
+                    <option key={course.id} value={course.id}>
+                      {course.title}
+                    </option>
+                  ))}
+                  {filteredCourses.length === 0 && (
+                    <option value="">No matching courses</option>
+                  )}
+                </select>
+                <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                  <svg width="12" height="8" viewBox="0 0 12 8" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M1 1L6 6L11 1" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                  </svg>
+                </div>
+              </div>
+
               <div className="relative w-full md:w-80">
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
                 <input 

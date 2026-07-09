@@ -70,8 +70,8 @@ export function useSelfHealing() {
     }
 
     // 3. Check for array structures
-    if (!Array.isArray(currentProgress.achievements) || currentProgress.achievements.length === 0) {
-      return { corrupted: true, reason: 'Achievements array is missing or empty.' };
+    if (!Array.isArray(currentProgress.achievements)) {
+      return { corrupted: true, reason: 'Achievements array is missing.' };
     }
 
     if (!Array.isArray(currentProgress.enrolledCourses)) {
@@ -245,14 +245,8 @@ export function useSelfHealing() {
 
       await setDoc(userDocRef, { ...allowedProgress, uid: user.uid }, { merge: true });
 
-      // 5. Emit success logging and send a silent non-obtrusive system success notification
+      // 5. Emit success logging
       await LogService.log('success', 'system', `State self-healed successfully. Fixed issue: ${reason}`);
-      await sendNotification(
-        'Academic State Synced',
-        'Your profile stats, coursework progress, and level settings have been automatically repaired and synced with the cloud.',
-        'success',
-        `self-heal-${Date.now()}`
-      );
       
       console.log('[Self-Healing] State repaired and synced successfully with Firestore.');
     } catch (error) {
