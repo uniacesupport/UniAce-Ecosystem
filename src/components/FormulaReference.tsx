@@ -261,48 +261,20 @@ export default function FormulaReference({ onBack, activeCourseId, formulas: ini
         </header>
 
         {/* Categories (Quick Filter) */}
-        <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2">
-            {categories.map(cat => (
-              <button
-                key={cat}
-                onClick={() => setSelectedCategory(cat)}
-                className={`px-6 py-2 rounded-full text-sm font-bold transition-all whitespace-nowrap ${
-                  selectedCategory === cat
-                    ? 'bg-slate-900 dark:bg-white text-white dark:text-zinc-900 shadow-lg'
-                    : 'bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-slate-500 dark:text-zinc-400 hover:border-slate-900 dark:hover:border-white'
-                }`}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
-
-          {/* Discreet Course Picker - Only shown if multiple syllabi match the user's profile */}
-          {filteredCourses.length > 1 && (
-            <div className="relative min-w-[200px]">
-              <select
-                value={selectedCourseId || ''}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setSelectedCourseId(val ? val as CourseId : null);
-                  setSelectedCategory('All');
-                }}
-                className="w-full pl-4 pr-10 py-2.5 bg-slate-100 dark:bg-zinc-900/50 border-none rounded-xl focus:ring-0 transition-all font-bold text-xs text-slate-500 dark:text-zinc-400 appearance-none cursor-pointer uppercase tracking-wider"
-              >
-                {filteredCourses.map(course => (
-                  <option key={course.id} value={course.id}>
-                    {course.title}
-                  </option>
-                ))}
-              </select>
-              <div className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
-                <svg width="10" height="6" viewBox="0 0 12 8" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M1 1L6 6L11 1" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-                </svg>
-              </div>
-            </div>
-          )}
+        <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2">
+          {categories.map(cat => (
+            <button
+              key={cat}
+              onClick={() => setSelectedCategory(cat)}
+              className={`px-6 py-2 rounded-full text-sm font-bold transition-all whitespace-nowrap ${
+                selectedCategory === cat
+                  ? 'bg-slate-900 dark:bg-white text-white dark:text-zinc-900 shadow-lg'
+                  : 'bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-slate-500 dark:text-zinc-400 hover:border-slate-900 dark:hover:border-white'
+              }`}
+            >
+              {cat}
+            </button>
+          ))}
         </div>
 
         {/* Loading State */}
