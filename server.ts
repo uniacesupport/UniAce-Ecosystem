@@ -2313,6 +2313,45 @@ app.post('/api/ai/test-generate', async (req, res) => {
   }
 });
 
+// 1.5.5 AI Image Generate Endpoint
+app.post('/api/ai/generate-image', verifyAuth, async (req, res) => {
+  try {
+    const { prompt, aspectRatio } = req.body;
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) throw new Error('API key not configured on server');
+
+    const ai = new GoogleGenAI({ apiKey });
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash-image',
+      contents: {
+        parts: [
+          {
+            text: `Generate a high-quality, educational diagram or illustration for the following concept: ${prompt}. 
+            The image should be clear, labeled where appropriate, and suitable for a university-level student. 
+            Focus on accuracy and clarity.`,
+          },
+        ],
+      },
+      config: {
+        imageConfig: {
+          aspectRatio: aspectRatio || '1:1',
+        },
+      },
+    });
+
+    for (const part of response.candidates?.[0]?.content?.parts || []) {
+      if (part.inlineData) {
+        const base64EncodeString = part.inlineData.data;
+        return res.json({ image: `data:image/png;base64,${base64EncodeString}` });
+      }
+    }
+    throw new Error('No image generated');
+  } catch (error: any) {
+    console.error('Image Gen Error:', error);
+    res.status(500).json({ error: String(error) });
+  }
+});
+
 // 1.6 AI Generate Endpoint (Fallback for frontend AI tasks)
 app.post('/api/ai/generate', verifyAuth, async (req, res) => {
   if (systemConfig.aiKillswitch) {

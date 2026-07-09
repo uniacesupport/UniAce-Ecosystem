@@ -111,7 +111,7 @@ export default defineConfig(({mode}) => {
       })
     ],
     define: {
-      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
+      // API keys should not be exposed to the client
     },
     resolve: {
       alias: {
@@ -129,6 +129,30 @@ export default defineConfig(({mode}) => {
     },
     build: {
       outDir: 'dist',
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules')) {
+              if (id.includes('firebase')) {
+                return 'firebase-vendor';
+              }
+              if (id.includes('katex')) {
+                return 'katex-vendor';
+              }
+              if (id.includes('pdfjs-dist')) {
+                return 'pdfjs-vendor';
+              }
+              if (id.includes('recharts') || id.includes('d3')) {
+                return 'charts-vendor';
+              }
+              if (id.includes('lucide-react')) {
+                return 'icons-vendor';
+              }
+              return 'vendor';
+            }
+          }
+        }
+      }
     },
     base: './',
   };

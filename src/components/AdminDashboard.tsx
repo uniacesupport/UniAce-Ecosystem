@@ -9,7 +9,7 @@ import { useCourses } from '../context/CourseContext';
 import { useAuth } from '../context/AuthContext';
 import { db, storage, auth } from '../firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { doc, setDoc, getDoc, collection, getDocs, deleteDoc, query, where, limit, writeBatch, serverTimestamp, orderBy, addDoc, updateDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc, collection, getDocs, deleteDoc, query, where, limit, writeBatch, serverTimestamp, orderBy, addDoc, updateDoc, onSnapshot } from 'firebase/firestore';
 import AdminQuestionBank from './AdminQuestionBank';
 import { ApiDebuggerPage } from './ApiDebuggerPage';
 import CourseEditModal from './CourseEditModal';
@@ -1610,6 +1610,51 @@ export default function AdminDashboard() {
       setIsLoadingUsers(false);
     }
   };
+
+  useEffect(() => {
+    if (!db) return;
+    setIsLoadingUsers(true);
+    const unsubscribe = onSnapshot(collection(db, 'users'), (querySnapshot) => {
+      const userList: any[] = [];
+      const stats = {
+        total: 0,
+        students: 0,
+        tutors: 0,
+        admins: 0,
+        moderators: 0,
+        activeToday: 0
+      };
+
+      const now = new Date();
+      const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        userList.push({ id: doc.id, ...data });
+        
+        stats.total++;
+        const role = data.role || 'student';
+        if (role === 'student') stats.students++;
+        else if (role === 'tutor') stats.tutors++;
+        else if (role === 'admin') stats.admins++;
+        else if (role === 'moderator') stats.moderators++;
+
+        if (data.lastActive) {
+          const lastActive = new Date(data.lastActive);
+          if (lastActive > oneDayAgo) stats.activeToday++;
+        }
+      });
+      
+      setUsers(userList);
+      setUserStats(stats);
+      setIsLoadingUsers(false);
+    }, (error) => {
+      console.error("Error fetching users realtime:", error);
+      setIsLoadingUsers(false);
+    });
+
+    return () => unsubscribe();
+  }, [db]);
 
   const handleRestoreCourse = async (courseId: string) => {
     try {

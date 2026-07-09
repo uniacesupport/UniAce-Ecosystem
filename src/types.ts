@@ -42,6 +42,11 @@ export interface Flashcard {
   back: string; // Answer or explanation
   moduleId: string;
   subTopicId?: string;
+  userId?: string;
+  interval?: number;
+  repetition?: number;
+  efactor?: number;
+  nextReviewDate?: string;
 }
 
 export interface SRSData {

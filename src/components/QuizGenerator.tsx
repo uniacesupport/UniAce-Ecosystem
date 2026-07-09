@@ -357,6 +357,51 @@ export default function QuizGenerator({
         setIsClaimingReward(false);
       }
     }
+
+    // PHASE 3: Automated Weakness Targeting
+    if (percentage < 70 && user) {
+      const failedQuestions = questions.filter(q => {
+        if (q.type === 'multiple-choice') {
+          return userAnswers[q.id]?.toLowerCase().trim() !== q.correctAnswer.toLowerCase().trim();
+        } else {
+          return !finalEvals[q.id]?.isCorrect;
+        }
+      });
+
+      if (failedQuestions.length > 0) {
+        AIService.generateRemedialFlashcards(
+          failedQuestions.map(q => ({ question: q.question, correctAnswer: q.correctAnswer })),
+          module.title,
+          module.id,
+          subTopic?.id
+        ).then(async (cards) => {
+          if (cards && cards.length > 0) {
+            const { writeBatch, doc, collection } = await import('firebase/firestore');
+            const batch = writeBatch(db);
+            const flashcardsRef = collection(db, `users/${user.uid}/flashcards`);
+            cards.forEach(c => {
+              let cardId = c.id && c.id.length > 3 && !c.id.includes('/') ? c.id : undefined;
+              if (!cardId) {
+                cardId = typeof crypto !== 'undefined' && crypto.randomUUID 
+                  ? crypto.randomUUID() 
+                  : Math.random().toString(36).substring(2) + Date.now().toString(36);
+              }
+              batch.set(doc(flashcardsRef, cardId), {
+                ...c,
+                id: cardId,
+                userId: user.uid,
+                interval: 0,
+                repetition: 0,
+                efactor: 2.5,
+                nextReviewDate: new Date().toISOString()
+              });
+            });
+            await batch.commit();
+            console.log("Remedial flashcards injected silently!");
+          }
+        }).catch(err => console.error("Silently failed generating remedial flashcards", err));
+      }
+    }
   };
 
   const calculateScore = (evals = writtenEvaluations) => {

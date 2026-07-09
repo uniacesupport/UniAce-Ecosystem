@@ -162,6 +162,13 @@ service cloud.firestore {
                       (request.resource.data.get('ai_sparks', 0) <= 50 || isAdmin()) &&
                       (!('subscription_status' in request.resource.data) || request.resource.data.subscription_status == 'none' || isAdmin());
 
+      match /flashcards/{cardId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId);
+        allow update: if isOwner(userId) && request.resource.data.userId == resource.data.userId;
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+
       match /spaced_repetition/{topicId} {
         allow read: if isOwner(userId) || isAdmin();
         allow create: if isOwner(userId) && isValidSpacedRepetition(request.resource.data);

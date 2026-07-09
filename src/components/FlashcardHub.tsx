@@ -1,9 +1,12 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Module } from '../types';
-import { BrainCircuit, Book, ArrowRight } from 'lucide-react';
+import { BrainCircuit, Book, ArrowRight, PlayCircle, Flame, Target, Trophy } from 'lucide-react';
 import { motion } from 'motion/react';
 import Flashcards from './Flashcards';
 import { useAuth } from '../context/AuthContext';
+import { db } from '../firebase';
+import { collection, query, getDocs } from 'firebase/firestore';
+import { useUserProgress } from '../hooks/useUserProgress';
 
 interface FlashcardHubProps {
   syllabus: Module[];
@@ -11,24 +14,106 @@ interface FlashcardHubProps {
 
 export default function FlashcardHub({ syllabus }: FlashcardHubProps) {
   const { user } = useAuth();
+  const { progress } = useUserProgress();
   const [selectedModule, setSelectedModule] = useState<Module | null>(null);
+  const [isGlobalReview, setIsGlobalReview] = useState(false);
+  const [stats, setStats] = useState({ learning: 0, mastered: 0, totalDue: 0, streak: 0 });
+
+  const fetchStats = async () => {
+    if (!user) return;
+    try {
+      const q = query(collection(db, `users/${user.uid}/flashcards`));
+      const snap = await getDocs(q);
+      let learning = 0;
+      let mastered = 0;
+      let due = 0;
+      const now = new Date().toISOString();
+
+      snap.forEach(doc => {
+        const card = doc.data();
+        if ((card.repetition || 0) > 3) {
+          mastered++;
+        } else {
+          learning++;
+        }
+        if (!card.nextReviewDate || card.nextReviewDate <= now) {
+          due++;
+        }
+      });
+      
+      setStats({ learning, mastered, totalDue: due, streak: progress?.streak || 0 });
+    } catch (e) {
+      console.error("Failed to fetch flashcard stats:", e);
+    }
+  };
+
+  useEffect(() => {
+    fetchStats();
+  }, [user]);
 
   return (
     <div className="flex-1 overflow-y-auto bg-slate-50 dark:bg-blue-950 p-4 sm:p-6 lg:p-12 pb-24 lg:pb-12 transition-colors">
       <div className="max-w-6xl mx-auto space-y-12">
         {/* Header */}
-        <header className="space-y-4 lg:pl-4 xl:pl-0">
-          <div className="flex items-center gap-3 text-purple-500 font-bold uppercase tracking-widest text-xs">
-            <BrainCircuit size={16} />
-            <span>Spaced Repetition</span>
+        <header className="space-y-4 lg:pl-4 xl:pl-0 flex flex-col md:flex-row md:items-end justify-between gap-6">
+          <div>
+            <div className="flex items-center gap-3 text-purple-500 font-bold uppercase tracking-widest text-xs">
+              <BrainCircuit size={16} />
+              <span>Spaced Repetition</span>
+            </div>
+            <h1 className="text-4xl font-black text-slate-900 dark:text-white tracking-tight">
+              Flashcard Hub
+            </h1>
+            <p className="text-slate-500 dark:text-blue-300 text-lg max-w-2xl mt-4">
+              Review key concepts and formulas using spaced repetition to ensure long-term retention.
+            </p>
           </div>
-          <h1 className="text-4xl font-black text-slate-900 dark:text-white tracking-tight">
-            Flashcard Hub
-          </h1>
-          <p className="text-slate-500 dark:text-blue-300 text-lg max-w-2xl">
-            Review key concepts and formulas using spaced repetition to ensure long-term retention.
-          </p>
+          
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => setIsGlobalReview(true)}
+            className="flex items-center gap-3 px-8 py-4 bg-purple-600 hover:bg-purple-700 text-white rounded-3xl font-bold shadow-xl shadow-purple-500/20 transition-colors shrink-0"
+          >
+            <PlayCircle size={24} />
+            <div className="text-left">
+              <div className="font-bold leading-tight">Daily Global Review</div>
+              <div className="text-xs text-purple-200 font-medium">{stats.totalDue > 0 ? `${stats.totalDue} cards due` : 'All caught up!'}</div>
+            </div>
+          </motion.button>
         </header>
+
+        {/* Stats Row */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="bg-white dark:bg-blue-900 border border-slate-200 dark:border-blue-800 rounded-3xl p-6 flex flex-col items-center justify-center text-center">
+             <div className="w-12 h-12 bg-orange-100 text-orange-500 rounded-full flex items-center justify-center mb-3">
+               <Flame size={24} />
+             </div>
+             <div className="text-3xl font-black text-slate-900 dark:text-white">{stats.streak}</div>
+             <div className="text-sm font-bold text-slate-500 dark:text-blue-300 uppercase tracking-widest mt-1">Day Streak</div>
+          </div>
+          <div className="bg-white dark:bg-blue-900 border border-slate-200 dark:border-blue-800 rounded-3xl p-6 flex flex-col items-center justify-center text-center">
+             <div className="w-12 h-12 bg-blue-100 text-blue-500 rounded-full flex items-center justify-center mb-3">
+               <Target size={24} />
+             </div>
+             <div className="text-3xl font-black text-slate-900 dark:text-white">{stats.totalDue}</div>
+             <div className="text-sm font-bold text-slate-500 dark:text-blue-300 uppercase tracking-widest mt-1">Due Today</div>
+          </div>
+          <div className="bg-white dark:bg-blue-900 border border-slate-200 dark:border-blue-800 rounded-3xl p-6 flex flex-col items-center justify-center text-center">
+             <div className="w-12 h-12 bg-purple-100 text-purple-500 rounded-full flex items-center justify-center mb-3">
+               <BrainCircuit size={24} />
+             </div>
+             <div className="text-3xl font-black text-slate-900 dark:text-white">{stats.learning}</div>
+             <div className="text-sm font-bold text-slate-500 dark:text-blue-300 uppercase tracking-widest mt-1">Learning</div>
+          </div>
+          <div className="bg-white dark:bg-blue-900 border border-slate-200 dark:border-blue-800 rounded-3xl p-6 flex flex-col items-center justify-center text-center">
+             <div className="w-12 h-12 bg-emerald-100 text-emerald-500 rounded-full flex items-center justify-center mb-3">
+               <Trophy size={24} />
+             </div>
+             <div className="text-3xl font-black text-slate-900 dark:text-white">{stats.mastered}</div>
+             <div className="text-sm font-bold text-slate-500 dark:text-blue-300 uppercase tracking-widest mt-1">Mastered</div>
+          </div>
+        </div>
 
         {/* Module Grid */}
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -66,10 +151,15 @@ export default function FlashcardHub({ syllabus }: FlashcardHubProps) {
         </div>
       </div>
 
-      {selectedModule && (
+      {(selectedModule || isGlobalReview) && (
         <Flashcards 
-          module={selectedModule} 
-          onClose={() => setSelectedModule(null)} 
+          module={selectedModule || undefined}
+          isGlobalReview={isGlobalReview} 
+          onClose={() => {
+            setSelectedModule(null);
+            setIsGlobalReview(false);
+            fetchStats();
+          }} 
         />
       )}
     </div>

@@ -7,6 +7,7 @@ import { GamificationService, BADGES } from '../services/gamification';
 import { useCourses } from '../context/CourseContext';
 import { DEPARTMENT_TO_FACULTY } from '../constants';
 import { CurriculumIntegrityService } from '../services/curriculumIntegrity';
+import { useProgressStore } from '../lib/progressStore';
 
 const INITIAL_ACHIEVEMENTS: Achievement[] = BADGES.map(b => ({
   id: b.id,
@@ -36,26 +37,7 @@ const INITIAL_PROGRESS: UserProgress = {
 
 export function useUserProgress() {
   const { user, profile } = useAuth();
-  const [isOnline, setIsOnline] = useState(navigator.onLine);
-  const [integrityIssues, setIntegrityIssues] = useState<any[]>([]);
-  const [progress, setProgress] = useState<UserProgress>(() => {
-    let parsed = INITIAL_PROGRESS;
-    try {
-      const saved = localStorage.getItem('mat103_progress');
-      if (saved) {
-        parsed = JSON.parse(saved);
-      }
-    } catch (e) {
-      console.warn('localStorage access denied or invalid JSON, using initial progress');
-    }
-    // Ensure new fields exist for existing users
-    return {
-      ...INITIAL_PROGRESS,
-      ...parsed,
-      topicLastStudied: parsed.topicLastStudied || {},
-      bookmarks: parsed.bookmarks || []
-    };
-  });
+  const { progress, setProgress, isOnline, setIsOnline, integrityIssues, setIntegrityIssues } = useProgressStore();
 
   // Handle online/offline status
   useEffect(() => {

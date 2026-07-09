@@ -1,29 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useTransition } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import Sidebar from './components/Sidebar';
 import BottomNav from './components/BottomNav';
 import ContentArea from './components/ContentArea';
 import ChatBot from './components/ChatBot';
 import Dashboard from './components/Dashboard';
-import QuizHub from './components/QuizHub';
-import FlashcardHub from './components/FlashcardHub';
-import PastQuestions from './components/PastQuestions';
 import ModuleTopics from './components/ModuleTopics';
 import CourseSyllabus from './components/CourseSyllabus';
-import MasteryCenter from './components/MasteryCenter';
-import FormulaReference from './components/FormulaReference';
 import CourseHub from './components/CourseHub';
-import Notebook from './components/Notebook';
-import PricingPage from './components/PricingPage';
-import UserProfile from './components/UserProfile';
-import HelpSupport from './components/HelpSupport';
-import AdminSupport from './components/AdminSupport';
-import AdminDashboard from './components/AdminDashboard';
-import TutorDashboard from './components/TutorDashboard';
 import AdminLogin from './components/AdminLogin';
-import Arena from './components/Arena';
-import ConceptMap from './components/ConceptMap';
-import StudyPlan from './components/StudyPlan';
 import FirebaseSetup from './components/FirebaseSetup';
 import LandingPage from './components/LandingPage';
 import PushNotificationPrompt from './components/PushNotificationPrompt';
@@ -32,11 +17,32 @@ import GlobalErrorInterceptor from './components/GlobalErrorInterceptor';
 import PaywallManager from './components/PaywallManager';
 import PWAInstallPrompt from './components/PWAInstallPrompt';
 import Calculator from './components/Calculator';
+import ErrorBoundary from './components/ErrorBoundary';
+
+
+// Static standard imports of views to eliminate dynamic loading pauses
+import QuizHub from './components/QuizHub';
+import FlashcardHub from './components/FlashcardHub';
+import PastQuestions from './components/PastQuestions';
+import MasteryCenter from './components/MasteryCenter';
+import FormulaReference from './components/FormulaReference';
+import Notebook from './components/Notebook';
+import PricingPage from './components/PricingPage';
+import UserProfile from './components/UserProfile';
+import HelpSupport from './components/HelpSupport';
+import AdminSupport from './components/AdminSupport';
+import AdminDashboard from './components/AdminDashboard';
+import TutorDashboard from './components/TutorDashboard';
+import Arena from './components/Arena';
+import ConceptMap from './components/ConceptMap';
+import StudyPlan from './components/StudyPlan';
 import VoiceTutor from './components/VoiceTutor';
+
 import AcademicProfileModal from './components/AcademicProfileModal';
 import WhatsAppPromoModal from './components/WhatsAppPromoModal';
 import { CalculatorProvider, useCalculator } from './context/CalculatorContext';
 import { useUserProgress } from './hooks/useUserProgress';
+import { useSelfHealing } from './hooks/useSelfHealing';
 import { AdaptiveRecalibratorModal } from './components/AdaptiveRecalibratorModal';
 import { useAuth } from './context/AuthContext';
 import { useCourses } from './context/CourseContext';
@@ -55,20 +61,23 @@ const queryClient = new QueryClient();
 export default function App() {
   console.log('App.tsx: Rendering...');
   return (
-    <QueryClientProvider client={queryClient}>
-      <InstitutionProvider>
-        <CalculatorProvider>
-          <AppContent />
-          <GlobalErrorInterceptor />
-        </CalculatorProvider>
-      </InstitutionProvider>
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <InstitutionProvider>
+          <CalculatorProvider>
+            <AppContent />
+            <GlobalErrorInterceptor />
+          </CalculatorProvider>
+        </InstitutionProvider>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }
 
 function AppContent() {
   const { isConfigured, user, profile, loading, signInWithGoogle } = useAuth();
   const { theme } = useAppStore();
+  const [isPending, startTransition] = useTransition();
   
   useEffect(() => {
     if (theme === 'dark') {
@@ -79,6 +88,10 @@ function AppContent() {
   }, [theme]);
   const { courses, refreshCourses } = useCourses();
   const { progress, addXp, updateMastery, recordStudyTime, addBookmark, removeBookmark, enrollCourse, unenrollCourse, updateAIPersonality, isOnline, checkAndUpdateStreak } = useUserProgress();
+  
+  // Activate advanced self-healing for robust dynamic client-state integrity
+  useSelfHealing();
+
   const [activeCourseId, setActiveCourseId] = useState<CourseId | null>(null);
   const [activeView, setActiveView] = useState<View>('hub');
   const [recalibrationTopicId, setRecalibrationTopicId] = useState<string | null>(null);
@@ -178,45 +191,55 @@ function AppContent() {
   const activeSubTopicContent = activeModule?.subTopics.find(s => s.id === activeSubTopicId)?.content;
 
   const handleCourseSelect = (id: CourseId) => {
-    setActiveCourseId(id);
-    const course = courses[id];
-    setActiveModuleId(course.syllabus[0].id);
-    setActiveSubTopicId(course.syllabus[0].subTopics[0].id);
-    setActiveView('course-syllabus');
+    startTransition(() => {
+      setActiveCourseId(id);
+      const course = courses[id];
+      setActiveModuleId(course.syllabus[0].id);
+      setActiveSubTopicId(course.syllabus[0].subTopics[0].id);
+      setActiveView('course-syllabus');
+    });
   };
 
   const handleModuleSelect = (id: string) => {
-    setActiveModuleId(id);
-    const module = syllabus.find(m => m.id === id);
-    if (module && module.subTopics.length > 0) {
-      setActiveSubTopicId(module.subTopics[0].id);
-    }
-    setActiveView('module-topics');
+    startTransition(() => {
+      setActiveModuleId(id);
+      const module = syllabus.find(m => m.id === id);
+      if (module && module.subTopics.length > 0) {
+        setActiveSubTopicId(module.subTopics[0].id);
+      }
+      setActiveView('module-topics');
+    });
     if (window.innerWidth < 1024) {
       setIsSidebarOpen(false);
     }
   };
 
   const handleSubTopicSelect = (subTopicId: string) => {
-    setActiveSubTopicId(subTopicId);
-    setActiveView('study');
-    setAutoStartQuiz(false);
+    startTransition(() => {
+      setActiveSubTopicId(subTopicId);
+      setActiveView('study');
+      setAutoStartQuiz(false);
+    });
     if (window.innerWidth < 1024) {
       setIsSidebarOpen(false);
     }
   };
 
   const handleTakeQuiz = (subTopicId: string) => {
-    setActiveSubTopicId(subTopicId);
-    setActiveView('study');
-    setAutoStartQuiz(true);
+    startTransition(() => {
+      setActiveSubTopicId(subTopicId);
+      setActiveView('study');
+      setAutoStartQuiz(true);
+    });
     if (window.innerWidth < 1024) {
       setIsSidebarOpen(false);
     }
   };
 
   const handleViewSelect = (view: View) => {
-    setActiveView(view);
+    startTransition(() => {
+      setActiveView(view);
+    });
     if (window.innerWidth < 1024) {
       setIsSidebarOpen(false);
     }
@@ -314,16 +337,18 @@ function AppContent() {
       {needsAcademicProfile && <AcademicProfileModal />}
       {needsWhatsappPromo && <WhatsAppPromoModal />}
       {user && (
-        <PaywallManager onUpgrade={() => setActiveView('pricing')} />
+        <PaywallManager onUpgrade={() => handleViewSelect('pricing')} />
       )}
       {/* Sidebar Navigation (Desktop) */}
       <Sidebar 
         activeModuleId={activeModuleId} 
         onModuleSelect={(id) => {
-          setActiveModuleId(id);
-          setActiveView('study');
-          const module = syllabus.find(m => m.id === id);
-          if (module) setActiveSubTopicId(module.subTopics[0].id);
+          startTransition(() => {
+            setActiveModuleId(id);
+            setActiveView('study');
+            const module = syllabus.find(m => m.id === id);
+            if (module) setActiveSubTopicId(module.subTopics[0].id);
+          });
           if (window.innerWidth < 1024) setIsSidebarOpen(false);
         }} 
         activeView={activeView}
@@ -378,7 +403,7 @@ function AppContent() {
             onModuleSelect={handleModuleSelect} 
             onSubTopicSelect={handleSubTopicSelect}
             onViewSelect={handleViewSelect}
-            onProfileClick={() => setActiveView('profile')}
+            onProfileClick={() => handleViewSelect('profile')}
             onCourseSelect={handleCourseSelect}
             progress={progress}
             activeCourseId={activeCourseId}
@@ -389,7 +414,7 @@ function AppContent() {
 
         {activeView === 'profile' && (
           <UserProfile 
-            onBack={() => setActiveView(activeCourseId ? 'dashboard' : 'hub')}
+            onBack={() => handleViewSelect(activeCourseId ? 'dashboard' : 'hub')}
             onNavigate={handleViewSelect}
           />
         )}
@@ -397,7 +422,7 @@ function AppContent() {
         {activeView === 'course-syllabus' && (
           <CourseSyllabus 
             onModuleSelect={handleModuleSelect}
-            onBack={() => setActiveView('dashboard')}
+            onBack={() => handleViewSelect('dashboard')}
             onViewSelect={handleViewSelect}
             activeCourseId={activeCourseId}
             syllabus={syllabus}
@@ -411,7 +436,7 @@ function AppContent() {
               if (activeCourseId) {
                 unenrollCourse(activeCourseId);
                 setActiveCourseId(null);
-                setActiveView('hub');
+                handleViewSelect('hub');
               }
             }}
             onRegenerate={async () => {
@@ -554,19 +579,23 @@ function AppContent() {
         )}
 
         {activeView === 'quizzes' && (
-          <QuizHub 
-            courseId={activeCourseId || undefined}
-            onQuizComplete={(topicId, score) => {
-              updateMastery(topicId, score);
-              addXp(score * 2);
-              triggerRecalibration(topicId, score);
-            }}
-            syllabus={syllabus}
-          />
+          <ErrorBoundary>
+            <QuizHub 
+              courseId={activeCourseId || undefined}
+              onQuizComplete={(topicId, score) => {
+                updateMastery(topicId, score);
+                addXp(score * 2);
+                triggerRecalibration(topicId, score);
+              }}
+              syllabus={syllabus}
+            />
+          </ErrorBoundary>
         )}
 
         {activeView === 'flashcards' && (
-          <FlashcardHub syllabus={syllabus} />
+          <ErrorBoundary>
+            <FlashcardHub syllabus={syllabus} />
+          </ErrorBoundary>
         )}
 
         {activeView === 'past-questions' && (
@@ -576,7 +605,7 @@ function AppContent() {
         {activeView === 'mastery' && (
           <MasteryCenter 
             progress={progress}
-            onBack={() => setActiveView('dashboard')}
+            onBack={() => handleViewSelect('dashboard')}
             activeCourseId={activeCourseId}
             syllabus={syllabus}
           />
@@ -591,7 +620,7 @@ function AppContent() {
 
         {activeView === 'formulas' && (
           <FormulaReference 
-            onBack={() => setActiveView('dashboard')}
+            onBack={() => handleViewSelect('dashboard')}
             activeCourseId={activeCourseId}
             formulas={activeCourse?.formulas || []}
             onBookmark={(item) => addBookmark(item, 'formula')}
@@ -604,13 +633,13 @@ function AppContent() {
 
         {activeView === 'help-support' && (
           <HelpSupport 
-            onBack={() => setActiveView('profile')}
+            onBack={() => handleViewSelect('profile')}
           />
         )}
 
         {activeView === 'admin-support' && (
           <AdminSupport 
-            onBack={() => setActiveView('profile')}
+            onBack={() => handleViewSelect('profile')}
           />
         )}
 
@@ -624,16 +653,18 @@ function AppContent() {
           <ConceptMap 
             syllabus={syllabus}
             onSubTopicSelect={handleSubTopicSelect}
-            onClose={() => setActiveView('dashboard')}
+            onClose={() => handleViewSelect('dashboard')}
           />
         )}
 
         {activeView === 'study-plan' && (
-          <StudyPlan progress={progress} syllabus={syllabus} />
+          <ErrorBoundary>
+            <StudyPlan progress={progress} syllabus={syllabus} />
+          </ErrorBoundary>
         )}
 
         {activeView === 'tutor-dashboard' && (
-          <TutorDashboard onBack={() => setActiveView('profile')} />
+          <TutorDashboard onBack={() => handleViewSelect('profile')} />
         )}
 
         {activeView === 'admin-dashboard' && (
@@ -648,7 +679,7 @@ function AppContent() {
                 onModuleSelect={handleModuleSelect} 
                 onSubTopicSelect={handleSubTopicSelect}
                 onViewSelect={handleViewSelect}
-                onProfileClick={() => setActiveView('profile')}
+                onProfileClick={() => handleViewSelect('profile')}
                 onCourseSelect={handleCourseSelect}
                 progress={progress}
                 activeCourseId={activeCourseId}
@@ -657,14 +688,18 @@ function AppContent() {
               />;
             }
             
-            return <AdminDashboard />;
+            return (
+              <ErrorBoundary>
+                <AdminDashboard />
+              </ErrorBoundary>
+            );
           })()
         )}
 
         {activeView === 'ai-tutor' && (
           <ChatBot 
             isFullPage={true} 
-            onToggleFullPage={() => setActiveView('dashboard')} 
+            onToggleFullPage={() => handleViewSelect('dashboard')} 
             messages={chatMessages}
             setMessages={setChatMessages}
             activeCourseId={activeCourseId}
@@ -685,7 +720,7 @@ function AppContent() {
       {activeView !== 'ai-tutor' && (
         <>
           <ChatBot 
-            onToggleFullPage={() => setActiveView('ai-tutor')} 
+            onToggleFullPage={() => handleViewSelect('ai-tutor')} 
             messages={chatMessages}
             setMessages={setChatMessages}
             activeCourseId={activeCourseId}
@@ -712,11 +747,12 @@ function AppContent() {
       <PWAInstallPrompt />
 
       {/* Voice Tutor */}
-      <VoiceTutor 
-        isOpen={isVoiceTutorOpen} 
-        onClose={() => setIsVoiceTutorOpen(false)} 
-        pdfContent={activePdfText || undefined}
-        systemInstruction={`You are UniAce, a Senior Academic AI Tutor. You follow the Nigerian University System (NUC/CCMAS) standards for curriculum alignment, but your primary role is to teach the specific academic subject the student is currently studying.
+      {isVoiceTutorOpen && (
+        <VoiceTutor 
+          isOpen={isVoiceTutorOpen} 
+          onClose={() => setIsVoiceTutorOpen(false)} 
+          pdfContent={activePdfText || undefined}
+          systemInstruction={`You are UniAce, a Senior Academic AI Tutor. You follow the Nigerian University System (NUC/CCMAS) standards for curriculum alignment, but your primary role is to teach the specific academic subject the student is currently studying.
 
 Your teaching strategy:
 1. SUBJECT FOCUS: Your primary goal is to explain the current academic topic (e.g., Science, Math, Engineering).
@@ -729,7 +765,8 @@ Your teaching strategy:
    - Include 2-3 "Self-Check Questions" at the end of the content.
 
 CRITICAL: Do NOT discuss university administration, the NUC, or CCMAS organizations unless the student's current topic is specifically about them. Use these standards as a background framework, not as the subject of conversation.`}
-      />
+        />
+      )}
 
       {recalibrationTopicId && recalibrationScore !== null && (
         <AdaptiveRecalibratorModal

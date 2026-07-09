@@ -82,6 +82,15 @@ export const CourseService = {
     return formulasSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Formula));
   },
 
+  async saveFormulas(courseId: string, formulas: Formula[]): Promise<void> {
+    const batch = writeBatch(db);
+    formulas.forEach(formula => {
+      const formulaRef = doc(db, `courses/${courseId}/formulas`, formula.id);
+      batch.set(formulaRef, sanitizeForFirestore(formula), { merge: true });
+    });
+    await batch.commit();
+  },
+
   async saveGeneratedCourse(courseId: string, data: any) {
     const batch = writeBatch(db);
     

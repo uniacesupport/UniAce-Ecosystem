@@ -6,71 +6,151 @@ import { AIService } from '../services/ai';
 import MarkdownRenderer from './MarkdownRenderer';
 import { useUserProgress } from '../hooks/useUserProgress';
 import { useAuth } from '../context/AuthContext';
+import { db } from '../firebase';
+import { collection, query, where, getDocs, doc, writeBatch, setDoc } from 'firebase/firestore';
 
 interface FlashcardsProps {
-  module: Module;
+  module?: Module;
   subTopic?: SubTopic;
+  isGlobalReview?: boolean;
   onClose: () => void;
 }
 
-export default function Flashcards({ module, subTopic, onClose }: FlashcardsProps) {
-  const { progress, updateSRSData } = useUserProgress();
-  const { profile } = useAuth();
+export default function Flashcards({ module, subTopic, isGlobalReview, onClose }: FlashcardsProps) {
+  const { profile, user } = useAuth();
   const [cards, setCards] = useState<Flashcard[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [sessionComplete, setSessionComplete] = useState(false);
+  const [loadingText, setLoadingText] = useState("Loading your flashcards...");
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchCards = async () => {
+      if (!user?.uid) return;
       setIsLoading(true);
+      setErrorMsg(null);
+      
       try {
-        // In a real app, we'd fetch existing cards from the backend and filter by due date.
-        // For this demo, we generate new ones if none exist for this module/subtopic.
-        const generatedCards = await AIService.generateFlashcards(
-          module, 
-          subTopic, 
-          10,
-          profile?.academic_level,
-          profile?.department
-        );
-        setCards(generatedCards);
-      } catch (error) {
-        console.error("Failed to generate flashcards:", error);
+        const flashcardsRef = collection(db, `users/${user.uid}/flashcards`);
+        let fetchedCards: Flashcard[] = [];
+        
+        if (isGlobalReview) {
+          setLoadingText("Finding cards due for review today...");
+          // Global review: get cards due today or earlier
+          const nowIso = new Date().toISOString();
+          const q = query(flashcardsRef, where('nextReviewDate', '<=', nowIso));
+          const querySnapshot = await getDocs(q);
+          
+          querySnapshot.forEach((doc) => {
+            fetchedCards.push({ id: doc.id, ...doc.data() } as Flashcard);
+          });
+          
+          // Shuffle or limit if necessary
+          fetchedCards = fetchedCards.sort(() => 0.5 - Math.random()).slice(0, 30);
+          
+          if (fetchedCards.length === 0) {
+            setSessionComplete(true);
+          } else {
+            setCards(fetchedCards);
+          }
+        } else if (module) {
+          setLoadingText(`Loading cards for ${module.title}...`);
+          // Module specific review
+          let q = query(flashcardsRef, where('moduleId', '==', module.id));
+          if (subTopic) {
+             q = query(flashcardsRef, where('moduleId', '==', module.id), where('subTopicId', '==', subTopic.id));
+          }
+          const querySnapshot = await getDocs(q);
+          
+          querySnapshot.forEach((doc) => {
+            fetchedCards.push({ id: doc.id, ...doc.data() } as Flashcard);
+          });
+          
+          if (fetchedCards.length > 0) {
+            // Sort by due date (due ones first)
+            fetchedCards.sort((a, b) => {
+              const dateA = a.nextReviewDate ? new Date(a.nextReviewDate).getTime() : 0;
+              const dateB = b.nextReviewDate ? new Date(b.nextReviewDate).getTime() : 0;
+              return dateA - dateB;
+            });
+            setCards(fetchedCards);
+          } else {
+            // Generate new ones and save them
+            setLoadingText("Generating new flashcards...");
+            const generatedCards = await AIService.generateFlashcards(
+              module, 
+              subTopic, 
+              10,
+              profile?.academic_level,
+              profile?.department
+            );
+            
+            if (!generatedCards || !Array.isArray(generatedCards) || generatedCards.length === 0) {
+              setSessionComplete(true);
+              return;
+            }
+
+            // Save to Firestore
+            setLoadingText("Saving flashcards to your deck...");
+            const batch = writeBatch(db);
+            const cardsToSave = generatedCards.map(c => {
+              let cardId = c.id && c.id.length > 3 && !c.id.includes('/') ? c.id : undefined;
+              if (!cardId) {
+                cardId = typeof crypto !== 'undefined' && crypto.randomUUID 
+                  ? crypto.randomUUID() 
+                  : Math.random().toString(36).substring(2) + Date.now().toString(36);
+              }
+              return {
+                ...c,
+                id: cardId,
+                userId: user.uid,
+                interval: 0,
+                repetition: 0,
+                efactor: 2.5,
+                nextReviewDate: new Date().toISOString() // Due immediately
+              };
+            });
+            
+            cardsToSave.forEach(c => {
+              const cardRef = doc(flashcardsRef, c.id);
+              batch.set(cardRef, c);
+            });
+            
+            await batch.commit();
+            setCards(cardsToSave);
+          }
+        }
+      } catch (error: any) {
+        console.error("Failed to load flashcards:", error);
+        setErrorMsg(error?.message || "Failed to load flashcards. Please try again.");
       } finally {
         setIsLoading(false);
       }
     };
     fetchCards();
-  }, [module, subTopic]);
+  }, [module, subTopic, isGlobalReview, user?.uid]);
 
   const handleFlip = () => {
     setIsFlipped(!isFlipped);
   };
 
-  const handleRating = (rating: 1 | 2 | 3 | 4) => {
+  const handleRating = async (rating: 1 | 2 | 3 | 4) => {
     const currentCard = cards[currentIndex];
-    const srsData = progress.srsData?.[currentCard.id] || {
-      cardId: currentCard.id,
-      interval: 0,
-      repetition: 0,
-      efactor: 2.5,
-      nextReviewDate: new Date().toISOString()
-    };
-
+    
     // SuperMemo-2 Algorithm implementation
     let nextInterval = 1;
-    let nextRepetition = srsData.repetition;
-    let nextEfactor = srsData.efactor;
+    let nextRepetition = currentCard.repetition || 0;
+    let nextEfactor = currentCard.efactor || 2.5;
 
     if (rating >= 3) {
-      if (srsData.repetition === 0) {
+      if (nextRepetition === 0) {
         nextInterval = 1;
-      } else if (srsData.repetition === 1) {
+      } else if (nextRepetition === 1) {
         nextInterval = 6;
       } else {
-        nextInterval = Math.round(srsData.interval * srsData.efactor);
+        nextInterval = Math.round((currentCard.interval || 0) * nextEfactor);
       }
       nextRepetition += 1;
     } else {
@@ -78,19 +158,25 @@ export default function Flashcards({ module, subTopic, onClose }: FlashcardsProp
       nextInterval = 1;
     }
 
-    nextEfactor = srsData.efactor + (0.1 - (5 - rating) * (0.08 + (5 - rating) * 0.02));
+    nextEfactor = nextEfactor + (0.1 - (5 - rating) * (0.08 + (5 - rating) * 0.02));
     if (nextEfactor < 1.3) nextEfactor = 1.3;
 
     const nextReviewDate = new Date();
     nextReviewDate.setDate(nextReviewDate.getDate() + nextInterval);
-
-    updateSRSData(currentCard.id, {
-      cardId: currentCard.id,
+    
+    // Update the card locally and in Firestore
+    const updatedCard = {
+      ...currentCard,
       interval: nextInterval,
       repetition: nextRepetition,
       efactor: nextEfactor,
       nextReviewDate: nextReviewDate.toISOString()
-    });
+    };
+    
+    // Fire and forget
+    if (user?.uid) {
+      setDoc(doc(db, `users/${user.uid}/flashcards`, currentCard.id), updatedCard, { merge: true });
+    }
 
     nextCard();
   };
@@ -109,7 +195,24 @@ export default function Flashcards({ module, subTopic, onClose }: FlashcardsProp
       <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
         <div className="bg-white dark:bg-zinc-900 rounded-3xl p-12 flex flex-col items-center justify-center space-y-4 shadow-2xl">
           <Loader2 size={48} className="animate-spin text-emerald-500" />
-          <p className="text-slate-500 dark:text-zinc-400 font-bold animate-pulse">Generating your flashcards...</p>
+          <p className="text-slate-500 dark:text-zinc-400 font-bold animate-pulse">{loadingText}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (errorMsg) {
+    return (
+      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+        <div className="bg-white dark:bg-zinc-900 rounded-3xl p-12 flex flex-col items-center justify-center space-y-4 shadow-2xl max-w-lg text-center">
+          <div className="w-16 h-16 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
+             <XCircle size={32} />
+          </div>
+          <h3 className="text-xl font-bold text-slate-900 dark:text-white">Error Loading Flashcards</h3>
+          <p className="text-slate-500 dark:text-zinc-400">{errorMsg}</p>
+          <button onClick={onClose} className="mt-6 px-6 py-3 bg-slate-900 dark:bg-white text-white dark:text-zinc-900 rounded-xl font-bold hover:opacity-90 transition-opacity">
+            Close
+          </button>
         </div>
       </div>
     );
@@ -125,7 +228,9 @@ export default function Flashcards({ module, subTopic, onClose }: FlashcardsProp
             </div>
             <div>
               <h2 className="font-bold text-slate-900 dark:text-white leading-none">SRS Flashcards</h2>
-              <p className="text-slate-500 dark:text-zinc-400 text-[10px] uppercase tracking-wider mt-1 font-bold">{module.title}</p>
+              <p className="text-slate-500 dark:text-zinc-400 text-[10px] uppercase tracking-wider mt-1 font-bold">
+                {isGlobalReview ? 'Daily Global Review' : module?.title}
+              </p>
             </div>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-900 dark:hover:text-white p-2 rounded-full hover:bg-slate-200 dark:hover:bg-zinc-800 transition-colors">
@@ -134,7 +239,7 @@ export default function Flashcards({ module, subTopic, onClose }: FlashcardsProp
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 flex flex-col items-center justify-center bg-slate-50 dark:bg-zinc-950">
-          {!sessionComplete ? (
+          {!sessionComplete && cards.length > 0 ? (
             <div className="w-full max-w-lg space-y-8">
               <div className="flex justify-between items-center text-sm font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-widest">
                 <span>Card {currentIndex + 1} of {cards.length}</span>
@@ -196,13 +301,19 @@ export default function Flashcards({ module, subTopic, onClose }: FlashcardsProp
               <div className="w-24 h-24 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-500 rounded-full flex items-center justify-center mx-auto">
                 <CheckCircle2 size={48} />
               </div>
-              <h3 className="text-3xl font-black text-slate-900 dark:text-white">Session Complete!</h3>
-              <p className="text-slate-500 dark:text-zinc-400">You've reviewed all cards for this session.</p>
+              <h3 className="text-3xl font-black text-slate-900 dark:text-white">
+                {cards.length === 0 && isGlobalReview ? "All Caught Up!" : "Session Complete!"}
+              </h3>
+              <p className="text-slate-500 dark:text-zinc-400">
+                {cards.length === 0 && isGlobalReview 
+                  ? "You have no flashcards due for review today. Great job!" 
+                  : "You've reviewed all cards for this session."}
+              </p>
               <button
                 onClick={onClose}
                 className="w-full py-4 bg-slate-900 dark:bg-white text-white dark:text-zinc-900 rounded-2xl font-bold hover:bg-slate-800 dark:hover:bg-zinc-100 transition-colors"
               >
-                Return to Study
+                Return to Hub
               </button>
             </motion.div>
           )}

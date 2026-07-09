@@ -6,6 +6,17 @@ import { getValidator } from './validators';
 import { classifySubject } from './validators/classifier';
 import { MathEngine } from './mathEngine';
 import { CourseService } from './courseService';
+import {
+  safeParseAIResponse,
+  QuizQuestionsResponseSchema,
+  EvaluateWrittenAnswerSchema,
+  QuickCheckSchema,
+  FlashcardsResponseSchema,
+  RecommendationSchema,
+  ExamReadinessSchema,
+  StudyPlanSchema,
+  BoosterLessonSchema
+} from './validators/aiSchemas';
 
 const getAuthToken = async () => {
   try {
@@ -139,35 +150,22 @@ export const AIService = {
     return res.text;
   },
   generateImage: async (prompt: string, aspectRatio: "1:1" | "3:4" | "4:3" | "9:16" | "16:9" = "1:1") => {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) throw new Error("Gemini API Key is required for image generation.");
-
-    const ai = new GoogleGenAI({ apiKey });
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-image',
-      contents: {
-        parts: [
-          {
-            text: `Generate a high-quality, educational diagram or illustration for the following concept: ${prompt}. 
-            The image should be clear, labeled where appropriate, and suitable for a university-level student. 
-            Focus on accuracy and clarity.`,
-          },
-        ],
+    const token = await getAuthToken();
+    const response = await fetch('/api/ai/generate-image', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
       },
-      config: {
-        imageConfig: {
-          aspectRatio,
-        },
-      },
+      body: JSON.stringify({ prompt, aspectRatio })
     });
 
-    for (const part of response.candidates?.[0]?.content?.parts || []) {
-      if (part.inlineData) {
-        const base64EncodeString = part.inlineData.data;
-        return `data:image/png;base64,${base64EncodeString}`;
-      }
+    if (!response.ok) {
+      throw new Error(`Server returned ${response.status} for image generation`);
     }
-    throw new Error("Failed to generate image.");
+    
+    const data = await response.json();
+    return data.imageUrl || data.image || '';
   },
 
   generateChatResponse: async (
@@ -636,11 +634,25 @@ Generate a university-level quiz for ${subTopic ? 'the specific subtopic' : 'the
 
     const response = await callAI(prompt, undefined, 'json', 2500, 'high', 'quiz');
     try {
-      const data = extractJSON(response.text || "[]");
-      const questions = ensureArray(data);
+      const rawData = extractJSON(response.text || "[]");
+      let dataToValidate: any = rawData;
+      if (rawData && typeof rawData === 'object' && !Array.isArray(rawData) && rawData.questions) {
+        // Already structured correctly
+      } else {
+        const arr = ensureArray(rawData);
+        dataToValidate = { questions: arr };
+      }
+
+      const validated = safeParseAIResponse(
+        QuizQuestionsResponseSchema,
+        dataToValidate,
+        { questions: [] }
+      );
+
+      const questions = validated.questions;
       
       if (questions.length === 0) {
-         console.error("DEBUG AI: questions is empty. data extracted was:", data);
+         console.error("DEBUG AI: questions is empty. data extracted was:", rawData);
          console.error("DEBUG AI: raw response text was:", response.text);
       }
       
@@ -692,11 +704,12 @@ Generate a university-level quiz for ${subTopic ? 'the specific subtopic' : 'the
     try {
       const response = await callAI(prompt, undefined, 'json', 1500, 'standard', 'quiz-eval');
       const data = extractJSON(response.text || "{}");
-      return {
-        score: typeof data.score === 'number' ? data.score : 0,
-        isCorrect: typeof data.isCorrect === 'boolean' ? data.isCorrect : false,
-        feedback: data.feedback || "Your answer has been recorded. Please compare it with the model explanation below."
-      };
+      const validated = safeParseAIResponse(EvaluateWrittenAnswerSchema, data, {
+        score: 0,
+        isCorrect: false,
+        feedback: "Your answer has been recorded. Please compare it with the model explanation below."
+      });
+      return validated;
     } catch (e) {
       console.error("Failed to evaluate written answer via AI:", e);
       // Fallback matching
@@ -741,15 +754,24 @@ Generate a university-level quiz for ${subTopic ? 'the specific subtopic' : 'the
 
     const response = await callAI(prompt, undefined, 'json', 1000, 'quiz', 'quiz');
     try {
-      const q = extractJSON(response.text || "{}");
-      if (!q || typeof q !== 'object') return q;
+      const rawData = extractJSON(response.text || "{}");
+      const validated = safeParseAIResponse(QuickCheckSchema, rawData, {
+        id: `quick-check-${subTopic.id}`,
+        type: 'multiple-choice',
+        question: `Based on the subtopic "${subTopic.title}", what is a core concept discussed in the content?`,
+        options: ['An introductory concept', 'An advanced application', 'A fundamental rule', 'A practical overview'],
+        correctAnswer: 'An introductory concept',
+        explanation: 'Review the lecture notes above for a thorough understanding.',
+        hint: 'Consider the primary definitions.'
+      });
       return {
-        ...q,
-        question: sanitizeLatex(q.question),
-        options: Array.isArray(q.options) ? q.options.map((opt: any) => sanitizeLatex(opt)) : q.options,
-        correctAnswer: sanitizeLatex(q.correctAnswer),
-        explanation: sanitizeLatex(q.explanation),
-        hint: sanitizeLatex(q.hint)
+        ...validated,
+        id: validated.id || `quick-check-${subTopic.id}`,
+        question: sanitizeLatex(validated.question),
+        options: validated.options.map((opt: any) => sanitizeLatex(opt)),
+        correctAnswer: sanitizeLatex(validated.correctAnswer),
+        explanation: sanitizeLatex(validated.explanation),
+        hint: sanitizeLatex(validated.hint)
       };
     } catch (e) {
       console.error("Quick check generation error:", e);
@@ -804,8 +826,22 @@ Generate a university-level quiz for ${subTopic ? 'the specific subtopic' : 'the
 
     const response = await callAI(prompt, undefined, 'json', 2000, 'standard', 'flashcard');
     try {
-      const data = extractJSON(response.text || "[]");
-      const cards = ensureArray(data);
+      const rawData = extractJSON(response.text || "[]");
+      let dataToValidate: any = rawData;
+      if (rawData && typeof rawData === 'object' && !Array.isArray(rawData) && rawData.flashcards) {
+        // Already structured correctly
+      } else {
+        const arr = ensureArray(rawData);
+        dataToValidate = { flashcards: arr };
+      }
+
+      const validated = safeParseAIResponse(
+        FlashcardsResponseSchema,
+        dataToValidate,
+        { flashcards: [] }
+      );
+
+      const cards = validated.flashcards;
       
       // Sanitize LaTeX in flashcard fields
       return cards.map((c: any) => ({
@@ -815,6 +851,64 @@ Generate a university-level quiz for ${subTopic ? 'the specific subtopic' : 'the
       }));
     } catch (e) {
       console.error("Flashcard generation error:", e);
+      throw e;
+    }
+  },
+
+  generateRemedialFlashcards: async (failedQuestions: { question: string; correctAnswer: string }[], moduleTitle: string, moduleId: string, subTopicId?: string): Promise<Flashcard[]> => {
+    const prompt = `INSTRUCTIONS:
+    The student recently failed a quiz on the topic "${moduleTitle}".
+    Below are the questions they answered incorrectly, along with the correct answers.
+    Generate exactly 1 highly specific, remedial flashcard for EACH failed question. 
+    The goal of these flashcards is to directly target and fix their misunderstanding.
+    
+    The "front" should be a clear, concise question or prompt related to the failed concept.
+    The "back" should be the precise answer or definition.
+    Use LaTeX formatting for mathematical expressions wrapped in $ or $$.
+    CRITICAL: Double-escape all LaTeX commands (e.g., \\\\frac).
+    
+    FAILED QUESTIONS:
+    ${failedQuestions.map((q, i) => `Q${i + 1}: ${q.question}\nCorrect Answer: ${q.correctAnswer}`).join('\n\n')}
+
+    Format your response EXACTLY like this JSON object:
+    {
+      "flashcards": [
+        {
+          "id": "string",
+          "front": "string",
+          "back": "string",
+          "moduleId": "${moduleId}",
+          "subTopicId": "${subTopicId || ''}"
+        }
+      ]
+    }`;
+
+    const response = await callAI(prompt, undefined, 'json', 2000, 'standard', 'flashcard');
+    try {
+      const rawData = extractJSON(response.text || "[]");
+      let dataToValidate: any = rawData;
+      if (rawData && typeof rawData === 'object' && !Array.isArray(rawData) && rawData.flashcards) {
+        // Already structured correctly
+      } else {
+        const arr = ensureArray(rawData);
+        dataToValidate = { flashcards: arr };
+      }
+
+      const validated = safeParseAIResponse(
+        FlashcardsResponseSchema,
+        dataToValidate,
+        { flashcards: [] }
+      );
+
+      const cards = validated.flashcards;
+      
+      return cards.map((c: any) => ({
+        ...c,
+        front: sanitizeLatex(c.front),
+        back: sanitizeLatex(c.back)
+      }));
+    } catch (e) {
+      console.error("Remedial Flashcard generation error:", e);
       throw e;
     }
   },
@@ -855,7 +949,22 @@ Generate a university-level quiz for ${subTopic ? 'the specific subtopic' : 'the
 
     const response = await callAI(prompt, undefined, 'json', undefined, 'standard', 'recommendation');
     try {
-      return extractJSON(response.text || "null");
+      const rawData = extractJSON(response.text || "null");
+      const defaultRec = syllabus[0]?.subTopics[0] ? {
+        title: syllabus[0].subTopics[0].title,
+        reason: 'Start with the introductory lesson of your syllabus!',
+        moduleId: syllabus[0].id,
+        subTopicId: syllabus[0].subTopics[0].id,
+        type: 'new' as const
+      } : {
+        title: 'Core Concept',
+        reason: 'Continue studying your current topics to build mastery.',
+        moduleId: '',
+        subTopicId: '',
+        type: 'new' as const
+      };
+      
+      return safeParseAIResponse(RecommendationSchema, rawData, defaultRec);
     } catch (e) {
       console.error("Smart recommendation error:", e);
       throw e;
@@ -919,7 +1028,12 @@ Generate a university-level quiz for ${subTopic ? 'the specific subtopic' : 'the
 
     const response = await callAI(prompt, undefined, 'json', undefined, 'standard', 'recommendation');
     try {
-      return extractJSON(response.text || "null");
+      const rawData = extractJSON(response.text || "null");
+      return safeParseAIResponse(ExamReadinessSchema, rawData, {
+        probability: 60,
+        analysis: 'Keep practicing quizzes and reviewing flashcards to strengthen your foundation.',
+        weakestArea: 'No specific topic identified yet.'
+      });
     } catch (e) {
       console.error("Exam readiness prediction error:", e);
       throw e;
@@ -1006,7 +1120,17 @@ Generate a university-level quiz for ${subTopic ? 'the specific subtopic' : 'the
 
     const response = await callAI(prompt, undefined, 'json', undefined, 'standard', 'recommendation');
     try {
-      return extractJSON(response.text || "null");
+      const rawData = extractJSON(response.text || "null");
+      return safeParseAIResponse(StudyPlanSchema, rawData, {
+        title: 'Personalized Study Plan',
+        overview: 'A standard study schedule to cover your syllabus systematically.',
+        dailySchedule: syllabus.slice(0, 7).map((m, i) => ({
+          day: `Day ${i + 1}`,
+          focus: m.title,
+          tasks: [`Review subtopics for ${m.title}`, 'Take a practice quiz']
+        })),
+        tips: ['Review material daily', 'Take short quizzes for active recall']
+      });
     } catch (e) {
       console.error("Study plan generation error:", e);
       throw e;
@@ -1029,7 +1153,15 @@ Generate a university-level quiz for ${subTopic ? 'the specific subtopic' : 'the
     }`;
     const response = await callAI(prompt, undefined, 'json', undefined, 'standard', 'recommendation');
     try {
-      return extractJSON(response.text || "null");
+      const rawData = extractJSON(response.text || "null");
+      return safeParseAIResponse(BoosterLessonSchema, rawData, {
+        focus: `Foundational Review of ${topicTitle}`,
+        tasks: [
+          `Review core concepts and definitions of ${topicTitle}`,
+          'Practice step-by-step worked examples',
+          'Complete a quick concept check diagnostic quiz'
+        ]
+      });
     } catch (e) {
       console.error("Booster lesson generation error:", e);
       throw e;
@@ -1068,7 +1200,17 @@ Generate a university-level quiz for ${subTopic ? 'the specific subtopic' : 'the
 
     const response = await callAI(prompt, undefined, 'json', undefined, 'standard', 'recommendation');
     try {
-      return extractJSON(response.text || "null");
+      const rawData = extractJSON(response.text || "null");
+      return safeParseAIResponse(StudyPlanSchema, rawData, {
+        title: 'Fast-Track Advanced Study Plan',
+        overview: `Accelerated track since you mastered ${fastTrackTopicTitle}! Skipping foundational topics to focus on advanced topics.`,
+        dailySchedule: syllabus.slice(0, 5).map((m, i) => ({
+          day: `Day ${i + 1}`,
+          focus: m.title,
+          tasks: [`Challenge yourself with advanced quiz questions on ${m.title}`]
+        })),
+        tips: ['Engage in advanced peer discussions', 'Focus on proof-oriented concepts']
+      });
     } catch (e) {
       console.error("Fast track plan generation error:", e);
       throw e;

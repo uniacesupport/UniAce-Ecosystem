@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react';
 import MarkdownRenderer from './MarkdownRenderer';
 import { useAuth } from '../context/AuthContext';
 import { CourseService } from '../services/courseService';
+import { useUserProgress } from '../hooks/useUserProgress';
 
 interface FormulaReferenceProps {
   onBack: () => void;
@@ -15,6 +16,8 @@ interface FormulaReferenceProps {
 
 export default function FormulaReference({ onBack, activeCourseId, formulas: initialFormulas = [], onBookmark }: FormulaReferenceProps) {
   const { user } = useAuth();
+  const { progress, addBookmark, removeBookmark } = useUserProgress();
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'info' } | null>(null);
 
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
@@ -23,6 +26,27 @@ export default function FormulaReference({ onBack, activeCourseId, formulas: ini
   const [loading, setLoading] = useState(false);
   const [isSearchingBroader, setIsSearchingBroader] = useState(false);
   const [hasSearchedBroader, setHasSearchedBroader] = useState(false);
+
+  const handleToggleBookmark = (formula: Formula) => {
+    const existingBookmark = progress?.bookmarks?.find(
+      b => b.type === 'formula' && b.content?.id === formula.id
+    );
+
+    if (existingBookmark) {
+      removeBookmark(existingBookmark.id);
+      setToast({ message: `Removed "${formula.title}" from Notebook`, type: 'info' });
+    } else {
+      addBookmark(formula, 'formula');
+      setToast({ message: `Saved "${formula.title}" to Notebook! 📝`, type: 'success' });
+    }
+  };
+
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => setToast(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
 
   const filteredFormulas = formulas.filter(f => {
     const title = f.title || '';
@@ -74,21 +98,27 @@ export default function FormulaReference({ onBack, activeCourseId, formulas: ini
         .then(fetchedFormulas => {
           if (fetchedFormulas.length > 0) {
             setFormulas(fetchedFormulas);
-          } else {
-            // Fallback to initial if none found in subcollection
+          } else if (initialFormulas && initialFormulas.length > 0) {
             setFormulas(initialFormulas);
+          } else {
+            // Auto-fetch if completely empty
+            handleBroaderSearch(activeCourseId);
           }
         })
         .catch(err => {
           console.error('Failed to fetch formulas:', err);
-          setFormulas(initialFormulas);
+          if (initialFormulas && initialFormulas.length > 0) {
+            setFormulas(initialFormulas);
+          } else {
+            handleBroaderSearch(activeCourseId);
+          }
         })
         .finally(() => setLoading(false));
     }
   }, [activeCourseId, initialFormulas]);
 
-  const handleBroaderSearch = async () => {
-    const currentQuery = search.trim() || (selectedCategory !== 'All' ? selectedCategory : '');
+  const handleBroaderSearch = async (forcedQuery?: string) => {
+    const currentQuery = forcedQuery || search.trim() || (selectedCategory !== 'All' ? selectedCategory : '');
     if (!currentQuery) return;
     
     setIsSearchingBroader(true);
@@ -114,6 +144,13 @@ export default function FormulaReference({ onBack, activeCourseId, formulas: ini
         const uniqueNewFormulas = newFormulas.filter((f: Formula) => !existingIds.has(f.id));
         return [...uniqueNewFormulas, ...prev];
       });
+
+      // Save new formulas to Firestore subcollection so they are permanently cached for this course
+      if (activeCourseId && newFormulas.length > 0) {
+        CourseService.saveFormulas(activeCourseId, newFormulas).catch(err => {
+          console.error('Failed to auto-save formulas to Firestore:', err);
+        });
+      }
     } catch (error) {
       console.error('Broader search failed:', error);
     } finally {
@@ -240,15 +277,24 @@ export default function FormulaReference({ onBack, activeCourseId, formulas: ini
                       >
                         {copiedId === formula.id ? <Check size={18} /> : <Copy size={18} />}
                       </button>
-                      {onBookmark && (
-                        <button
-                          onClick={() => onBookmark(formula)}
-                          className="p-2 text-slate-400 hover:text-emerald-600 transition-colors bg-slate-50 dark:bg-zinc-800 rounded-full"
-                          title="Save to Notebook"
-                        >
-                          <Bookmark size={18} />
-                        </button>
-                      )}
+                      {(() => {
+                        const isBookmarked = progress?.bookmarks?.some(
+                          b => b.type === 'formula' && b.content?.id === formula.id
+                        );
+                        return (
+                          <button
+                            onClick={() => handleToggleBookmark(formula)}
+                            className={`p-2 transition-colors rounded-full ${
+                              isBookmarked 
+                                ? 'text-emerald-500 bg-emerald-50 dark:bg-emerald-950/30' 
+                                : 'text-slate-400 hover:text-emerald-600 bg-slate-50 dark:bg-zinc-800'
+                            }`}
+                            title={isBookmarked ? "Remove from Notebook" : "Save to Notebook"}
+                          >
+                            <Bookmark size={18} className={isBookmarked ? "fill-current" : ""} />
+                          </button>
+                        );
+                      })()}
                     </div>
                   </div>
 
@@ -257,7 +303,7 @@ export default function FormulaReference({ onBack, activeCourseId, formulas: ini
                     <div className="p-4 sm:p-8 bg-slate-50 dark:bg-zinc-950 rounded-2xl flex items-center justify-center min-h-[100px] sm:min-h-[140px] border border-slate-100 dark:border-zinc-800 group-hover:bg-white dark:group-hover:bg-zinc-900 transition-colors overflow-x-auto max-w-full">
                       <div className="text-lg sm:text-2xl text-slate-950 dark:text-white w-full text-center flex justify-center">
                         <div className="max-w-full overflow-x-auto py-2">
-                          <MarkdownRenderer content={`$$${formula.latex.replace(/^\$|\$$/g, '')}$$`} />
+                          <MarkdownRenderer content={`$$${(formula.latex || '').replace(/^\$|\$$/g, '')}$$`} />
                         </div>
                       </div>
                     </div>
@@ -273,7 +319,7 @@ export default function FormulaReference({ onBack, activeCourseId, formulas: ini
               <div className="flex flex-col items-center gap-4 pt-4 border-t border-slate-200">
                 <p className="text-slate-500 font-medium">Need more related formulas?</p>
                 <button
-                  onClick={handleBroaderSearch}
+                  onClick={() => handleBroaderSearch()}
                   disabled={isSearchingBroader}
                   className="px-8 py-3 bg-white dark:bg-zinc-900 border-2 border-slate-900 dark:border-white text-slate-900 dark:text-white rounded-2xl font-bold hover:bg-slate-900 dark:hover:bg-white hover:text-white dark:hover:text-zinc-900 transition-all disabled:opacity-50 flex items-center gap-2"
                 >
@@ -295,11 +341,11 @@ export default function FormulaReference({ onBack, activeCourseId, formulas: ini
         )}
 
         {/* Empty State / AI Searching */}
-        {!loading && filteredFormulas.length === 0 && (search.trim() !== '' || selectedCategory !== 'All') && (
+        {!loading && filteredFormulas.length === 0 && (search.trim() !== '' || selectedCategory !== 'All' || isSearchingBroader) && (
           <div className="text-center py-20 space-y-8">
             {isSearchingBroader ? (
               <div className="space-y-6 animate-pulse">
-                <div className="bg-emerald-50 p-8 rounded-full w-fit mx-auto text-emerald-500">
+                <div className="bg-emerald-50 dark:bg-emerald-950/30 p-8 rounded-full w-fit mx-auto text-emerald-500">
                   <GraduationCap size={48} className="animate-bounce" />
                 </div>
                 <div className="space-y-3">
@@ -324,7 +370,7 @@ export default function FormulaReference({ onBack, activeCourseId, formulas: ini
                   <p className="text-slate-500">We couldn't find any formulas for "{search.trim() || selectedCategory}" even in the AI vault.</p>
                 </div>
                 <button
-                  onClick={handleBroaderSearch}
+                  onClick={() => handleBroaderSearch()}
                   className="px-8 py-3 bg-slate-900 text-white rounded-2xl font-bold hover:bg-slate-800 transition-all flex items-center gap-2 mx-auto"
                 >
                   <GraduationCap size={20} />
@@ -336,13 +382,20 @@ export default function FormulaReference({ onBack, activeCourseId, formulas: ini
         )}
 
         {/* Initial State (No search yet) */}
-        {!loading && filteredFormulas.length === 0 && search.trim() === '' && selectedCategory === 'All' && (
+        {!loading && !isSearchingBroader && filteredFormulas.length === 0 && search.trim() === '' && selectedCategory === 'All' && (
           <div className="text-center py-20 text-slate-400">
             <Book size={48} className="mx-auto mb-4 opacity-20" />
             <p className="text-lg font-medium">Select a category or search to begin.</p>
           </div>
         )}
       </div>
+
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 bg-slate-900 dark:bg-zinc-800 text-white dark:text-white px-6 py-4 rounded-2xl shadow-2xl border border-slate-800 dark:border-zinc-700 font-bold text-sm animate-fade-in animate-slide-up">
+          <div className={`h-2.5 w-2.5 rounded-full ${toast.type === 'success' ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+          <span>{toast.message}</span>
+        </div>
+      )}
     </div>
   );
 }

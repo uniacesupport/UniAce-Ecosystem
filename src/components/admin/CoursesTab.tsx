@@ -1,0 +1,1 @@
+export default function CoursesTab() { return <div>Courses</div> }
