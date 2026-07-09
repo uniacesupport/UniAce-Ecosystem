@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, FileText, Plus, CheckCircle, Loader2, BookOpen, AlertCircle, Settings, Trash2, Users, Activity, Database, Search, Zap, Trophy, Star, Bot, Shield, BarChart3, Globe, Edit2, RefreshCw, Clock, FileQuestion, MessageSquare, ArrowLeft, HeartPulse, X, ArrowRight, Layers, Key, Cpu, Share2, Download, Filter, Send, ChevronLeft, ChevronRight, Mic } from 'lucide-react';
+import { Upload, FileText, Plus, CheckCircle, Loader2, BookOpen, AlertCircle, Settings, Trash2, Users, Activity, Database, Search, Zap, Trophy, Star, Bot, Shield, BarChart3, Globe, Edit2, RefreshCw, Clock, FileQuestion, MessageSquare, ArrowLeft, HeartPulse, X, ArrowRight, Layers, Key, Cpu, Share2, Download, Filter, Send, ChevronLeft, ChevronRight, Mic, Book } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -164,6 +164,7 @@ export default function AdminDashboard() {
     lesson: 'openrouter_free',
     skeleton: 'cohere',
     recommendation: 'cohere',
+    formulas: 'cohere',
     flashcard: 'huggingface',
     rag: 'openrouter_free',
     vision: 'gemini_direct',
@@ -4588,6 +4589,7 @@ export default function AdminDashboard() {
                   { id: 'lesson', label: 'Lesson Content', icon: BookOpen, recommended: 'cohere', desc: 'Writing detailed educational modules.' },
                   { id: 'skeleton', label: 'Course Skeletons', icon: Layers, recommended: 'cohere', desc: 'Structuring curriculum outlines and hierarchies.' },
                   { id: 'recommendation', label: 'Smart Recommendations', icon: Star, recommended: 'cohere', desc: 'Analyzing student data for study plans.' },
+                  { id: 'formulas', label: 'Formula Vault & Search', icon: Book, recommended: 'cohere', desc: 'Finding and generating university-level mathematical and scientific formulas.' },
                   { id: 'flashcard', label: 'Flashcard Generation', icon: FileText, recommended: 'huggingface', desc: 'Fast, repetitive text extraction for study aids.' },
                   { id: 'rag', label: 'Knowledge Retrieval', icon: Database, recommended: 'openrouter_free', desc: 'Searching and summarizing internal documents.' },
                   { id: 'vision', label: 'Vision Processing', icon: Search, recommended: 'gemini_direct', desc: 'Analyzing images and handwritten notes.' },

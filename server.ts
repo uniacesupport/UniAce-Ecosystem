@@ -3264,18 +3264,64 @@ app.post('/api/formulas/search', verifyAuth, async (req, res) => {
     
     Ensure they are relevant to a standard university syllabus.`;
 
-    // Prioritize Mistral as per user request
-    const aiProvider = globalMistralDirectBreaker || globalMistralDirectProvider || globalGroqBreaker || globalGroqProvider;
-    if (!aiProvider) {
-      throw new Error('No AI provider configured for formula search');
+    // Dynamic Task Routing for Formulas, defaulting to Cohere
+    const appAdmin = getAdminApp();
+    let routingConfig: any = { formulas: 'cohere' };
+    try {
+      if (appAdmin) {
+        const routingDoc = await appAdmin.firestore().collection('system_config').doc('routing').get();
+        if (routingDoc.exists) {
+          routingConfig = routingDoc.data() || { formulas: 'cohere' };
+        }
+      }
+    } catch (err) {
+      console.warn("Failed to fetch routing config for formula search:", err);
     }
 
-    const response = await aiProvider.generate([
-      { role: 'system', content: systemInstruction },
-      { role: 'user', content: prompt }
-    ], { complexity: 'standard', jsonMode: true });
+    const preferredProviderName = req.body.preferredProvider || routingConfig.formulas || 'cohere';
+    
+    const providerMap: Record<string, any> = {
+      gemini_direct: globalGeminiDirectBreaker || globalGeminiDirectProvider,
+      mistral_direct: globalMistralDirectBreaker || globalMistralDirectProvider,
+      groq: globalGroqBreaker || globalGroqProvider,
+      cohere: globalCohereBreaker || globalCohereProvider,
+      huggingface: globalHuggingFaceBreaker || globalHuggingFaceProvider,
+      openrouter_free: globalOpenRouterFreeBreaker || globalOpenRouterFreeProvider
+    };
 
-    const data = parseRobustJSON(response.text, { formulas: [] });
+    const providers = [];
+    if (providerMap[preferredProviderName]) {
+      providers.push(providerMap[preferredProviderName]);
+    }
+    
+    // Fallback list
+    const fallbackOrder = ['cohere', 'groq', 'mistral_direct', 'gemini_direct', 'openrouter_free', 'huggingface'];
+    for (const fallback of fallbackOrder) {
+      if (fallback !== preferredProviderName && providerMap[fallback]) {
+        providers.push(providerMap[fallback]);
+      }
+    }
+
+    let aiResponse;
+    let lastError;
+    for (const provider of providers) {
+      try {
+        aiResponse = await provider.generate([
+          { role: 'system', content: systemInstruction },
+          { role: 'user', content: prompt }
+        ], { complexity: 'standard', jsonMode: true });
+        if (aiResponse && aiResponse.text && aiResponse.text.trim().length > 5) break;
+      } catch (err) {
+        lastError = err;
+        console.warn(`Formula Search AI Provider failed, trying next...`, err);
+      }
+    }
+
+    if (!aiResponse) {
+      throw lastError || new Error('No AI providers available or all failed for formula search');
+    }
+
+    const data = parseRobustJSON(aiResponse.text, { formulas: [] });
     const formulas = data.formulas || [];
 
     if (formulas.length === 0) {
