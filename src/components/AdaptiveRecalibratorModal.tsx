@@ -14,6 +14,7 @@ interface AdaptiveRecalibratorModalProps {
   onClose: () => void;
   progress: UserProgress;
   syllabus: Module[];
+  onViewStudyPlan?: () => void;
 }
 
 export const AdaptiveRecalibratorModal: React.FC<AdaptiveRecalibratorModalProps> = ({
@@ -22,7 +23,8 @@ export const AdaptiveRecalibratorModal: React.FC<AdaptiveRecalibratorModalProps>
   isOpen,
   onClose,
   progress,
-  syllabus
+  syllabus,
+  onViewStudyPlan
 }) => {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
@@ -197,10 +199,16 @@ export const AdaptiveRecalibratorModal: React.FC<AdaptiveRecalibratorModalProps>
               </p>
 
               <button
-                onClick={onClose}
+                onClick={() => {
+                  if (onViewStudyPlan) {
+                    onViewStudyPlan();
+                  } else {
+                    onClose();
+                  }
+                }}
                 className="w-full py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl font-black text-sm hover:scale-[1.02] transition-transform shadow-lg shadow-slate-100 dark:shadow-none"
               >
-                GOT IT, LETS GO!
+                VIEW STUDY PLAN
               </button>
             </div>
           )}
@@ -270,7 +278,13 @@ export const AdaptiveRecalibratorModal: React.FC<AdaptiveRecalibratorModalProps>
               </div>
 
               <button
-                onClick={onClose}
+                onClick={() => {
+                  if (onViewStudyPlan) {
+                    onViewStudyPlan();
+                  } else {
+                    onClose();
+                  }
+                }}
                 className="w-full py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl font-black text-sm hover:scale-[1.02] transition-transform shadow-lg"
               >
                 VIEW NEW STUDY PLAN

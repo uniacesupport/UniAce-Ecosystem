@@ -98,11 +98,33 @@ function AppContent() {
   const [recalibrationScore, setRecalibrationScore] = useState<number | null>(null);
   const [isRecalibrationOpen, setIsRecalibrationOpen] = useState(false);
 
+  const [shownRecalibrations, setShownRecalibrations] = useState<Record<string, number>>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('shownRecalibrations');
+        return saved ? JSON.parse(saved) : {};
+      } catch { return {}; }
+    }
+    return {};
+  });
+
   const triggerRecalibration = (topicId: string, score: number) => {
-    if (score < 60 || score === 100) {
-      setRecalibrationTopicId(topicId);
-      setRecalibrationScore(score);
-      setIsRecalibrationOpen(true);
+    const isPerfect = score === 100;
+    const isLow = score < 60;
+    if (isPerfect || isLow) {
+      const key = `${topicId}-${isPerfect ? 'perfect' : 'low'}`;
+      if (!shownRecalibrations[key]) {
+        setShownRecalibrations(prev => {
+          const next = { ...prev, [key]: score };
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('shownRecalibrations', JSON.stringify(next));
+          }
+          return next;
+        });
+        setRecalibrationTopicId(topicId);
+        setRecalibrationScore(score);
+        setIsRecalibrationOpen(true);
+      }
     }
   };
   const [activeDepartment, setActiveDepartment] = useState<Department>(() => {
@@ -776,6 +798,10 @@ CRITICAL: Do NOT discuss university administration, the NUC, or CCMAS organizati
           onClose={() => setIsRecalibrationOpen(false)}
           progress={progress}
           syllabus={syllabus}
+          onViewStudyPlan={() => {
+            setIsRecalibrationOpen(false);
+            setActiveView('study-plan');
+          }}
         />
       )}
 

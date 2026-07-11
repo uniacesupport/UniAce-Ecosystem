@@ -1501,9 +1501,12 @@ app.post('/api/chat', verifyAuth, async (req, res) => {
         if (providerMap[preferredProviderName]) {
           providers.push(providerMap[preferredProviderName]);
         }
-        const fallbackOrder = ['groq', 'mistral_direct', 'gemini_direct', 'openrouter_free', 'cohere', 'huggingface'];
-        for (const pName of fallbackOrder) {
-          if (pName !== preferredProviderName && providerMap[pName]) {
+        
+        // Dynamically add all other available providers
+        const dynamicFallbacks = Object.keys(providerMap).filter(p => p !== preferredProviderName);
+        dynamicFallbacks.sort(() => Math.random() - 0.5); // Randomize to distribute load dynamically
+        for (const pName of dynamicFallbacks) {
+          if (providerMap[pName]) {
             providers.push(providerMap[pName]);
           }
         }
@@ -2478,8 +2481,11 @@ app.post('/api/ai/generate', verifyAuth, async (req, res) => {
     }
     
     // Add fallbacks
-    for (const fallbackName of routeConfig.fallbacks) {
-      if (fallbackName !== primaryProviderName && providerMap[fallbackName]) {
+    const fallbackExclusion = typeof primaryProviderName !== "undefined" ? primaryProviderName : (typeof preferredProviderName !== "undefined" ? preferredProviderName : "");
+    const dynamicFallbacks = Object.keys(providerMap).filter(p => p !== fallbackExclusion);
+    dynamicFallbacks.sort(() => Math.random() - 0.5);
+    for (const fallbackName of dynamicFallbacks) {
+      if (providerMap[fallbackName]) {
         providers.push(providerMap[fallbackName]);
       }
     }
@@ -2649,8 +2655,11 @@ app.post('/api/ai/stream', verifyAuth, async (req, res) => {
     }
     
     // Add fallbacks
-    for (const fallbackName of routeConfig.fallbacks) {
-      if (fallbackName !== preferredProviderName && providerMap[fallbackName]) {
+    const fallbackExclusion = typeof primaryProviderName !== "undefined" ? primaryProviderName : (typeof preferredProviderName !== "undefined" ? preferredProviderName : "");
+    const dynamicFallbacks = Object.keys(providerMap).filter(p => p !== fallbackExclusion);
+    dynamicFallbacks.sort(() => Math.random() - 0.5);
+    for (const fallbackName of dynamicFallbacks) {
+      if (providerMap[fallbackName]) {
         providers.push(providerMap[fallbackName]);
       }
     }
@@ -2827,8 +2836,11 @@ app.post('/api/course/generate', verifyAuth, async (req, res) => {
     }
     
     // Add fallbacks
-    for (const fallbackName of routeConfig.fallbacks) {
-      if (fallbackName !== primaryProviderName && providerMap[fallbackName]) {
+    const fallbackExclusion = typeof primaryProviderName !== "undefined" ? primaryProviderName : (typeof preferredProviderName !== "undefined" ? preferredProviderName : "");
+    const dynamicFallbacks = Object.keys(providerMap).filter(p => p !== fallbackExclusion);
+    dynamicFallbacks.sort(() => Math.random() - 0.5);
+    for (const fallbackName of dynamicFallbacks) {
+      if (providerMap[fallbackName]) {
         providers.push(providerMap[fallbackName]);
       }
     }
@@ -3294,10 +3306,11 @@ app.post('/api/formulas/search', verifyAuth, async (req, res) => {
       providers.push(providerMap[preferredProviderName]);
     }
     
-    // Fallback list
-    const fallbackOrder = ['cohere', 'groq', 'mistral_direct', 'gemini_direct', 'openrouter_free', 'huggingface'];
-    for (const fallback of fallbackOrder) {
-      if (fallback !== preferredProviderName && providerMap[fallback]) {
+    // Dynamically add all other available providers
+    const dynamicFallbacks = Object.keys(providerMap).filter(p => p !== preferredProviderName);
+    dynamicFallbacks.sort(() => Math.random() - 0.5); // Randomize to distribute load dynamically
+    for (const fallback of dynamicFallbacks) {
+      if (providerMap[fallback]) {
         providers.push(providerMap[fallback]);
       }
     }
@@ -4655,7 +4668,7 @@ async function startServer() {
               }
               
               if (Object.keys(updates).length > 0) {
-                t.update(userRef, updates);
+                t.set(userRef, updates, { merge: true });
               }
               
               return { sparks: role === 'admin' || plan === 'scholar' ? 999999 : sparks, plan, displayName };
@@ -4679,24 +4692,12 @@ async function startServer() {
                ws.send(JSON.stringify({ type: 'error', error: 'Insufficient sparks' }));
                return;
             }
-            // Allow to proceed if DB fails (e.g. network), fallback deduction
-            if (planType === 'free' && currentSparks < SPARK_COST) {
-               ws.send(JSON.stringify({ type: 'error', error: 'Insufficient sparks' }));
-               return;
-            }
-            if (planType === 'free') {
-               sparksRemaining = currentSparks - SPARK_COST;
-            }
+            ws.send(JSON.stringify({ type: 'error', error: 'Database transaction failed. Please try again.' }));
+            return;
           }
         } else {
-           // Fallback if Admin SDK is not initialized
-           if (planType === 'free' && currentSparks < SPARK_COST) {
-              ws.send(JSON.stringify({ type: 'error', error: 'Insufficient sparks' }));
-              return;
-           }
-           if (planType === 'free') {
-              sparksRemaining = currentSparks - SPARK_COST;
-           }
+           ws.send(JSON.stringify({ type: 'error', error: 'Database not initialized. Cannot process request.' }));
+           return;
         }
 
         // 2. Call AI API
@@ -4910,9 +4911,12 @@ async function startServer() {
           if (providerMap[preferredProviderName]) {
             providers.push(providerMap[preferredProviderName]);
           }
-          const fallbackOrder = ['groq', 'mistral_direct', 'gemini_direct', 'openrouter_free', 'cohere', 'huggingface'];
-          for (const pName of fallbackOrder) {
-            if (pName !== preferredProviderName && providerMap[pName]) {
+          
+          // Dynamically add all other available providers
+          const dynamicFallbacks = Object.keys(providerMap).filter(p => p !== preferredProviderName);
+          dynamicFallbacks.sort(() => Math.random() - 0.5); // Randomize to distribute load dynamically
+          for (const pName of dynamicFallbacks) {
+            if (providerMap[pName]) {
               providers.push(providerMap[pName]);
             }
           }
