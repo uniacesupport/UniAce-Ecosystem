@@ -1,4 +1,4 @@
-import { Book, Layers, Activity, FileText, Brain, ArrowRight, GraduationCap, Award, Calculator, Zap, Flame, Sparkles, RefreshCw, Target, Loader2, Calendar, CheckCircle2, MessageCircle, Bot, Bell, Maximize2, Swords, Lightbulb, ShieldCheck, Camera, Layout, Lock } from 'lucide-react';
+import { Book, Layers, Activity, FileText, Brain, ArrowRight, GraduationCap, Award, Calculator, Zap, Flame, Sparkles, RefreshCw, Target, Loader2, Calendar, CheckCircle2, MessageCircle, Bot, Bell, Maximize2, Swords, Lightbulb, ShieldCheck, Camera, Layout, Lock, Download } from 'lucide-react';
 import { motion } from 'motion/react';
 import { UserProgress, View, Module, CourseId, Assignment, Department, Semester } from '../types';
 import { getRecommendations } from '../utils/learningPath';
@@ -14,6 +14,8 @@ import { useState, useEffect } from 'react';
 import { AIService } from '../services/ai';
 import { useNotifications } from '../hooks/useNotifications';
 import { SRSService, SRSRecord } from '../services/srsService';
+import CalendarExportModal from './CalendarExportModal';
+
 
 const THEME_COLORS: Record<string, { bg: string, text: string, bgHover: string, bgLight: string, shadow: string, border: string, borderHover: string, textLight: string }> = {
   blue: { bg: 'bg-blue-500', text: 'text-blue-600', bgHover: 'hover:bg-blue-600', bgLight: 'bg-blue-50', shadow: 'shadow-blue-500/20', border: 'border-blue-200', borderHover: 'hover:border-blue-200', textLight: 'text-blue-400' },
@@ -58,6 +60,8 @@ export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSele
   const [isLoadingMission, setIsLoadingMission] = useState(false);
   const [dueReviews, setDueReviews] = useState<SRSRecord[]>([]);
   const [isLoadingReviews, setIsLoadingReviews] = useState(false);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+
 
   useEffect(() => {
     const isStaffRole = ['admin', 'moderator', 'tutor'].includes(profile?.role || '');
@@ -412,9 +416,21 @@ export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSele
                 <Calendar className="text-amber-500" size={24} />
                 <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">Upcoming</h2>
               </div>
-              <span className="bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 px-3 py-1 rounded-full text-xs font-bold">
-                {upcomingAssignments.length} Pending
-              </span>
+              <div className="flex items-center gap-2">
+                {upcomingAssignments.length > 0 && (
+                  <button
+                    onClick={() => setIsExportModalOpen(true)}
+                    className="p-1.5 hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-500 dark:text-zinc-400 rounded-lg transition-colors flex items-center gap-1.5 text-xs font-bold"
+                    title="Export deadlines to digital calendar"
+                  >
+                    <Download size={14} className="text-amber-500" />
+                    <span className="hidden sm:inline">Sync Cal</span>
+                  </button>
+                )}
+                <span className="bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 px-3 py-1 rounded-full text-xs font-bold">
+                  {upcomingAssignments.length} Pending
+                </span>
+              </div>
             </div>
             
             <div className="space-y-4">
@@ -817,6 +833,12 @@ export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSele
             }}
           />
         )}
+        <CalendarExportModal
+          isOpen={isExportModalOpen}
+          onClose={() => setIsExportModalOpen(false)}
+          type="assignments"
+          assignments={upcomingAssignments}
+        />
       </div>
     </div>
   );

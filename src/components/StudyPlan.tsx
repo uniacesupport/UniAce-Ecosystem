@@ -9,6 +9,8 @@ import LockedFeature from './LockedFeature';
 import { Module, UserProgress } from '../types';
 import { db } from '../firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
+import CalendarExportModal from './CalendarExportModal';
+
 
 interface StudyPlanData {
   title: string;
@@ -35,6 +37,8 @@ export default function StudyPlan({ progress, syllabus }: StudyPlanProps) {
   const [plan, setPlan] = useState<StudyPlanData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+
 
   // Load existing plan on mount
   useEffect(() => {
@@ -199,7 +203,14 @@ export default function StudyPlan({ progress, syllabus }: StudyPlanProps) {
             </div>
 
             {/* Actions */}
-            <div className="flex items-center justify-center gap-4">
+            <div className="flex items-center justify-center gap-4 flex-wrap">
+              <button 
+                onClick={() => setIsExportModalOpen(true)}
+                className="flex items-center gap-2 px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-bold text-sm transition-colors shadow-lg shadow-amber-500/15"
+              >
+                <Calendar size={18} />
+                Export to Calendar
+              </button>
               <button className="flex items-center gap-2 px-6 py-3 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 rounded-xl font-bold text-sm hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors">
                 <Download size={18} />
                 Export PDF
@@ -209,6 +220,13 @@ export default function StudyPlan({ progress, syllabus }: StudyPlanProps) {
                 Share with Tutor
               </button>
             </div>
+
+            <CalendarExportModal
+              isOpen={isExportModalOpen}
+              onClose={() => setIsExportModalOpen(false)}
+              type="study-plan"
+              studyPlanData={plan}
+            />
           </motion.div>
         )}
       </div>
