@@ -1,4 +1,4 @@
-import { FileText, Search, Download, ExternalLink, GraduationCap, ArrowLeft, Brain, Clock, CheckCircle2, XCircle, Lightbulb, RotateCcw, Trophy, ArrowRight, Lock } from 'lucide-react';
+import { FileText, Search, Download, ExternalLink, GraduationCap, ArrowLeft, Brain, Clock, CheckCircle2, XCircle, Lightbulb, RotateCcw, Trophy, ArrowRight, Lock, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useState, useEffect } from 'react';
 import { CourseId } from '../types';
@@ -8,6 +8,7 @@ import { usePremiumStatus } from '../hooks/usePremiumStatus';
 import PricingModal from './PricingModal';
 import { db } from '../firebase';
 import { collection, getDocs } from 'firebase/firestore';
+import toast from 'react-hot-toast';
 
 export interface PastPaper {
   id: string;
@@ -40,6 +41,8 @@ export default function PastQuestions({ activeCourseId }: PastQuestionsProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [userAnswers, setUserAnswers] = useState<Record<string, string>>({});
   const [showHints, setShowHints] = useState<Record<string, boolean>>({});
+  const [eliminatedOptions, setEliminatedOptions] = useState<Record<string, string[]>>({});
+  const [isUsingFiftyFifty, setIsUsingFiftyFifty] = useState<Record<string, boolean>>({});
   const [submittedQuestions, setSubmittedQuestions] = useState<Record<string, boolean>>({});
   const [showResults, setShowResults] = useState(false);
   const [isStarted, setIsStarted] = useState(false);
@@ -91,12 +94,66 @@ export default function PastQuestions({ activeCourseId }: PastQuestionsProps) {
     setShowHints(prev => ({ ...prev, [questionId]: !prev[questionId] }));
   };
 
+  const handleUseFiftyFifty = async (q: any) => {
+    if (isUsingFiftyFifty[q.id]) return;
+    if (eliminatedOptions[q.id]) return;
+
+    const currentSparks = profile?.ai_sparks ?? 50;
+    const isFree = profile?.plan_type === 'free';
+    const isStudent = profile?.role === 'student' || !profile?.role;
+
+    if (isFree && isStudent && currentSparks < 1) {
+      toast.error("Insufficient sparks! Please upgrade or obtain more sparks.");
+      setShowPricingModal(true);
+      return;
+    }
+
+    setIsUsingFiftyFifty(prev => ({ ...prev, [q.id]: true }));
+    try {
+      const token = await user?.getIdToken();
+      const response = await fetch('/api/user/deduct-sparks-hint', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || "Failed to deduct spark for hint");
+      }
+
+      const wrongOptions = q.options?.filter((opt: string) => opt !== q.correctAnswer) || [];
+      if (wrongOptions.length <= 1) {
+        toast.error("This question doesn't have enough options to eliminate!");
+        return;
+      }
+
+      const shuffledWrongs = [...wrongOptions].sort(() => Math.random() - 0.5);
+      const toEliminate = shuffledWrongs.slice(0, Math.min(2, wrongOptions.length - 1));
+
+      setEliminatedOptions(prev => ({
+        ...prev,
+        [q.id]: toEliminate
+      }));
+
+      toast.success("50/50 hint activated! 1 Spark deducted.");
+    } catch (error: any) {
+      console.error("Error using 50/50 hint:", error);
+      toast.error(error.message || "Failed to activate 50/50 hint. Please try again.");
+    } finally {
+      setIsUsingFiftyFifty(prev => ({ ...prev, [q.id]: false }));
+    }
+  };
+
   const resetQuiz = () => {
     setUserAnswers({});
     setShowHints({});
     setSubmittedQuestions({});
     setShowResults(false);
     setIsStarted(false);
+    setEliminatedOptions({});
   };
 
   const calculateScore = () => {
@@ -253,13 +310,36 @@ export default function PastQuestions({ activeCourseId }: PastQuestionsProps) {
                       Question {idx + 1}
                     </span>
                     {!isSubmitted && (
-                      <button 
-                        onClick={() => toggleHint(q.id)}
-                        className={`flex items-center gap-1 text-xs font-bold uppercase tracking-widest transition-colors ${showHint ? 'text-emerald-500' : 'text-slate-400 hover:text-slate-600'}`}
-                      >
-                        <Lightbulb size={14} />
-                        {showHint ? 'Hide Hint' : 'Show Hint'}
-                      </button>
+                      <div className="flex gap-4 items-center">
+                        <button 
+                          onClick={() => toggleHint(q.id)}
+                          className={`flex items-center gap-1 text-xs font-bold uppercase tracking-widest transition-colors ${showHint ? 'text-emerald-500' : 'text-slate-400 hover:text-slate-600'}`}
+                        >
+                          <Lightbulb size={14} />
+                          {showHint ? 'Hide Hint' : 'Show Hint'}
+                        </button>
+
+                        {q.type === 'multiple-choice' && !eliminatedOptions[q.id] && (
+                          <button 
+                            onClick={() => handleUseFiftyFifty(q)}
+                            disabled={isUsingFiftyFifty[q.id]}
+                            className="bg-[#fffbeb] dark:bg-amber-950/20 hover:bg-[#fef3c7] dark:hover:bg-amber-950/30 text-amber-700 dark:text-amber-400 font-semibold px-5 py-2.5 rounded-2xl flex items-center gap-2.5 transition-all text-sm md:text-base border border-amber-100/50 dark:border-amber-900/10 shadow-xs"
+                          >
+                            {isUsingFiftyFifty[q.id] ? (
+                              <Loader2 size={20} className="animate-spin text-amber-700 dark:text-amber-400" />
+                            ) : (
+                              <Lightbulb size={20} className="text-amber-700 dark:text-amber-400 shrink-0" />
+                            )}
+                            <span>Use 50/50 Hint</span>
+                          </button>
+                        )}
+
+                        {q.type === 'multiple-choice' && eliminatedOptions[q.id] && (
+                          <div className="text-amber-700 dark:text-amber-400 text-xs font-semibold bg-[#fffbeb] dark:bg-amber-950/15 px-5 py-2.5 rounded-2xl flex items-center gap-2 border border-amber-100/50 dark:border-amber-900/10">
+                            <span className="text-sm">🌓</span> 50/50 Hint Activated (2 wrong options eliminated)
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
                   
@@ -290,12 +370,15 @@ export default function PastQuestions({ activeCourseId }: PastQuestionsProps) {
                       {q.options?.map((opt, i) => {
                         const isSelected = selectedOption === opt;
                         const isOptionCorrect = opt === q.correctAnswer;
+                        const isEliminated = eliminatedOptions[q.id]?.includes(opt);
                         
                         let optionStyles = "bg-slate-50 border-slate-100 text-slate-700";
                         if (isSubmitted) {
                           if (isOptionCorrect) optionStyles = "bg-emerald-50 border-emerald-500 text-emerald-900";
                           else if (isSelected) optionStyles = "bg-red-50 border-red-500 text-red-900";
                           else optionStyles = "bg-slate-50 border-slate-100 text-slate-400 opacity-50";
+                        } else if (isEliminated) {
+                          optionStyles = "bg-slate-100/30 border-dashed border-slate-200 text-slate-300 line-through cursor-not-allowed";
                         } else if (isSelected) {
                           optionStyles = "bg-slate-900 border-slate-900 text-white";
                         }
@@ -303,17 +386,22 @@ export default function PastQuestions({ activeCourseId }: PastQuestionsProps) {
                         return (
                           <button 
                             key={i} 
-                            disabled={isSubmitted}
+                            disabled={isSubmitted || isEliminated}
                             onClick={() => handleOptionSelect(q.id, opt)}
-                            className={`p-4 rounded-2xl border text-left font-medium flex items-center gap-3 transition-all ${optionStyles} ${!isSubmitted && 'hover:border-slate-400'}`}
+                            className={`p-4 rounded-2xl border text-left font-medium flex items-center gap-3 transition-all ${optionStyles} ${!isSubmitted && !isEliminated && 'hover:border-slate-400'}`}
                           >
                             <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black ${
                               isSelected ? 'bg-white text-slate-900' : 'bg-white border border-slate-200 text-slate-400'
                             }`}>
                               {String.fromCharCode(65 + i)}
                             </div>
-                            <div className="markdown-body text-inherit">
+                            <div className="markdown-body text-inherit flex-1 flex items-center justify-between gap-2">
                               <MarkdownRenderer content={opt} />
+                              {isEliminated && (
+                                <span className="text-[9px] font-extrabold uppercase tracking-widest bg-red-500/10 text-red-500 px-2 py-0.5 rounded-full select-none shrink-0 border border-red-500/15 line-through">
+                                  Eliminated
+                                </span>
+                              )}
                             </div>
                             {isSubmitted && isOptionCorrect && <CheckCircle2 size={16} className="ml-auto text-emerald-500" />}
                             {isSubmitted && isSelected && !isCorrect && <XCircle size={16} className="ml-auto text-red-500" />}

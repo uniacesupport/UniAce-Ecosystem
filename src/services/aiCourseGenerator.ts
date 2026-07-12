@@ -22,6 +22,7 @@ export interface GeneratedCourse {
 
 import { jsonrepair } from 'jsonrepair';
 import { PipelineMetadata } from '../types';
+import { autoHealQuestion } from './validators/aiSchemas';
 const getAuthToken = async () => {
   try {
     const { auth } = await import('../firebase');
@@ -676,17 +677,18 @@ export async function generateModuleQuiz(
 
   const result = await callGenerateAPI(quizPrompt, 'module', provider);
   
-  // Sanitize LaTeX in questions and explanations
+  // Sanitize LaTeX in questions and explanations and auto-heal options
   if (result && result.questions && Array.isArray(result.questions)) {
     result.questions = result.questions.map((q: any) => {
       if (!q || typeof q !== 'object') return q;
-      return {
+      const sanitized = {
         ...q,
         question: sanitizeLatex(q.question),
         options: Array.isArray(q.options) ? q.options.map((opt: any) => sanitizeLatex(opt)) : q.options,
         explanation: sanitizeLatex(q.explanation),
         hint: sanitizeLatex(q.hint)
       };
+      return autoHealQuestion(sanitized);
     });
   }
   

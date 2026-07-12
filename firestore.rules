@@ -124,6 +124,15 @@ service cloud.firestore {
              (data.lastUpdated is string || data.lastUpdated is timestamp);
     }
 
+    function isValidSparkAuditLog(data) {
+      return data.id is string && data.id.size() < 100 &&
+             data.userId is string && data.userId.size() < 100 &&
+             data.userEmail is string && data.userEmail.size() < 200 &&
+             data.action is string && data.action.size() < 100 &&
+             data.sparksDeducted is number && data.sparksDeducted >= 0 &&
+             (data.timestamp is string || data.timestamp is timestamp);
+    }
+
     // ===============================================================
     // Collection Rules
     // ===============================================================
@@ -308,6 +317,12 @@ service cloud.firestore {
     match /payout_requests/{requestId} {
       allow read: if isAdmin() || (isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid));
       allow create: if false; // Through backend
+      allow update, delete: if isAdmin();
+    }
+
+    match /spark_audit_logs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin() || (isAuthenticated() && isValidSparkAuditLog(request.resource.data));
       allow update, delete: if isAdmin();
     }
   }

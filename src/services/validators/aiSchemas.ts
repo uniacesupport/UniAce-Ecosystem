@@ -1,5 +1,123 @@
 import { z } from 'zod';
 
+/**
+ * Dynamically heals and aligns quiz questions so that correctAnswer is strictly and exactly present
+ * in the options list. Handles various common AI mistakes such as different prefixes, casing,
+ * letter-only answers, digit-only answers, partial substrings, and duplicate options.
+ */
+export function autoHealQuestion(q: any): any {
+  if (!q || typeof q !== 'object') return q;
+
+  // Ensure we have a valid question type
+  const type = q.type || 'multiple-choice';
+
+  // Ensure we have an options array
+  let options = Array.isArray(q.options) 
+    ? q.options.map((o: any) => String(o || '').trim()) 
+    : [];
+    
+  let correctAnswer = String(q.correctAnswer || q.answer || '').trim();
+  let explanation = String(q.explanation || '').trim();
+  const isMultipleChoice = type === 'multiple-choice';
+
+  if (isMultipleChoice) {
+    // If multiple choice but options are missing, construct options safely
+    if (options.length === 0) {
+      if (correctAnswer) {
+        options = [correctAnswer, "Incorrect Option A", "Incorrect Option B", "Incorrect Option C"];
+      } else {
+        options = ["Option A", "Option B", "Option C", "Option D"];
+        correctAnswer = options[0];
+      }
+    }
+
+    // Double-check options are strings and trimmed
+    options = options.map(opt => String(opt || '').trim());
+
+    // Check if correctAnswer is exactly one of the options
+    let exactMatch = options.find(opt => opt === correctAnswer);
+
+    if (!exactMatch) {
+      // 1. Try case-insensitive matching
+      let caseInsensitiveMatch = options.find(opt => opt.toLowerCase() === correctAnswer.toLowerCase());
+      if (caseInsensitiveMatch) {
+        correctAnswer = caseInsensitiveMatch;
+      } else {
+        // 2. Try removing common prefix labels like "A)", "A.", "1.", "Option A:"
+        const cleanStr = (s: string) => s.replace(/^(?:Option\s+)?[A-Da-d1-4][\).\s\-:]+/, '').trim();
+        const cleanAnswer = cleanStr(correctAnswer);
+
+        let prefixMatch = options.find(opt => cleanStr(opt).toLowerCase() === cleanAnswer.toLowerCase());
+        if (prefixMatch) {
+          correctAnswer = prefixMatch;
+        } else {
+          // 3. Try letter/index matching if correctAnswer is just a single option letter/digit
+          let matchIndex = -1;
+          const letterMatch = correctAnswer.match(/^[A-Da-d]$/);
+          if (letterMatch) {
+            matchIndex = letterMatch[0].toUpperCase().charCodeAt(0) - 65;
+          } else {
+            const digitMatch = correctAnswer.match(/^[1-4]$/);
+            if (digitMatch) {
+              matchIndex = parseInt(digitMatch[0], 10) - 1;
+            } else {
+              const zeroDigitMatch = correctAnswer.match(/^[0-3]$/);
+              if (zeroDigitMatch) {
+                matchIndex = parseInt(zeroDigitMatch[0], 10);
+              }
+            }
+          }
+
+          if (matchIndex >= 0 && matchIndex < options.length) {
+            correctAnswer = options[matchIndex];
+          } else {
+            // 4. Try partial search: is correctAnswer inside one of the options, or vice-versa?
+            let partialMatch = options.find(opt => {
+              const optLower = opt.toLowerCase();
+              const ansLower = correctAnswer.toLowerCase();
+              return optLower.includes(ansLower) || ansLower.includes(optLower);
+            });
+            if (partialMatch) {
+              correctAnswer = partialMatch;
+            } else {
+              // 5. Force-align: if still not matched, place correct answer text as options[0]
+              if (options.length > 0) {
+                options[0] = correctAnswer;
+              } else {
+                options.push(correctAnswer);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Deduplicate options to prevent duplicate selection/rendering issues
+    const seen = new Set<string>();
+    options = options.map((opt, idx) => {
+      let uniqueOpt = opt;
+      let counter = 1;
+      while (seen.has(uniqueOpt)) {
+        uniqueOpt = `${opt} (${counter})`;
+        counter++;
+      }
+      seen.add(uniqueOpt);
+      if (opt === correctAnswer) {
+        correctAnswer = uniqueOpt;
+      }
+      return uniqueOpt;
+    });
+  }
+
+  return {
+    ...q,
+    options,
+    correctAnswer,
+    answer: correctAnswer,
+    explanation: explanation || `The correct answer is: ${correctAnswer}.`
+  };
+}
+
 // 1. Quiz Question Schema
 export const QuizQuestionSchema = z.object({
   id: z.string().optional().or(z.null()).transform((val) => val || `q-${Math.random().toString(36).substring(2, 11)}`),
@@ -10,7 +128,7 @@ export const QuizQuestionSchema = z.object({
   explanation: z.string().optional().default(''),
   hint: z.string().optional().default(''),
   difficulty: z.number().int().min(1).max(5).optional().default(3),
-});
+}).transform((q) => autoHealQuestion(q));
 
 export const QuizQuestionsResponseSchema = z.object({
   questions: z.array(QuizQuestionSchema)
@@ -32,7 +150,7 @@ export const QuickCheckSchema = z.object({
   correctAnswer: z.string().min(1, 'Correct answer cannot be empty'),
   explanation: z.string().optional().default(''),
   hint: z.string().optional().default(''),
-});
+}).transform((q) => autoHealQuestion(q));
 
 // 4. Flashcard Schema
 export const FlashcardSchema = z.object({

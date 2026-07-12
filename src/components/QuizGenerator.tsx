@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Module, SubTopic, QuizQuestion, QuestionType } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { Brain, Loader2, CheckCircle2, XCircle, ArrowRight, RefreshCw, Settings2, Bookmark, Timer, Flag, LayoutGrid, ChevronLeft, ChevronRight, Lock, Calculator as CalcIcon } from 'lucide-react';
+import { Brain, Loader2, CheckCircle2, XCircle, ArrowRight, RefreshCw, Settings2, Bookmark, Timer, Flag, LayoutGrid, ChevronLeft, ChevronRight, Lock, Calculator as CalcIcon, Lightbulb } from 'lucide-react';
 import MarkdownRenderer from './MarkdownRenderer';
 import { AIService } from '../services/ai';
 import { db } from '../firebase';
@@ -10,6 +10,7 @@ import { useAuth } from '../context/AuthContext';
 import { usePremiumStatus } from '../hooks/usePremiumStatus';
 import PricingModal from './PricingModal';
 import { SRSService } from '../services/srsService';
+import toast from 'react-hot-toast';
 
 interface QuizGeneratorProps {
   courseId?: string;
@@ -50,6 +51,8 @@ export default function QuizGenerator({
   const [showExplanation, setShowExplanation] = useState(false);
   const [showHint, setShowHint] = useState(false);
   const [hintsUsed, setHintsUsed] = useState<Record<string, boolean>>({});
+  const [eliminatedOptions, setEliminatedOptions] = useState<Record<string, string[]>>({});
+  const [isUsingFiftyFifty, setIsUsingFiftyFifty] = useState(false);
   const [progressiveHint, setProgressiveHint] = useState<string | null>(null);
   const [isFetchingHint, setIsFetchingHint] = useState(false);
   const [showPricingModal, setShowPricingModal] = useState(false);
@@ -435,6 +438,71 @@ export default function QuizGenerator({
     }
   };
 
+  const handleUseFiftyFifty = async () => {
+    if (isUsingFiftyFifty) return;
+    const currentQuestion = questions[currentQuestionIndex];
+    if (eliminatedOptions[currentQuestion.id]) return;
+
+    const currentSparks = profile?.ai_sparks ?? 50;
+    const isFree = profile?.plan_type === 'free';
+    const isStudent = profile?.role === 'student' || !profile?.role;
+
+    if (isFree && isStudent && currentSparks < 1) {
+      toast.error("Insufficient sparks! Please upgrade or obtain more sparks.");
+      setShowPricingModal(true);
+      return;
+    }
+
+    setIsUsingFiftyFifty(true);
+    try {
+      const token = await user?.getIdToken();
+      const response = await fetch('/api/user/deduct-sparks-hint', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          courseId: courseId || null,
+          moduleId: module?.id || null,
+          questionId: currentQuestion?.id || null,
+          questionText: currentQuestion?.question || null
+        })
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || "Failed to deduct spark for hint");
+      }
+
+      const wrongOptions = currentQuestion.options?.filter(opt => opt !== currentQuestion.correctAnswer) || [];
+      if (wrongOptions.length <= 1) {
+        toast.error("This question doesn't have enough options to eliminate!");
+        return;
+      }
+
+      const shuffledWrongs = [...wrongOptions].sort(() => Math.random() - 0.5);
+      const toEliminate = shuffledWrongs.slice(0, Math.min(2, wrongOptions.length - 1));
+
+      setEliminatedOptions(prev => ({
+        ...prev,
+        [currentQuestion.id]: toEliminate
+      }));
+
+      const isSparkFree = profile?.role === 'admin' || profile?.plan_type === 'scholar';
+      if (isSparkFree) {
+        toast.success("50/50 hint activated!");
+      } else {
+        toast.success("50/50 hint activated! 1 Spark deducted.");
+      }
+    } catch (error: any) {
+      console.error("Error using 50/50 hint:", error);
+      toast.error(error.message || "Failed to activate 50/50 hint. Please try again.");
+    } finally {
+      setIsUsingFiftyFifty(false);
+    }
+  };
+
   const resetQuiz = () => {
     setStep('config');
     setQuestions([]);
@@ -446,6 +514,7 @@ export default function QuizGenerator({
     setWrittenEvaluations({});
     setIsEvaluatingWritten(false);
     setIsExamSubmitting(false);
+    setEliminatedOptions({});
   };
 
   return (
@@ -761,17 +830,44 @@ export default function QuizGenerator({
                       )}
                     </div>
 
-                    {(mode === 'practice' || mode === 'adaptive') && !showExplanation && !showHint && (
-                      <button 
-                        onClick={() => {
-                          setShowHint(true);
-                          setHintsUsed(prev => ({ ...prev, [questions[currentQuestionIndex].id]: true }));
-                        }}
-                        className={`${mode === 'adaptive' ? 'text-purple-500 hover:text-purple-600' : 'text-emerald-500 hover:text-emerald-600'} text-xs font-bold uppercase tracking-widest flex items-center gap-1 transition-colors`}
-                      >
-                        <Brain size={14} />
-                        Need a hint?
-                      </button>
+                    {(mode === 'practice' || mode === 'adaptive') && !showExplanation && (
+                      <div className="flex flex-wrap gap-4 items-center">
+                        {!showHint && (
+                          <button 
+                            onClick={() => {
+                              setShowHint(true);
+                              setHintsUsed(prev => ({ ...prev, [questions[currentQuestionIndex].id]: true }));
+                            }}
+                            className={`${mode === 'adaptive' ? 'text-purple-500 hover:text-purple-600' : 'text-emerald-500 hover:text-emerald-600'} text-xs font-bold uppercase tracking-widest flex items-center gap-1 transition-colors`}
+                          >
+                            <Brain size={14} />
+                            Need a hint?
+                          </button>
+                        )}
+
+                        {questions[currentQuestionIndex].type === 'multiple-choice' && !eliminatedOptions[questions[currentQuestionIndex].id] && (
+                          <button 
+                            onClick={handleUseFiftyFifty}
+                            disabled={isUsingFiftyFifty}
+                            className="bg-[#fffbeb] dark:bg-amber-950/20 hover:bg-[#fef3c7] dark:hover:bg-amber-950/30 text-amber-700 dark:text-amber-400 font-semibold px-5 py-2.5 rounded-2xl flex items-center gap-2.5 transition-all text-sm md:text-base border border-amber-100/50 dark:border-amber-900/10 shadow-xs"
+                          >
+                            {isUsingFiftyFifty ? (
+                              <Loader2 size={20} className="animate-spin text-amber-700 dark:text-amber-400" />
+                            ) : (
+                              <Lightbulb size={20} className="text-amber-700 dark:text-amber-400 shrink-0" />
+                            )}
+                            <span>
+                              Use 50/50 Hint <span className="text-xs font-normal opacity-75">({(profile?.role === 'admin' || profile?.plan_type === 'scholar') ? 'Free' : 'Costs 1 Spark'})</span>
+                            </span>
+                          </button>
+                        )}
+
+                        {questions[currentQuestionIndex].type === 'multiple-choice' && eliminatedOptions[questions[currentQuestionIndex].id] && (
+                          <div className="text-amber-700 dark:text-amber-400 text-xs font-semibold bg-[#fffbeb] dark:bg-amber-950/15 px-5 py-2.5 rounded-2xl flex items-center gap-2 border border-amber-100/50 dark:border-amber-900/10">
+                            <span className="text-sm">🌓</span> 50/50 Hint Activated (2 wrong options eliminated)
+                          </div>
+                        )}
+                      </div>
                     )}
 
                     {(mode === 'practice' || mode === 'adaptive') && showHint && !showExplanation && (
@@ -820,6 +916,7 @@ export default function QuizGenerator({
                         {questions[currentQuestionIndex].options?.map((opt, i) => {
                           const isSelected = userAnswers[questions[currentQuestionIndex].id] === opt;
                           const isCorrect = opt === questions[currentQuestionIndex].correctAnswer;
+                          const isEliminated = eliminatedOptions[questions[currentQuestionIndex].id]?.includes(opt);
                           
                           let btnClass = "bg-slate-50 dark:bg-zinc-800 border-2 border-slate-100 dark:border-zinc-700 text-slate-700 dark:text-zinc-300 hover:border-slate-200 dark:hover:border-zinc-600";
                           
@@ -827,6 +924,8 @@ export default function QuizGenerator({
                             if (isCorrect) btnClass = "bg-emerald-50 dark:bg-emerald-900/20 border-emerald-500 dark:border-emerald-500/50 text-emerald-700 dark:text-emerald-400";
                             else if (isSelected) btnClass = "bg-red-50 dark:bg-red-900/20 border-red-500 dark:border-red-500/50 text-red-700 dark:text-red-400";
                             else btnClass = "bg-slate-50 dark:bg-zinc-800 border-slate-100 dark:border-zinc-800 text-slate-400 dark:text-zinc-500 opacity-50";
+                          } else if (isEliminated) {
+                            btnClass = "bg-slate-100/30 dark:bg-zinc-900/20 border-dashed border-slate-200 dark:border-zinc-800 text-slate-300 dark:text-zinc-600 line-through cursor-not-allowed";
                           } else if (isSelected) {
                             btnClass = "bg-slate-900 dark:bg-white border-slate-900 dark:border-white text-white dark:text-zinc-900";
                           }
@@ -834,16 +933,21 @@ export default function QuizGenerator({
                           return (
                             <button
                               key={i}
-                              disabled={(mode === 'practice' || mode === 'adaptive') && showExplanation}
+                              disabled={isEliminated || ((mode === 'practice' || mode === 'adaptive') && showExplanation)}
                               onClick={() => handleAnswer(opt)}
                               className={`w-full p-4 sm:p-5 rounded-xl sm:rounded-2xl text-left font-medium transition-all flex items-center justify-between ${btnClass}`}
                             >
-                              <div className="flex-1">
+                              <div className="flex-1 flex items-center justify-between gap-3">
                                 <MarkdownRenderer content={opt} />
+                                {isEliminated && (
+                                  <span className="text-[9px] font-extrabold uppercase tracking-widest bg-red-500/10 text-red-500 px-2.5 py-1 rounded-full select-none shrink-0 border border-red-500/20">
+                                    Eliminated
+                                  </span>
+                                )}
                               </div>
-                              {(mode === 'practice' || mode === 'adaptive') && showExplanation && isCorrect && <CheckCircle2 size={20} className="text-emerald-500 shrink-0" />}
-                              {(mode === 'practice' || mode === 'adaptive') && showExplanation && isSelected && !isCorrect && <XCircle size={20} className="text-red-500 shrink-0" />}
-                              {mode === 'exam' && isSelected && <div className="w-4 h-4 bg-white rounded-full" />}
+                              {(mode === 'practice' || mode === 'adaptive') && showExplanation && isCorrect && <CheckCircle2 size={20} className="text-emerald-500 shrink-0 ml-3" />}
+                              {(mode === 'practice' || mode === 'adaptive') && showExplanation && isSelected && !isCorrect && <XCircle size={20} className="text-red-500 shrink-0 ml-3" />}
+                              {mode === 'exam' && isSelected && <div className="w-4 h-4 bg-white rounded-full ml-3 shrink-0" />}
                             </button>
                           );
                         })}

@@ -15,7 +15,8 @@ import {
   RecommendationSchema,
   ExamReadinessSchema,
   StudyPlanSchema,
-  BoosterLessonSchema
+  BoosterLessonSchema,
+  autoHealQuestion
 } from './validators/aiSchemas';
 
 const getAuthToken = async () => {
@@ -656,10 +657,10 @@ Generate a university-level quiz for ${subTopic ? 'the specific subtopic' : 'the
          console.error("DEBUG AI: raw response text was:", response.text);
       }
       
-      // Sanitize LaTeX in all question fields and apply dynamic mathematical corrections
+      // Sanitize LaTeX in all question fields and apply dynamic mathematical corrections and auto-heal options
       return questions.map((q: any) => {
         if (!q || typeof q !== 'object') return q;
-        return {
+        const sanitized = {
           ...q,
           question: sanitizeLatex(q.question),
           options: Array.isArray(q.options) ? q.options.map((opt: any) => sanitizeLatex(opt)) : q.options,
@@ -667,6 +668,7 @@ Generate a university-level quiz for ${subTopic ? 'the specific subtopic' : 'the
           explanation: sanitizeLatex(q.explanation),
           hint: sanitizeLatex(q.hint)
         };
+        return autoHealQuestion(sanitized);
       });
     } catch (e: any) {
       console.error("Quiz generation error (extractJSON threw an error):", e);

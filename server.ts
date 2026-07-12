@@ -3816,6 +3816,80 @@ app.post('/api/user/reward-badge', verifyAuth, async (req, res) => {
   }
 });
 
+// 4c. Deduct Sparks for Hint
+app.post('/api/user/deduct-sparks-hint', verifyAuth, async (req, res) => {
+  const uid = (req as any).user.uid;
+  const app = getAdminApp();
+
+  if (!app || !uid) {
+    return res.status(503).json({ error: 'Service unavailable' });
+  }
+
+  try {
+    const { courseId, moduleId, questionId, questionText } = req.body || {};
+    const userRef = app.firestore().collection('users').doc(uid);
+
+    const result = await app.firestore().runTransaction(async (t) => {
+      const userDoc = await t.get(userRef);
+      if (!userDoc.exists) {
+        return { newBalance: 49, success: true };
+      }
+
+      const role = userDoc.data()?.role ?? 'student';
+      const plan = userDoc.data()?.plan_type ?? userDoc.data()?.plan ?? 'free';
+      const currentSparks = userDoc.data()?.ai_sparks ?? 50;
+      const userEmail = userDoc.data()?.email || (req as any).user.email || 'unknown@example.com';
+
+      let sparksDeducted = 1;
+      if (role === 'admin' || plan === 'scholar') {
+        sparksDeducted = 0;
+      }
+
+      if (sparksDeducted > 0 && currentSparks < 1) {
+        throw new Error('Insufficient sparks');
+      }
+
+      const newBalance = currentSparks - sparksDeducted;
+      if (sparksDeducted > 0) {
+        t.update(userRef, {
+          ai_sparks: newBalance,
+          total_sparks_used: admin.firestore.FieldValue.increment(1)
+        });
+      }
+
+      // Record the transaction in the audit log collection
+      const logRef = app.firestore().collection('spark_audit_logs').doc();
+      const logId = logRef.id;
+
+      const logData = {
+        id: logId,
+        userId: uid,
+        userEmail,
+        action: '50/50_hint',
+        sparksDeducted,
+        timestamp: new Date().toISOString(),
+        metadata: {
+          courseId: courseId || null,
+          moduleId: moduleId || null,
+          questionId: questionId || null,
+          questionText: questionText || null,
+          planType: plan,
+          role: role
+        }
+      };
+
+      t.set(logRef, logData);
+
+      return { newBalance, success: true };
+    });
+
+    res.json({ success: true, newBalance: result.newBalance });
+  } catch (error: any) {
+    console.error('Deduct Sparks Hint Error:', error.message);
+    res.status(400).json({ error: error.message });
+  }
+});
+
 // 5. XP Reward Endpoint
 app.post('/api/user/reward-xp', verifyAuth, async (req, res) => {
   const { amount } = req.body;
