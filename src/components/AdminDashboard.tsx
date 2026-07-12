@@ -181,6 +181,25 @@ export default function AdminDashboard() {
   const [userSearchTerm, setUserSearchTerm] = useState('');
   const [userCurrentPage, setUserCurrentPage] = useState(1);
   const usersPerPage = 10;
+  
+  // Advanced User Management Filters & Modals state
+  const [userRoleFilter, setUserRoleFilter] = useState<string>('all');
+  const [userDeptFilter, setUserDeptFilter] = useState<string>('all');
+  const [userPlanFilter, setUserPlanFilter] = useState<string>('all');
+  const [selectedUserForDetails, setSelectedUserForDetails] = useState<any | null>(null);
+  const [selectedUserForEdit, setSelectedUserForEdit] = useState<any | null>(null);
+  const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false);
+  const [isSavingUser, setIsSavingUser] = useState(false);
+
+  // Form states for manual user creation/editing
+  const [userFormName, setUserFormName] = useState('');
+  const [userFormEmail, setUserFormEmail] = useState('');
+  const [userFormPassword, setUserFormPassword] = useState('');
+  const [userFormRole, setUserFormRole] = useState<'student' | 'tutor' | 'moderator' | 'admin'>('student');
+  const [userFormDepartment, setUserFormDepartment] = useState('');
+  const [userFormAcademicLevel, setUserFormAcademicLevel] = useState('100');
+  const [userFormPlanType, setUserFormPlanType] = useState('free');
+  const [userFormSparks, setUserFormSparks] = useState(50);
   const [selectedLogDetails, setSelectedLogDetails] = useState<any>(null);
   const [logLimit, setLogLimit] = useState(100);
   const [logStats, setLogStats] = useState<{ date: string; count: number }[]>([]);
@@ -1206,6 +1225,147 @@ export default function AdminDashboard() {
       console.error('Error updating role:', error);
       showToast('An error occurred while updating role', 'error');
     }
+  };
+
+  const handleCreateUser = async () => {
+    if (!userFormEmail || !userFormPassword || !userFormName) {
+      showToast('Name, Email and Password are required', 'error');
+      return;
+    }
+    setIsSavingUser(true);
+    try {
+      const idToken = await auth.currentUser?.getIdToken();
+      if (!idToken) return;
+
+      const res = await fetch('/api/admin/create-user', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${idToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          email: userFormEmail,
+          password: userFormPassword,
+          displayName: userFormName,
+          role: userFormRole,
+          department: userFormDepartment,
+          academic_level: userFormAcademicLevel,
+          plan_type: userFormPlanType,
+          ai_sparks: Number(userFormSparks)
+        })
+      });
+
+      if (res.ok) {
+        showToast('User created successfully!', 'success');
+        LogService.log('info', 'admin', `Created user account manually: ${userFormEmail} (${userFormRole})`);
+        setIsAddUserModalOpen(false);
+        // Clear form
+        setUserFormName('');
+        setUserFormEmail('');
+        setUserFormPassword('');
+        setUserFormRole('student');
+        setUserFormDepartment('');
+        setUserFormAcademicLevel('100');
+        setUserFormPlanType('free');
+        setUserFormSparks(50);
+        fetchUsers();
+      } else {
+        const err = await res.json();
+        showToast(err.error || 'Failed to create user', 'error');
+      }
+    } catch (error) {
+      console.error('Error creating user:', error);
+      showToast('An error occurred while creating user', 'error');
+    } finally {
+      setIsSavingUser(false);
+    }
+  };
+
+  const handleUpdateUser = async () => {
+    if (!selectedUserForEdit) return;
+    setIsSavingUser(true);
+    try {
+      const idToken = await auth.currentUser?.getIdToken();
+      if (!idToken) return;
+
+      const payload: any = {
+        targetUserId: selectedUserForEdit.id,
+        displayName: userFormName,
+        email: userFormEmail,
+        role: userFormRole,
+        department: userFormDepartment,
+        academic_level: userFormAcademicLevel,
+        plan_type: userFormPlanType,
+        ai_sparks: Number(userFormSparks)
+      };
+
+      if (userFormPassword) {
+        payload.password = userFormPassword;
+      }
+
+      const res = await fetch('/api/admin/update-user', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${idToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (res.ok) {
+        showToast('User updated successfully!', 'success');
+        LogService.log('info', 'admin', `Updated user account details manually: ${userFormEmail}`);
+        setSelectedUserForEdit(null);
+        fetchUsers();
+      } else {
+        const err = await res.json();
+        showToast(err.error || 'Failed to update user', 'error');
+      }
+    } catch (error) {
+      console.error('Error updating user:', error);
+      showToast('An error occurred while updating user', 'error');
+    } finally {
+      setIsSavingUser(false);
+    }
+  };
+
+  const handleDeleteUser = async (targetUserId: string) => {
+    if (!db) return;
+    const targetUser = users.find(u => u.id === targetUserId);
+    if (!targetUser) return;
+
+    setConfirmModal({
+      title: "Delete User Permanently",
+      message: `Are you sure you want to permanently delete user ${targetUser.displayName || targetUser.email || targetUserId}? This will revoke login access and remove all Firestore profile documents! This action is irreversible.`,
+      onConfirm: async () => {
+        try {
+          const idToken = await auth.currentUser?.getIdToken();
+          if (!idToken) return;
+
+          const res = await fetch('/api/admin/delete-user', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${idToken}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ targetUserId })
+          });
+
+          if (res.ok) {
+            showToast("User deleted successfully!", "success");
+            LogService.log('warning', 'admin', `Deleted user ${targetUserId} permanently.`);
+            fetchUsers();
+          } else {
+            const err = await res.json();
+            showToast(err.error || "Failed to delete user", "error");
+          }
+        } catch (error) {
+          console.error("Error deleting user:", error);
+          showToast("Failed to delete user.", "error");
+        }
+        setConfirmModal(null);
+      }
+    });
   };
 
   const fetchKbStats = async () => {
@@ -3628,17 +3788,55 @@ export default function AdminDashboard() {
                 <p className="text-slate-500 mt-1">Manage platform access, roles, and account statuses.</p>
               </div>
               
-              <div className="flex items-center gap-4">
-                <div className="relative">
+              <div className="flex flex-wrap items-center gap-4 w-full md:w-auto">
+                <div className="relative flex-1 md:flex-initial">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                   <input
                     type="text"
                     placeholder="Search by name or email..."
                     value={userSearchTerm}
                     onChange={(e) => { setUserSearchTerm(e.target.value); setUserCurrentPage(1); }}
-                    className="pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-64"
+                    className="pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-64 text-slate-900 dark:text-white"
                   />
                 </div>
+                
+                {/* Role Filter */}
+                <select 
+                  value={userRoleFilter} 
+                  onChange={(e) => { setUserRoleFilter(e.target.value); setUserCurrentPage(1); }}
+                  className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="all">All Roles</option>
+                  <option value="student">Students</option>
+                  <option value="tutor">Tutors</option>
+                  <option value="moderator">Moderators</option>
+                  <option value="admin">Admins</option>
+                </select>
+
+                {/* Plan Type Filter */}
+                <select 
+                  value={userPlanFilter} 
+                  onChange={(e) => { setUserPlanFilter(e.target.value); setUserCurrentPage(1); }}
+                  className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="all">All Plans</option>
+                  <option value="free">Free Trial</option>
+                  <option value="scholar">Scholar</option>
+                  <option value="premium">Premium Pro</option>
+                </select>
+
+                {/* Department Filter */}
+                <select 
+                  value={userDeptFilter} 
+                  onChange={(e) => { setUserDeptFilter(e.target.value); setUserCurrentPage(1); }}
+                  className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 max-w-[150px]"
+                >
+                  <option value="all">All Depts</option>
+                  {Array.from(new Set(users.map(u => u.department).filter(Boolean))).map((dept: any) => (
+                    <option key={dept} value={dept}>{dept}</option>
+                  ))}
+                </select>
+
                 <button 
                   onClick={fetchUsers} 
                   className="p-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
@@ -3646,186 +3844,515 @@ export default function AdminDashboard() {
                 >
                   <RefreshCw size={20} className={isLoadingUsers ? "animate-spin" : ""} />
                 </button>
+
+                {isAdmin && (
+                  <button
+                    onClick={() => {
+                      setUserFormName('');
+                      setUserFormEmail('');
+                      setUserFormPassword('');
+                      setUserFormRole('student');
+                      setUserFormDepartment('');
+                      setUserFormAcademicLevel('100');
+                      setUserFormPlanType('free');
+                      setUserFormSparks(50);
+                      setSelectedUserForEdit(null);
+                      setIsAddUserModalOpen(true);
+                    }}
+                    className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-lg shadow-blue-500/20 transition-all active:scale-95"
+                  >
+                    <Plus size={16} />
+                    Add User
+                  </button>
+                )}
               </div>
             </div>
+ 
+             <div className="overflow-x-auto">
+               <table className="w-full text-left">
+                 <thead>
+                   <tr className="border-b border-slate-200 dark:border-slate-700">
+                     <th className="pb-4 text-xs font-bold text-slate-500 uppercase tracking-wider">User</th>
+                     <th className="pb-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Academic Info</th>
+                     <th className="pb-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Sparks</th>
+                     <th className="pb-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Progress</th>
+                     <th className="pb-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Last Active</th>
+                     <th className="pb-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Actions</th>
+                   </tr>
+                 </thead>
+                 <tbody className="text-sm">
+                   {isLoadingUsers ? (
+                     <tr>
+                       <td colSpan={6} className="py-20 text-center">
+                         <div className="flex flex-col items-center gap-3">
+                           <Loader2 className="animate-spin text-blue-500" size={32} />
+                           <p className="text-slate-500 font-medium">Synchronizing user directory...</p>
+                         </div>
+                       </td>
+                     </tr>
+                   ) : users.length > 0 ? (
+                     (() => {
+                       const filteredUsers = users.filter(u => {
+                         const matchesSearch = (u.email?.toLowerCase() || '').includes(userSearchTerm.toLowerCase()) || 
+                                               (u.displayName?.toLowerCase() || '').includes(userSearchTerm.toLowerCase()) ||
+                                               u.id.includes(userSearchTerm);
+                         const matchesRole = userRoleFilter === 'all' || (u.role || 'student') === userRoleFilter;
+                         const matchesDept = userDeptFilter === 'all' || (u.department || '') === userDeptFilter;
+                         const matchesPlan = userPlanFilter === 'all' || (u.plan_type || 'free') === userPlanFilter;
+                         return matchesSearch && matchesRole && matchesDept && matchesPlan;
+                       });
+                       const totalPages = Math.ceil(filteredUsers.length / usersPerPage);
+                       const currentUsers = filteredUsers.slice((userCurrentPage - 1) * usersPerPage, userCurrentPage * usersPerPage);
+ 
+                       return (
+                         <>
+                           {currentUsers.map((user) => (
+                             <tr key={user.id} className="border-b border-slate-100 dark:border-slate-700/50 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors group">
+                               <td className="py-4">
+                                 <div className="flex items-center gap-3">
+                                   <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-500/20 flex items-center justify-center text-blue-600 dark:text-blue-400 font-bold text-sm">
+                                     {user.displayName?.charAt(0) || user.email?.charAt(0) || '?'}
+                                   </div>
+                                   <div>
+                                     <div className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                                       {user.displayName || 'Anonymous Student'}
+                                       <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
+                                         user.role === 'admin' ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/20 dark:text-rose-400' :
+                                         user.role === 'tutor' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/20 dark:text-purple-400' :
+                                         user.role === 'moderator' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400' :
+                                         'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400'
+                                       }`}>
+                                         {user.role || 'student'}
+                                       </span>
+                                     </div>
+                                     <div className="text-xs text-slate-500 font-mono">{user.email || 'No Email'}</div>
+                                   </div>
+                                 </div>
+                               </td>
+                               <td className="py-4">
+                                 <div className="text-xs">
+                                   <div className="font-bold text-slate-700 dark:text-slate-300">{user.department || 'No Department'}</div>
+                                   <div className="text-slate-500">{user.academic_level || 'Level N/A'} • <span className="uppercase font-bold text-[10px] text-blue-600 dark:text-blue-400">{user.plan_type || 'free'}</span></div>
+                                 </div>
+                               </td>
+                               <td className="py-4">
+                                 <div className="text-xs">
+                                   <div className="font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                                     <Zap size={14} />
+                                     {(user.ai_sparks || 0).toLocaleString()} sparks
+                                   </div>
+                                   <div className="text-[10px] text-slate-500">{(user.total_sparks_used || 0).toLocaleString()} used</div>
+                                 </div>
+                               </td>
+                               <td className="py-4">
+                                 <div className="flex flex-col gap-1">
+                                   <div className="flex items-center gap-2">
+                                     <span className="text-xs font-bold text-slate-900 dark:text-white">Lvl {user.level || 1}</span>
+                                     <span className="text-[10px] text-slate-500">{user.xp || 0} XP</span>
+                                   </div>
+                                   <div className="w-24 h-1 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                                     <div 
+                                       className="h-full bg-blue-500" 
+                                       style={{ width: `${Math.min(100, ((user.xp || 0) % 1000) / 10)}%` }}
+                                     />
+                                   </div>
+                                 </div>
+                               </td>
+                               <td className="py-4">
+                                 <div className="text-xs text-slate-500">
+                                   {user.lastActive ? new Date(user.lastActive).toLocaleDateString() : 'Never'}
+                                 </div>
+                               </td>
+                               <td className="py-4 text-right">
+                                 <div className="flex items-center justify-end gap-1">
+                                   <button 
+                                     onClick={() => handleResetSparks(user.id)}
+                                     className="p-2 text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-lg transition-colors"
+                                     title="Reset Sparks to 10k"
+                                   >
+                                     <Zap size={16} />
+                                   </button>
+                                   <button 
+                                     onClick={() => setSelectedUserForDetails(user)}
+                                     className="p-2 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                                     title="View Profile Details"
+                                   >
+                                     <Search size={16} />
+                                   </button>
+                                   {isAdmin && (
+                                     <>
+                                       <button 
+                                         onClick={() => {
+                                           setSelectedUserForEdit(user);
+                                           setUserFormName(user.displayName || '');
+                                           setUserFormEmail(user.email || '');
+                                           setUserFormPassword('');
+                                           setUserFormRole(user.role || 'student');
+                                           setUserFormDepartment(user.department || '');
+                                           setUserFormAcademicLevel(user.academic_level || '100');
+                                           setUserFormPlanType(user.plan_type || 'free');
+                                           setUserFormSparks(user.ai_sparks || 50);
+                                         }}
+                                         className="p-2 text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-lg transition-colors"
+                                         title="Edit Profile"
+                                       >
+                                         <Edit2 size={16} />
+                                       </button>
+                                       <button 
+                                         onClick={() => handleDeleteUser(user.id)}
+                                         className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                                         title="Delete Account"
+                                       >
+                                         <Trash2 size={16} />
+                                       </button>
+                                     </>
+                                   )}
+                                 </div>
+                               </td>
+                             </tr>
+                           ))}
+                           
+                           {/* Pagination Controls */}
+                           {filteredUsers.length > usersPerPage && (
+                             <tr>
+                               <td colSpan={6} className="pt-8">
+                                 <div className="flex items-center justify-between">
+                                   <p className="text-xs text-slate-500">
+                                     Showing <span className="font-bold text-slate-900 dark:text-white">{(userCurrentPage - 1) * usersPerPage + 1}</span> to <span className="font-bold text-slate-900 dark:text-white">{Math.min(userCurrentPage * usersPerPage, filteredUsers.length)}</span> of <span className="font-bold text-slate-900 dark:text-white">{filteredUsers.length}</span> users
+                                   </p>
+                                   <div className="flex items-center gap-2">
+                                     <button 
+                                       onClick={() => setUserCurrentPage(prev => Math.max(1, prev - 1))}
+                                       disabled={userCurrentPage === 1}
+                                       className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 disabled:opacity-30 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all"
+                                     >
+                                       <ChevronLeft size={20} />
+                                     </button>
+                                     <div className="flex items-center gap-1">
+                                       {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                                         let pageNum = userCurrentPage;
+                                         if (userCurrentPage <= 3) pageNum = i + 1;
+                                         else if (userCurrentPage >= totalPages - 2) pageNum = totalPages - 4 + i;
+                                         else pageNum = userCurrentPage - 2 + i;
+                                         
+                                         if (pageNum < 1 || pageNum > totalPages) return null;
+ 
+                                         return (
+                                           <button
+                                             key={pageNum}
+                                             onClick={() => setUserCurrentPage(pageNum)}
+                                             className={`w-10 h-10 rounded-xl font-bold text-sm transition-all ${
+                                               userCurrentPage === pageNum 
+                                                 ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' 
+                                                 : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'
+                                             }`}
+                                           >
+                                             {pageNum}
+                                           </button>
+                                         );
+                                       })}
+                                     </div>
+                                     <button 
+                                       onClick={() => setUserCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                                       disabled={userCurrentPage === totalPages}
+                                       className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 disabled:opacity-30 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all"
+                                     >
+                                       <ChevronRight size={20} />
+                                     </button>
+                                   </div>
+                                 </div>
+                               </td>
+                             </tr>
+                           )}
+                         </>
+                       );
+                     })()
+                   ) : (
+                     <tr>
+                       <td colSpan={6} className="py-20 text-center">
+                         <div className="flex flex-col items-center gap-3">
+                           <Users className="text-slate-300" size={48} />
+                           <p className="text-slate-500 font-medium">No users found matching your criteria.</p>
+                         </div>
+                       </td>
+                     </tr>
+                   )}
+                 </tbody>
+               </table>
+             </div>
+ 
+             {/* Modals for Advanced User Operations */}
+             {selectedUserForDetails && (
+               <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
+                 <div className="bg-white dark:bg-slate-900 rounded-[2rem] w-full max-w-xl p-8 border border-slate-200 dark:border-slate-800 shadow-2xl relative">
+                   <button 
+                     onClick={() => setSelectedUserForDetails(null)}
+                     className="absolute top-6 right-6 p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 transition-all"
+                   >
+                     <X size={20} />
+                   </button>
+                   
+                   <div className="flex items-center gap-4 pb-6 border-b border-slate-100 dark:border-slate-800">
+                     <div className="w-14 h-14 rounded-full bg-blue-100 dark:bg-blue-500/20 flex items-center justify-center text-blue-600 dark:text-blue-400 font-bold text-xl">
+                       {selectedUserForDetails.displayName?.charAt(0) || selectedUserForDetails.email?.charAt(0) || '?'}
+                     </div>
+                     <div>
+                       <h3 className="text-xl font-bold text-slate-900 dark:text-white">{selectedUserForDetails.displayName || 'Anonymous Student'}</h3>
+                       <p className="text-xs font-mono text-slate-500">{selectedUserForDetails.email || 'No Email'}</p>
+                       <div className="flex gap-2 mt-1.5">
+                         <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
+                           {selectedUserForDetails.role || 'student'}
+                         </span>
+                         <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300">
+                           {selectedUserForDetails.plan_type || 'free'}
+                         </span>
+                       </div>
+                     </div>
+                   </div>
+                   
+                   <div className="grid grid-cols-2 gap-6 py-6 border-b border-slate-100 dark:border-slate-800">
+                     <div>
+                       <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Academic Info</h4>
+                       <div className="space-y-2 text-xs">
+                         <div className="flex justify-between">
+                           <span className="text-slate-500">Department:</span>
+                           <span className="font-bold text-slate-900 dark:text-white">{selectedUserForDetails.department || 'N/A'}</span>
+                         </div>
+                         <div className="flex justify-between">
+                           <span className="text-slate-500">Academic Level:</span>
+                           <span className="font-bold text-slate-900 dark:text-white">{selectedUserForDetails.academic_level || 'N/A'} Level</span>
+                         </div>
+                         <div className="flex justify-between">
+                           <span className="text-slate-500">Semester:</span>
+                           <span className="font-bold text-slate-900 dark:text-white">{selectedUserForDetails.semester || 'N/A'}</span>
+                         </div>
+                       </div>
+                     </div>
+                     <div>
+                       <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Usage & Metrics</h4>
+                       <div className="space-y-2 text-xs">
+                         <div className="flex justify-between">
+                           <span className="text-slate-500">Sparks Balance:</span>
+                           <span className="font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                             <Zap size={12} />
+                             {(selectedUserForDetails.ai_sparks || 0).toLocaleString()}
+                           </span>
+                         </div>
+                         <div className="flex justify-between">
+                           <span className="text-slate-500">Sparks Used:</span>
+                           <span className="font-bold text-slate-900 dark:text-white">{(selectedUserForDetails.total_sparks_used || 0).toLocaleString()}</span>
+                         </div>
+                         <div className="flex justify-between">
+                           <span className="text-slate-500">User Level:</span>
+                           <span className="font-bold text-slate-900 dark:text-white">Level {selectedUserForDetails.level || 1} ({selectedUserForDetails.xp || 0} XP)</span>
+                         </div>
+                       </div>
+                     </div>
+                   </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left">
-                <thead>
-                  <tr className="border-b border-slate-200 dark:border-slate-700">
-                    <th className="pb-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Student</th>
-                    <th className="pb-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Academic Info</th>
-                    <th className="pb-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Progress</th>
-                    <th className="pb-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Last Active</th>
-                    <th className="pb-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Role</th>
-                    <th className="pb-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="text-sm">
-                  {isLoadingUsers ? (
-                    <tr>
-                      <td colSpan={6} className="py-20 text-center">
-                        <div className="flex flex-col items-center gap-3">
-                          <Loader2 className="animate-spin text-blue-500" size={32} />
-                          <p className="text-slate-500 font-medium">Synchronizing user directory...</p>
-                        </div>
-                      </td>
-                    </tr>
-                  ) : users.length > 0 ? (
-                    (() => {
-                      const filteredUsers = users.filter(u => 
-                        (u.email?.toLowerCase() || '').includes(userSearchTerm.toLowerCase()) || 
-                        (u.displayName?.toLowerCase() || '').includes(userSearchTerm.toLowerCase()) ||
-                        u.id.includes(userSearchTerm)
-                      );
-                      const totalPages = Math.ceil(filteredUsers.length / usersPerPage);
-                      const currentUsers = filteredUsers.slice((userCurrentPage - 1) * usersPerPage, userCurrentPage * usersPerPage);
+                   <div className="flex justify-end gap-2 pt-6">
+                     <button 
+                       onClick={() => {
+                         setSelectedUserForDetails(null);
+                         setSelectedUserForEdit(selectedUserForDetails);
+                         setUserFormName(selectedUserForDetails.displayName || '');
+                         setUserFormEmail(selectedUserForDetails.email || '');
+                         setUserFormPassword('');
+                         setUserFormRole(selectedUserForDetails.role || 'student');
+                         setUserFormDepartment(selectedUserForDetails.department || '');
+                         setUserFormAcademicLevel(selectedUserForDetails.academic_level || '100');
+                         setUserFormPlanType(selectedUserForDetails.plan_type || 'free');
+                         setUserFormSparks(selectedUserForDetails.ai_sparks || 50);
+                       }}
+                       className="px-4 py-2 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300 rounded-xl transition-all flex items-center gap-1.5"
+                     >
+                       <Edit2 size={14} />
+                       Edit Profile
+                     </button>
+                     <button 
+                       onClick={() => {
+                         setSelectedUserForDetails(null);
+                         handleDeleteUser(selectedUserForDetails.id);
+                       }}
+                       className="px-4 py-2 bg-red-50 hover:bg-red-100 dark:bg-red-950/30 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5"
+                     >
+                       <Trash2 size={14} />
+                       Delete User
+                     </button>
+                   </div>
+                 </div>
+               </div>
+             )}
 
-                      return (
-                        <>
-                          {currentUsers.map((user) => (
-                            <tr key={user.id} className="border-b border-slate-100 dark:border-slate-700/50 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors group">
-                              <td className="py-4">
-                                <div className="flex items-center gap-3">
-                                  <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-500/20 flex items-center justify-center text-blue-600 dark:text-blue-400 font-bold text-sm">
-                                    {user.displayName?.charAt(0) || user.email?.charAt(0) || '?'}
-                                  </div>
-                                  <div>
-                                    <div className="font-bold text-slate-900 dark:text-white">{user.displayName || 'Anonymous Student'}</div>
-                                    <div className="text-xs text-slate-500 font-mono">{user.email || 'No Email'}</div>
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="py-4">
-                                <div className="text-xs">
-                                  <div className="font-bold text-slate-700 dark:text-slate-300">{user.department || 'No Department'}</div>
-                                  <div className="text-slate-500">{user.academic_level || 'Level N/A'}</div>
-                                </div>
-                              </td>
-                              <td className="py-4">
-                                <div className="flex flex-col gap-1">
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-xs font-bold text-slate-900 dark:text-white">Lvl {user.level || 1}</span>
-                                    <span className="text-[10px] text-slate-500">{user.xp || 0} XP</span>
-                                  </div>
-                                  <div className="w-24 h-1 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
-                                    <div 
-                                      className="h-full bg-blue-500" 
-                                      style={{ width: `${Math.min(100, ((user.xp || 0) % 1000) / 10)}%` }}
-                                    />
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="py-4">
-                                <div className="text-xs text-slate-500">
-                                  {user.lastStudyDate ? new Date(user.lastStudyDate).toLocaleDateString() : 'Never'}
-                                </div>
-                              </td>
-                              <td className="py-4">
-                                <select 
-                                  value={user.role || 'student'} 
-                                  onChange={(e) => handleUpdateRole(user.id, e.target.value)}
-                                  disabled={!isAdmin}
-                                  className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                  <option value="student">Student</option>
-                                  <option value="tutor">Tutor</option>
-                                  <option value="moderator">Moderator</option>
-                                  <option value="admin">Admin</option>
-                                </select>
-                              </td>
-                              <td className="py-4 text-right">
-                                <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <button 
-                                    onClick={() => handleResetSparks(user.id)}
-                                    className="p-2 text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-lg transition-colors"
-                                    title="Reset Sparks"
-                                  >
-                                    <Zap size={18} />
-                                  </button>
-                                  <button 
-                                    onClick={() => {/* View Details */}}
-                                    className="p-2 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
-                                    title="View Details"
-                                  >
-                                    <Search size={18} />
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                          
-                          {/* Pagination Controls */}
-                          {filteredUsers.length > usersPerPage && (
-                            <tr>
-                              <td colSpan={6} className="pt-8">
-                                <div className="flex items-center justify-between">
-                                  <p className="text-xs text-slate-500">
-                                    Showing <span className="font-bold text-slate-900 dark:text-white">{(userCurrentPage - 1) * usersPerPage + 1}</span> to <span className="font-bold text-slate-900 dark:text-white">{Math.min(userCurrentPage * usersPerPage, filteredUsers.length)}</span> of <span className="font-bold text-slate-900 dark:text-white">{filteredUsers.length}</span> users
-                                  </p>
-                                  <div className="flex items-center gap-2">
-                                    <button 
-                                      onClick={() => setUserCurrentPage(prev => Math.max(1, prev - 1))}
-                                      disabled={userCurrentPage === 1}
-                                      className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 disabled:opacity-30 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all"
-                                    >
-                                      <ChevronLeft size={20} />
-                                    </button>
-                                    <div className="flex items-center gap-1">
-                                      {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                                        let pageNum = userCurrentPage;
-                                        if (userCurrentPage <= 3) pageNum = i + 1;
-                                        else if (userCurrentPage >= totalPages - 2) pageNum = totalPages - 4 + i;
-                                        else pageNum = userCurrentPage - 2 + i;
-                                        
-                                        if (pageNum < 1 || pageNum > totalPages) return null;
+             {(isAddUserModalOpen || selectedUserForEdit) && (
+               <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
+                 <div className="bg-white dark:bg-slate-900 rounded-[2rem] w-full max-w-md p-8 border border-slate-200 dark:border-slate-800 shadow-2xl relative">
+                   <button 
+                     onClick={() => {
+                       setIsAddUserModalOpen(false);
+                       setSelectedUserForEdit(null);
+                     }}
+                     className="absolute top-6 right-6 p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 transition-all"
+                   >
+                     <X size={20} />
+                   </button>
 
-                                        return (
-                                          <button
-                                            key={pageNum}
-                                            onClick={() => setUserCurrentPage(pageNum)}
-                                            className={`w-10 h-10 rounded-xl font-bold text-sm transition-all ${
-                                              userCurrentPage === pageNum 
-                                                ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' 
-                                                : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'
-                                            }`}
-                                          >
-                                            {pageNum}
-                                          </button>
-                                        );
-                                      })}
-                                    </div>
-                                    <button 
-                                      onClick={() => setUserCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                                      disabled={userCurrentPage === totalPages}
-                                      className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 disabled:opacity-30 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all"
-                                    >
-                                      <ChevronRight size={20} />
-                                    </button>
-                                  </div>
-                                </div>
-                              </td>
-                            </tr>
-                          )}
-                        </>
-                      );
-                    })()
-                  ) : (
-                    <tr>
-                      <td colSpan={6} className="py-20 text-center">
-                        <div className="flex flex-col items-center gap-3">
-                          <Users className="text-slate-300" size={48} />
-                          <p className="text-slate-500 font-medium">No users found matching your criteria.</p>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
+                   <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">
+                     {selectedUserForEdit ? 'Edit User Profile' : 'Add New User'}
+                   </h3>
+                   <p className="text-slate-500 text-xs mb-6">
+                     {selectedUserForEdit ? 'Modify platform access details.' : 'Manually register a new account.'}
+                   </p>
+
+                   <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
+                     <div>
+                       <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Full Name</label>
+                       <input 
+                         type="text" 
+                         value={userFormName}
+                         onChange={(e) => setUserFormName(e.target.value)}
+                         placeholder="e.g. John Doe"
+                         className="w-full px-4 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white"
+                       />
+                     </div>
+
+                     <div>
+                       <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Email Address</label>
+                       <input 
+                         type="email" 
+                         value={userFormEmail}
+                         onChange={(e) => setUserFormEmail(e.target.value)}
+                         placeholder="e.g. johndoe@gmail.com"
+                         className="w-full px-4 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white"
+                       />
+                     </div>
+
+                     <div>
+                       <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
+                         Password {selectedUserForEdit && <span className="text-[9px] text-slate-500 font-normal lowercase">(leave empty to keep current)</span>}
+                       </label>
+                       <div className="flex gap-2">
+                         <input 
+                           type="text" 
+                           value={userFormPassword}
+                           onChange={(e) => setUserFormPassword(e.target.value)}
+                           placeholder={selectedUserForEdit ? "••••••••" : "Enter secure password"}
+                           className="flex-1 px-4 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white font-mono"
+                         />
+                         {!selectedUserForEdit && (
+                           <button 
+                             type="button"
+                             onClick={() => {
+                               const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#%*";
+                               let pass = "";
+                               for (let i = 0; i < 10; i++) {
+                                 pass += chars.charAt(Math.floor(Math.random() * chars.length));
+                               }
+                               setUserFormPassword(pass);
+                             }}
+                             className="px-3 py-2 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-all text-slate-700 dark:text-slate-300"
+                           >
+                             Generate
+                           </button>
+                         )}
+                       </div>
+                     </div>
+
+                     <div className="grid grid-cols-2 gap-4">
+                       <div>
+                         <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Role</label>
+                         <select 
+                           value={userFormRole}
+                           onChange={(e) => setUserFormRole(e.target.value as any)}
+                           className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white font-bold"
+                         >
+                           <option value="student">Student</option>
+                           <option value="tutor">Tutor</option>
+                           <option value="moderator">Moderator</option>
+                           <option value="admin">Admin</option>
+                         </select>
+                       </div>
+                       <div>
+                         <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Plan Type</label>
+                         <select 
+                           value={userFormPlanType}
+                           onChange={(e) => setUserFormPlanType(e.target.value)}
+                           className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white font-bold"
+                         >
+                           <option value="free">Free Trial</option>
+                           <option value="scholar">Scholar</option>
+                           <option value="premium">Premium Pro</option>
+                         </select>
+                       </div>
+                     </div>
+
+                     <div className="grid grid-cols-2 gap-4">
+                       <div>
+                         <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Department</label>
+                         <input 
+                           type="text" 
+                           value={userFormDepartment}
+                           onChange={(e) => setUserFormDepartment(e.target.value)}
+                           placeholder="e.g. Chemistry"
+                           className="w-full px-4 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white"
+                         />
+                       </div>
+                       <div>
+                         <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Academic Level</label>
+                         <select 
+                           value={userFormAcademicLevel}
+                           onChange={(e) => setUserFormAcademicLevel(e.target.value)}
+                           className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white font-bold"
+                         >
+                           <option value="100">100 Level</option>
+                           <option value="200">200 Level</option>
+                           <option value="300">300 Level</option>
+                           <option value="400">400 Level</option>
+                           <option value="500">500 Level</option>
+                           <option value="Postgraduate">Postgraduate</option>
+                           <option value="Staff/Faculty">Staff/Faculty</option>
+                         </select>
+                       </div>
+                     </div>
+
+                     <div>
+                       <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">AI Sparks Balance</label>
+                       <input 
+                         type="number" 
+                         value={userFormSparks}
+                         onChange={(e) => setUserFormSparks(Number(e.target.value))}
+                         min={0}
+                         className="w-full px-4 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white"
+                       />
+                     </div>
+                   </div>
+
+                   <div className="flex justify-end gap-2 mt-8 pt-4 border-t border-slate-100 dark:border-slate-800">
+                     <button 
+                       onClick={() => {
+                         setIsAddUserModalOpen(false);
+                         setSelectedUserForEdit(null);
+                       }}
+                       disabled={isSavingUser}
+                       className="px-4 py-2 text-xs font-bold border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl disabled:opacity-50"
+                     >
+                       Cancel
+                     </button>
+                     <button 
+                       onClick={selectedUserForEdit ? handleUpdateUser : handleCreateUser}
+                       disabled={isSavingUser}
+                       className="px-4 py-2 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-lg shadow-blue-500/20 disabled:opacity-50 flex items-center gap-1.5"
+                     >
+                       {isSavingUser && <Loader2 size={12} className="animate-spin" />}
+                       {selectedUserForEdit ? 'Save Changes' : 'Create Account'}
+                     </button>
+                   </div>
+                 </div>
+               </div>
+             )}
+           </div>
+         </div>
+       )}
 
       {activeTab === 'logs' && (
         <div className="bg-white dark:bg-slate-800 rounded-[2.5rem] p-8 shadow-sm border border-slate-200 dark:border-slate-700">

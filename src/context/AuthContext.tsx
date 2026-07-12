@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { User, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut, browserPopupRedirectResolver } from "firebase/auth";
+import { User, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut, browserPopupRedirectResolver, signInWithEmailAndPassword } from "firebase/auth";
 import { doc, getDoc, setDoc, serverTimestamp, onSnapshot } from "firebase/firestore";
 import { getToken } from "firebase/messaging";
 import toast from "react-hot-toast";
@@ -50,6 +50,7 @@ interface AuthContextType {
   loading: boolean;
   isConfigured: boolean;
   signInWithGoogle: () => Promise<void>;
+  signInWithEmail: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   updateProfileData: (data: Partial<UserProfile>) => Promise<void>;
 }
@@ -422,6 +423,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const signInWithEmail = async (email: string, password: string) => {
+    if (!auth) {
+      alert("Firebase is not configured. Please check your environment variables.");
+      return;
+    }
+    await signInWithEmailAndPassword(auth, email, password);
+  };
+
   const logout = async () => {
     if (!auth) return;
     try {
@@ -435,7 +444,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, isConfigured: !!auth, signInWithGoogle, logout, updateProfileData }}>
+    <AuthContext.Provider value={{ user, profile, loading, isConfigured: !!auth, signInWithGoogle, signInWithEmail, logout, updateProfileData }}>
       {children}
     </AuthContext.Provider>
   );

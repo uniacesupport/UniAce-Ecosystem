@@ -2129,6 +2129,156 @@ app.post('/api/admin/update-user-role', verifyAuth, async (req, res) => {
   }
 });
 
+// Admin API: Create User Manual Endpoint
+app.post('/api/admin/create-user', verifyAuth, async (req, res) => {
+  try {
+    const adminUid = (req as any).user.uid;
+    const { email, password, displayName, role, department, faculty, academic_level, ai_sparks, plan_type } = req.body;
+
+    if (!email || !password || !displayName) {
+      return res.status(400).json({ error: 'Missing required fields: email, password, and displayName are required' });
+    }
+
+    const app = getAdminApp();
+    const adminDoc = await app.firestore().collection('users').doc(adminUid).get();
+    
+    if (adminDoc.data()?.role !== 'admin') {
+      return res.status(403).json({ error: 'Unauthorized: Admin access required' });
+    }
+
+    // Create user in Firebase Authentication
+    const userRecord = await app.auth().createUser({
+      email,
+      password,
+      displayName,
+      emailVerified: true
+    });
+
+    // Create user profile document in Firestore
+    const userProfileData = {
+      uid: userRecord.uid,
+      email,
+      displayName,
+      role: role || 'student',
+      plan_type: plan_type || 'free',
+      department: department || '',
+      faculty: faculty || '',
+      academic_level: academic_level || '100',
+      ai_sparks: ai_sparks !== undefined ? Number(ai_sparks) : 50,
+      total_sparks_used: 0,
+      xp: 0,
+      level: 1,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    await app.firestore().collection('users').doc(userRecord.uid).set(userProfileData);
+
+    res.status(201).json({ success: true, message: 'User created successfully', user: userProfileData });
+  } catch (error: any) {
+    console.error('Error creating user manually:', error);
+    res.status(500).json({ error: error.message || 'Failed to create user manually' });
+  }
+});
+
+// Admin API: Update User Details Endpoint
+app.post('/api/admin/update-user', verifyAuth, async (req, res) => {
+  try {
+    const adminUid = (req as any).user.uid;
+    const { targetUserId, email, password, displayName, role, department, faculty, academic_level, ai_sparks, plan_type } = req.body;
+
+    if (!targetUserId) {
+      return res.status(400).json({ error: 'Missing targetUserId' });
+    }
+
+    const app = getAdminApp();
+    const adminDoc = await app.firestore().collection('users').doc(adminUid).get();
+    
+    if (adminDoc.data()?.role !== 'admin') {
+      return res.status(403).json({ error: 'Unauthorized: Admin access required' });
+    }
+
+    const targetUserRef = app.firestore().collection('users').doc(targetUserId);
+    const targetUserDoc = await targetUserRef.get();
+
+    if (!targetUserDoc.exists) {
+      return res.status(404).json({ error: 'Target user not found' });
+    }
+
+    // Update Firestore User Document
+    const updateData: any = {
+      updatedAt: new Date().toISOString()
+    };
+
+    if (displayName !== undefined) updateData.displayName = displayName;
+    if (email !== undefined) updateData.email = email;
+    if (role !== undefined) updateData.role = role;
+    if (department !== undefined) updateData.department = department;
+    if (faculty !== undefined) updateData.faculty = faculty;
+    if (academic_level !== undefined) updateData.academic_level = academic_level;
+    if (ai_sparks !== undefined) updateData.ai_sparks = Number(ai_sparks);
+    if (plan_type !== undefined) updateData.plan_type = plan_type;
+
+    await targetUserRef.update(updateData);
+
+    // Update Firebase Auth parameters
+    const authUpdateData: any = {};
+    if (email) authUpdateData.email = email;
+    if (displayName) authUpdateData.displayName = displayName;
+    if (password) authUpdateData.password = password;
+
+    if (Object.keys(authUpdateData).length > 0) {
+      await app.auth().updateUser(targetUserId, authUpdateData);
+    }
+
+    res.json({ success: true, message: 'User updated successfully' });
+  } catch (error: any) {
+    console.error('Error updating user manually:', error);
+    res.status(500).json({ error: error.message || 'Failed to update user manually' });
+  }
+});
+
+// Admin API: Delete User Endpoint
+app.post('/api/admin/delete-user', verifyAuth, async (req, res) => {
+  try {
+    const adminUid = (req as any).user.uid;
+    const { targetUserId } = req.body;
+
+    if (!targetUserId) {
+      return res.status(400).json({ error: 'Missing targetUserId' });
+    }
+
+    if (targetUserId === adminUid) {
+      return res.status(400).json({ error: 'Cannot delete your own admin account' });
+    }
+
+    const app = getAdminApp();
+    const adminDoc = await app.firestore().collection('users').doc(adminUid).get();
+    
+    if (adminDoc.data()?.role !== 'admin') {
+      return res.status(403).json({ error: 'Unauthorized: Admin access required' });
+    }
+
+    const targetUserRef = app.firestore().collection('users').doc(targetUserId);
+    const targetUserDoc = await targetUserRef.get();
+
+    if (!targetUserDoc.exists) {
+      return res.status(404).json({ error: 'Target user not found' });
+    }
+
+    // Delete from Firebase Auth
+    await app.auth().deleteUser(targetUserId);
+
+    // Delete from Firestore
+    await targetUserRef.delete();
+
+    res.json({ success: true, message: 'User deleted successfully' });
+  } catch (error: any) {
+    console.error('Error deleting user:', error);
+    res.status(500).json({ error: error.message || 'Failed to delete user' });
+  }
+});
+
 // Global System Config (In-memory for now, should be in Firestore for production)
 let systemConfig = {
   aiKillswitch: false,

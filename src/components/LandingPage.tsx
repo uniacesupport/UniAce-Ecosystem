@@ -1,9 +1,53 @@
-import { motion } from 'motion/react';
-import { Sparkles, Brain, Trophy, Rocket, CheckCircle2, ArrowRight, Play } from 'lucide-react';
+import { useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { Sparkles, Brain, Trophy, Rocket, CheckCircle2, ArrowRight, Play, X, Mail, Lock, Loader2, AlertCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import toast from 'react-hot-toast';
 
 export default function LandingPage() {
-  const { signInWithGoogle } = useAuth();
+  const { signInWithGoogle, signInWithEmail } = useAuth();
+  
+  // Login Modal State
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+
+  const handleEmailLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password) {
+      setErrorMessage('Please fill in all fields.');
+      return;
+    }
+    setErrorMessage('');
+    setIsSubmitting(true);
+    try {
+      await signInWithEmail(email, password);
+      toast.success('Successfully logged in!');
+      setIsLoginModalOpen(false);
+    } catch (err: any) {
+      console.error(err);
+      if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+        setErrorMessage('Invalid email or password. Please try again.');
+      } else if (err.code === 'auth/invalid-email') {
+        setErrorMessage('Please enter a valid email address.');
+      } else {
+        setErrorMessage(err.message || 'An error occurred during sign-in.');
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    try {
+      await signInWithGoogle();
+      setIsLoginModalOpen(false);
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-zinc-950 font-sans selection:bg-emerald-100 selection:text-emerald-900 transition-colors">
@@ -17,8 +61,8 @@ export default function LandingPage() {
             <span className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">UniAce</span>
           </div>
           <button 
-            onClick={signInWithGoogle}
-            className="px-6 py-2.5 text-sm font-semibold text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors"
+            onClick={() => setIsLoginModalOpen(true)}
+            className="px-6 py-2.5 text-sm font-semibold bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200 rounded-xl transition-all"
           >
             Log In
           </button>
@@ -48,7 +92,7 @@ export default function LandingPage() {
 
             <div className="flex flex-col sm:flex-row gap-4 pt-4 w-full">
               <button 
-                onClick={signInWithGoogle}
+                onClick={() => setIsLoginModalOpen(true)}
                 className="px-8 py-4 bg-emerald-500 text-white rounded-2xl font-bold text-base sm:text-lg hover:bg-emerald-400 hover:scale-[1.02] transition-all shadow-xl shadow-emerald-200 dark:shadow-none flex items-center justify-center gap-2 group w-full"
               >
                 Get 7-Day Premium Access
@@ -202,7 +246,7 @@ export default function LandingPage() {
               Join the community of students mastering their subjects with UniAce today. Claim your premium access.
             </p>
             <button 
-              onClick={signInWithGoogle}
+              onClick={() => setIsLoginModalOpen(true)}
               className="px-10 py-5 bg-emerald-500 text-white rounded-2xl font-bold text-lg sm:text-xl hover:bg-emerald-400 hover:scale-105 transition-all shadow-lg shadow-emerald-500/25"
             >
               Get 7-Day Premium Access
@@ -224,6 +268,109 @@ export default function LandingPage() {
           <p className="text-slate-400 dark:text-zinc-500 text-sm">© 2024 UniAce Mastery Hub. All rights reserved.</p>
         </div>
       </footer>
+
+      {/* Unified Login Modal */}
+      <AnimatePresence>
+        {isLoginModalOpen && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              transition={{ type: "spring", duration: 0.4 }}
+              className="bg-white dark:bg-zinc-900 rounded-[2rem] w-full max-w-md p-8 border border-slate-200 dark:border-zinc-800 shadow-2xl relative"
+            >
+              <button 
+                onClick={() => {
+                  setIsLoginModalOpen(false);
+                  setErrorMessage('');
+                }}
+                className="absolute top-6 right-6 p-2 rounded-full hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-400 hover:text-slate-600 transition-all"
+              >
+                <X size={20} />
+              </button>
+
+              <div className="text-center mb-8">
+                <div className="w-12 h-12 bg-emerald-500 rounded-2xl flex items-center justify-center text-2xl mx-auto mb-4">
+                  🎓
+                </div>
+                <h3 className="text-2xl font-bold text-slate-900 dark:text-white">Welcome to UniAce</h3>
+                <p className="text-slate-500 text-xs mt-2">Log in with Google or use credentials provided by an administrator.</p>
+              </div>
+
+              {/* Social Login */}
+              <button
+                onClick={handleGoogleLogin}
+                className="w-full bg-slate-50 hover:bg-slate-100 dark:bg-zinc-800 dark:hover:bg-zinc-700/80 border border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-zinc-200 font-semibold py-3.5 rounded-2xl transition-all flex items-center justify-center gap-3 text-sm"
+              >
+                <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-5 h-5" />
+                Continue with Google
+              </button>
+
+              <div className="relative flex py-5 items-center">
+                <div className="flex-grow border-t border-slate-200 dark:border-zinc-800"></div>
+                <span className="flex-shrink mx-4 text-slate-400 text-xs font-bold uppercase tracking-widest">or</span>
+                <div className="flex-grow border-t border-slate-200 dark:border-zinc-800"></div>
+              </div>
+
+              {/* Email & Password Form */}
+              <form onSubmit={handleEmailLogin} className="space-y-4">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-widest mb-1.5">Email Address</label>
+                  <div className="relative">
+                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                    <input 
+                      type="email" 
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="e.g. name@university.edu"
+                      className="w-full pl-11 pr-4 py-3 bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-900 dark:text-white"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-widest mb-1.5">Password</label>
+                  <div className="relative">
+                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                    <input 
+                      type="password" 
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Enter secure password"
+                      className="w-full pl-11 pr-4 py-3 bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-900 dark:text-white font-mono"
+                      required
+                    />
+                  </div>
+                </div>
+
+                {errorMessage && (
+                  <div className="flex items-start gap-2 text-red-500 text-xs font-semibold bg-red-50 dark:bg-red-950/20 p-3 rounded-xl border border-red-100 dark:border-red-900/30">
+                    <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
+                    <span>{errorMessage}</span>
+                  </div>
+                )}
+
+                <button 
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="w-full py-3.5 bg-emerald-500 hover:bg-emerald-600 disabled:bg-emerald-500/50 text-white font-bold text-sm rounded-2xl shadow-lg shadow-emerald-500/20 transition-all flex items-center justify-center gap-2"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" />
+                      Signing In...
+                    </>
+                  ) : (
+                    'Sign In with Email'
+                  )}
+                </button>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
