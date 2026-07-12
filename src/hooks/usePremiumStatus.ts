@@ -20,7 +20,8 @@ export const usePremiumStatus = () => {
   const diffInMs = now.getTime() - trialStartDate.getTime();
   const sevenDaysInMs = 7 * 24 * 60 * 60 * 1000;
   
-  const isTrialActive = diffInMs < sevenDaysInMs;
+  const isStaff = ['tutor', 'moderator', 'admin'].includes(profile.role);
+  const isTrialActive = profile.plan_type === 'free' && !isStaff && (diffInMs < sevenDaysInMs);
   const daysRemaining = Math.max(0, Math.ceil((sevenDaysInMs - diffInMs) / (24 * 60 * 60 * 1000)));
   const hoursRemaining = Math.max(0, Math.ceil((sevenDaysInMs - diffInMs) / (60 * 60 * 1000)));
 

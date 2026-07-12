@@ -2267,7 +2267,15 @@ app.post('/api/admin/delete-user', verifyAuth, async (req, res) => {
     }
 
     // Delete from Firebase Auth
-    await app.auth().deleteUser(targetUserId);
+    try {
+      await app.auth().deleteUser(targetUserId);
+    } catch (authError: any) {
+      if (authError.code === 'auth/user-not-found' || (authError.message && authError.message.includes('no user record'))) {
+        console.warn(`User auth record for ${targetUserId} not found. Proceeding with Firestore document deletion.`);
+      } else {
+        throw authError;
+      }
+    }
 
     // Delete from Firestore
     await targetUserRef.delete();

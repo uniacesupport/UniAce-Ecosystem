@@ -133,7 +133,7 @@ export default function Sidebar({
                       </div>
                       <div className="overflow-hidden">
                         <p className="text-sm font-semibold text-white truncate max-w-[7rem]">{user.displayName}</p>
-                        <p className="text-[10px] text-zinc-400 font-medium">Student</p>
+                        <p className="text-[10px] text-zinc-400 font-medium capitalize">{profile?.role || 'Student'}</p>
                       </div>
                     </div>
                     <button

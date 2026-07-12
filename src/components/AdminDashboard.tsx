@@ -1758,8 +1758,8 @@ export default function AdminDashboard() {
         else if (role === 'moderator') stats.moderators++;
 
         if (data.lastActive) {
-          const lastActive = new Date(data.lastActive);
-          if (lastActive > oneDayAgo) stats.activeToday++;
+          const lastActive = data.lastActive.toDate ? data.lastActive.toDate() : (data.lastActive.seconds ? new Date(data.lastActive.seconds * 1000) : new Date(data.lastActive));
+          if (!isNaN(lastActive.getTime()) && lastActive > oneDayAgo) stats.activeToday++;
         }
       });
       
@@ -1801,8 +1801,8 @@ export default function AdminDashboard() {
         else if (role === 'moderator') stats.moderators++;
 
         if (data.lastActive) {
-          const lastActive = new Date(data.lastActive);
-          if (lastActive > oneDayAgo) stats.activeToday++;
+          const lastActive = data.lastActive.toDate ? data.lastActive.toDate() : (data.lastActive.seconds ? new Date(data.lastActive.seconds * 1000) : new Date(data.lastActive));
+          if (!isNaN(lastActive.getTime()) && lastActive > oneDayAgo) stats.activeToday++;
         }
       });
       
@@ -3960,7 +3960,7 @@ export default function AdminDashboard() {
                                </td>
                                <td className="py-4">
                                  <div className="text-xs text-slate-500">
-                                   {user.lastActive ? new Date(user.lastActive).toLocaleDateString() : 'Never'}
+                                   {user.lastActive ? (() => { const d = user.lastActive.toDate ? user.lastActive.toDate() : (user.lastActive.seconds ? new Date(user.lastActive.seconds * 1000) : new Date(user.lastActive)); return isNaN(d.getTime()) ? 'Never' : d.toLocaleDateString(); })() : 'Never'}
                                  </div>
                                </td>
                                <td className="py-4 text-right">
