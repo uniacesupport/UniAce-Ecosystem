@@ -19,8 +19,8 @@ import { getAdminApp, getDb, isFirebaseInitialized } from './server/firebaseAdmi
 
 dotenv.config();
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const currentFilename = typeof __filename !== 'undefined' ? __filename : fileURLToPath(import.meta.url);
+const currentDirname = typeof __dirname !== 'undefined' ? __dirname : path.dirname(currentFilename);
 
 import { initializeVectorStore, findRelevantContentSemantic, addVectorItem, removeVectorItem } from './server/vectorSearch';
 
