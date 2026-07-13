@@ -36,8 +36,11 @@ export function sanitizeLatex(content: any): any {
   if (content === null || content === undefined) return content;
   if (typeof content !== 'string') return content;
   
+  // Fix any \infinity or infinity with backslash in the raw text to \infty for KaTeX compatibility
+  let sanitized = content.replace(/\\infinity\b/gi, '\\infty');
+  
   // 0. Remove markdown code block wrappers if the AI incorrectly wrapped the entire response
-  let sanitized = content.replace(/^```(?:markdown)?\n([\s\S]*?)\n```$/g, '$1');
+  sanitized = sanitized.replace(/^```(?:markdown)?\n([\s\S]*?)\n```$/g, '$1');
 
   // 0.1. Disable indented code blocks by reducing any indentation that is 4 or more spaces to 2 spaces
   // (unless it's inside a fenced code block with ```). This prevents accidental indented code blocks.
@@ -73,8 +76,8 @@ export function sanitizeLatex(content: any): any {
   
   // Ensure $$ is on its own line for remark-math to parse it correctly as block math
   // This prevents unclosed block math from consuming the entire document and causing KaTeX errors
-  sanitized = sanitized.replace(/([^\n])\$\$/g, '$1\n$$$$');
-  sanitized = sanitized.replace(/\$\$([^\n])/g, '$$$$\n$1');
+  // sanitized = sanitized.replace(/([^\n])\$\$/g, '$1\n$$$$');
+  // sanitized = sanitized.replace(/\$\$([^\n])/g, '$$$$\n$1');
   
   // 2. Replace \( ... \) with $ ... $ for inline math
   sanitized = sanitized.replace(/\\\(/g, '$').replace(/\\\)/g, '$');
@@ -145,6 +148,8 @@ export function sanitizeLatex(content: any): any {
 
   const fixMathKeywords = (mathContent: string) => {
     let fixed = mathContent;
+    // Fix infinity -> infty
+    fixed = fixed.replace(/\\?infinity\b/gi, 'infty');
     for (const kw of mathKeywords) {
       const regex = new RegExp(`(?<!\\\\)\\b${kw}\\b`, 'g');
       fixed = fixed.replace(regex, `\\${kw}`);
@@ -154,12 +159,28 @@ export function sanitizeLatex(content: any): any {
 
   // Inside $$...$$ block math
   sanitized = sanitized.replace(/\$\$([\s\S]+?)\$\$/g, (match, mathContent) => {
-    return `$$${fixMathKeywords(mathContent)}$$`;
+    let fixedContent = mathContent.trim();
+    if (fixedContent.endsWith('\\') && !fixedContent.endsWith('\\\\')) {
+      fixedContent = fixedContent.slice(0, -1);
+    }
+    return `$$${fixMathKeywords(fixedContent)}$$`;
   });
 
   // Inside $...$ inline math
   sanitized = sanitized.replace(/\$([^$\n]+?)\$/g, (match, mathContent) => {
-    return `$${fixMathKeywords(mathContent)}$`;
+    let fixedContent = mathContent.trim();
+    if (fixedContent.endsWith('\\') && !fixedContent.endsWith('\\\\')) {
+      fixedContent = fixedContent.slice(0, -1);
+    }
+    
+    // Heuristic: If it looks like a runaway math block that consumed plain text, don't fix keywords
+    const stripped = fixedContent.replace(/\\(text|mathrm|textbf|textit)\{.*?\}/g, '');
+    const words = stripped.match(/(?<!\\)[a-zA-Z]{3,}/g) || [];
+    if (words.length >= 3) {
+      return `$${fixedContent}$`; // Return as-is without fixing keywords
+    }
+    
+    return `$${fixMathKeywords(fixedContent)}$`;
   });
 
   // For cases outside of math blocks that look exactly like interval notation (e.g. )cup( or ) cup ( )
@@ -295,14 +316,26 @@ async function callGenerateAPI(prompt: string, type: 'skeleton' | 'module' | 'le
           }
         }
         
-        // Pre-process to fix common unescaped LaTeX commands in JSON
-        // This prevents jsonrepair from stripping backslashes from invalid escape sequences like \e
+        // Pre-process to fix common unescaped LaTeX commands and characters in JSON
+        // This prevents jsonrepair from stripping backslashes from invalid escape sequences
         try {
-          const latexKeywords = ['text', 'begin', 'end', 'frac', 'omega', 'Omega', 'alpha', 'beta', 'gamma', 'theta', 'mu', 'pi', 'sum', 'int', 'sqrt', 'label', 'tag', 'align', 'matrix', 'cases', 'Rightarrow', 'Leftarrow', 'rightarrow', 'leftarrow', 'equiv', 'approx', 'neq', 'leq', 'geq', 'times', 'div', 'pm', 'mp', 'circ', 'cdot', 'ldots', 'cdots', 'vdots', 'ddots', 'sin', 'cos', 'tan', 'csc', 'sec', 'cot', 'arcsin', 'arccos', 'arctan', 'sinh', 'cosh', 'tanh', 'log', 'ln', 'exp', 'lim', 'max', 'min', 'inf', 'sup', 'det', 'trace', 'dim', 'ker', 'hom', 'hat', 'bar', 'vec', 'dot', 'ddot', 'mathcal', 'mathbb', 'mathfrak', 'mathscr', 'mathsf', 'mathtt', 'mathbf', 'mathit', 'mathrm', 'boldsymbol', 'quad', 'qquad', 'left', 'right', 'langle', 'rangle', 'lfloor', 'rfloor', 'lceil', 'rceil', 'bigcup', 'bigcap', 'cup', 'cap', 'setminus', 'subset', 'supset', 'subseteq', 'supseteq', 'notin', 'exists', 'nexists', 'forall', 'nabla', 'partial', 'propto', 'infty', 'aleph', 'ell', 'wp', 'Re', 'Im', 'top', 'bot', 'emptyset', 'varnothing', 'triangle', 'square', 'bigcirc', 'bullet', 'star', 'ast', 'oplus', 'ominus', 'otimes', 'oslash', 'odot', 'dagger', 'ddagger', 'amalg', 'models', 'vdash', 'dashv', 'Vdash', 'Vvdash', 'vDash', 'simeq', 'asymp', 'doteq', 'bowtie', 'ltimes', 'rtimes', 'smile', 'frown', 'perp', 'mid', 'parallel', ' '];
-          const regex = new RegExp(`(?<!\\\\)\\\\(${latexKeywords.join('|')})`, 'g');
-          jsonToRepair = jsonToRepair.replace(regex, '\\\\$1');
+          jsonToRepair = jsonToRepair.replace(/(?<!\\)\\(.)/g, (match, char, offset, fullString) => {
+            // Leave valid JSON escape sequences untouched: \", \\, \/, \b, \f, \n, \r, \t
+            if (char === '"' || char === '\\' || char === '/' || char === 'b' || char === 'f' || char === 'n' || char === 'r' || char === 't') {
+              return match;
+            }
+            if (char === 'u') {
+              // Check if followed by 4 hex digits (unicode escape)
+              const remaining = fullString.substring(offset + 2); // 2 is length of '\\u'
+              if (/^[0-9a-fA-F]{4}/.test(remaining)) {
+                return match;
+              }
+            }
+            // Double escape any other character (LaTeX commands, math characters, etc.)
+            return '\\\\' + char;
+          });
         } catch (e) {
-          console.warn('Regex lookbehind not supported or failed, skipping LaTeX pre-processing', e);
+          console.warn('LaTeX pre-processing failed, skipping', e);
         }
         
         try {

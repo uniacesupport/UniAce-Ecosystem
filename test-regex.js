@@ -1,12 +1,11 @@
-const chart = `flowchart TD
-    A["Early Explorations (Pre-1900)"] --> B["Da Vinci's Designs"]
-    C[Simple Node] --> D[(Database)]
-    E((Circle)) --> F{Decision}
-    G[Node with (parens)] --> H[Node with [brackets]]
-`;
-
-let sanitized = chart;
-sanitized = sanitized.replace(/([a-zA-Z0-9_-]+)([\(\[\{>]+)(.*?)([\)\]\}]+)/g, (match, id, bracketIn, text, bracketOut) => {
-    console.log({match, id, bracketIn, text, bracketOut});
-    return match;
-});
+let text = "where $E$ is the magnitude";
+text = text.replace(/([^\n])\$\$/g, '$1\n$$$$');
+console.log("1", text);
+text = text.replace(/\$\$([^\n])/g, '$$$$\n$1');
+console.log("2", text);
+text = text.replace(/\\\(/g, '$').replace(/\\\)/g, '$');
+console.log("3", text);
+text = text.replace(/\\\\([a-zA-Z]+)/g, '\\$1');
+console.log("4", text);
+text = text.replace(/(^|[^a-zA-Z\\])(cdot|rightarrow|leftarrow|Rightarrow|Leftarrow|infty|alpha|beta|gamma|delta|theta|omega|pi|sigma|mu|lambda)(?=[^a-zA-Z]|$)/g, '$1\\$2');
+console.log("5", text);
