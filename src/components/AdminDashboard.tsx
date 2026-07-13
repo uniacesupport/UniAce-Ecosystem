@@ -30,30 +30,6 @@ import AdminAffiliates from './AdminAffiliates';
 
 import { jsonrepair } from 'jsonrepair';
 
-function parseFirestoreDate(val: any): Date | null {
-  if (!val) return null;
-  if (val instanceof Date) return val;
-  if (typeof val.toDate === 'function') {
-    try {
-      return val.toDate();
-    } catch (e) {}
-  }
-  if (typeof val.seconds === 'number') {
-    return new Date(val.seconds * 1000);
-  }
-  if (typeof val._seconds === 'number') {
-    return new Date(val._seconds * 1000);
-  }
-  if (val.seconds && typeof val.seconds.seconds === 'number') {
-    return new Date(val.seconds.seconds * 1000);
-  }
-  if (typeof val === 'string' || typeof val === 'number') {
-    const d = new Date(val);
-    if (!isNaN(d.getTime())) return d;
-  }
-  return null;
-}
-
 export default function AdminDashboard() {
   const { courses, refreshCourses } = useCourses();
   const [archivedCourses, setArchivedCourses] = useState<Record<string, Course>>({});
@@ -1782,8 +1758,8 @@ export default function AdminDashboard() {
         else if (role === 'moderator') stats.moderators++;
 
         if (data.lastActive) {
-          const lastActive = parseFirestoreDate(data.lastActive);
-          if (lastActive && !isNaN(lastActive.getTime()) && lastActive > oneDayAgo) stats.activeToday++;
+          const lastActive = data.lastActive.toDate ? data.lastActive.toDate() : (data.lastActive.seconds ? new Date(data.lastActive.seconds * 1000) : new Date(data.lastActive));
+          if (!isNaN(lastActive.getTime()) && lastActive > oneDayAgo) stats.activeToday++;
         }
       });
       
@@ -1794,47 +1770,6 @@ export default function AdminDashboard() {
     } finally {
       setIsLoadingUsers(false);
     }
-  };
-
-  const [isPruningOrphans, setIsPruningOrphans] = useState(false);
-
-  const handlePruneOrphans = async () => {
-    if (!isAdmin) {
-      showToast('Unauthorized: Admin access required', 'error');
-      return;
-    }
-    
-    setConfirmModal({
-      title: 'Prune Orphaned User Records?',
-      message: 'This will compare all user accounts in Firestore against Firebase Authentication. Any Firestore user document that has no corresponding active Authentication record (e.g., users deleted from Firebase console directly) will be permanently pruned. This keeps your directory perfectly synchronized.',
-      onConfirm: async () => {
-        setConfirmModal(null);
-        setIsPruningOrphans(true);
-        try {
-          const idToken = await auth.currentUser?.getIdToken();
-          const response = await fetch('/api/admin/prune-orphans', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${idToken}`
-            }
-          });
-          
-          const data = await response.json();
-          if (response.ok) {
-            showToast(data.message || `Prune complete. Removed ${data.prunedCount} orphaned records.`, 'success');
-            fetchUsers();
-          } else {
-            showToast(data.error || 'Failed to prune orphaned users', 'error');
-          }
-        } catch (error: any) {
-          console.error('Error pruning orphaned users:', error);
-          showToast(`Error: ${error.message}`, 'error');
-        } finally {
-          setIsPruningOrphans(false);
-        }
-      }
-    });
   };
 
   useEffect(() => {
@@ -1866,8 +1801,8 @@ export default function AdminDashboard() {
         else if (role === 'moderator') stats.moderators++;
 
         if (data.lastActive) {
-          const lastActive = parseFirestoreDate(data.lastActive);
-          if (lastActive && !isNaN(lastActive.getTime()) && lastActive > oneDayAgo) stats.activeToday++;
+          const lastActive = data.lastActive.toDate ? data.lastActive.toDate() : (data.lastActive.seconds ? new Date(data.lastActive.seconds * 1000) : new Date(data.lastActive));
+          if (!isNaN(lastActive.getTime()) && lastActive > oneDayAgo) stats.activeToday++;
         }
       });
       
@@ -3911,35 +3846,24 @@ export default function AdminDashboard() {
                 </button>
 
                 {isAdmin && (
-                  <div className="flex gap-2">
-                    <button
-                      onClick={handlePruneOrphans}
-                      disabled={isPruningOrphans}
-                      className="flex items-center gap-2 px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-lg shadow-amber-500/20 transition-all active:scale-95 disabled:opacity-50"
-                      title="Sync with Firebase Authentication and prune users deleted in Firebase console"
-                    >
-                      {isPruningOrphans ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
-                      Sync & Prune Orphans
-                    </button>
-                    <button
-                      onClick={() => {
-                        setUserFormName('');
-                        setUserFormEmail('');
-                        setUserFormPassword('');
-                        setUserFormRole('student');
-                        setUserFormDepartment('');
-                        setUserFormAcademicLevel('100');
-                        setUserFormPlanType('free');
-                        setUserFormSparks(50);
-                        setSelectedUserForEdit(null);
-                        setIsAddUserModalOpen(true);
-                      }}
-                      className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-lg shadow-blue-500/20 transition-all active:scale-95"
-                    >
-                      <Plus size={16} />
-                      Add User
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => {
+                      setUserFormName('');
+                      setUserFormEmail('');
+                      setUserFormPassword('');
+                      setUserFormRole('student');
+                      setUserFormDepartment('');
+                      setUserFormAcademicLevel('100');
+                      setUserFormPlanType('free');
+                      setUserFormSparks(50);
+                      setSelectedUserForEdit(null);
+                      setIsAddUserModalOpen(true);
+                    }}
+                    className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-lg shadow-blue-500/20 transition-all active:scale-95"
+                  >
+                    <Plus size={16} />
+                    Add User
+                  </button>
                 )}
               </div>
             </div>
@@ -4036,7 +3960,7 @@ export default function AdminDashboard() {
                                </td>
                                <td className="py-4">
                                  <div className="text-xs text-slate-500">
-                                   {user.lastActive ? (() => { const d = parseFirestoreDate(user.lastActive); return (!d || isNaN(d.getTime())) ? 'Never' : d.toLocaleDateString(); })() : 'Never'}
+                                   {user.lastActive ? (() => { const d = user.lastActive.toDate ? user.lastActive.toDate() : (user.lastActive.seconds ? new Date(user.lastActive.seconds * 1000) : new Date(user.lastActive)); return isNaN(d.getTime()) ? 'Never' : d.toLocaleDateString(); })() : 'Never'}
                                  </div>
                                </td>
                                <td className="py-4 text-right">

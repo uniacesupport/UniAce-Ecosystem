@@ -68,7 +68,6 @@ async function retry<T>(fn: () => Promise<T>, providerName: string, retries = 3,
     const statusCode = error.statusCode || error.status || (error.message?.match(/\b(\d{3})\b/)?.[1] ? parseInt(error.message.match(/\b(\d{3})\b/)[1]) : undefined);
     
     // Non-retryable errors
-    if (error.message === 'ALL_KEYS_EXHAUSTED') throw new Error('All API keys for ' + providerName + ' are exhausted or invalid. Please check your configuration.');
     const isUnauthorized = statusCode === 401 || 
                            error.message?.includes('invalid_api_key') || 
                            error.message?.includes('Unauthorized') ||
@@ -229,8 +228,6 @@ export class DynamicKeyRotator {
 
     // If all keys are exhausted, clear the set and try again (maybe limits reset)
     if (attempts >= activeKeys.length) {
-      throw new Error("ALL_KEYS_EXHAUSTED");
-
       this.exhaustedKeys.clear();
       key = activeKeys[this.currentIndex % activeKeys.length];
     }
@@ -349,7 +346,7 @@ export class GeminiDirectProvider implements ModelProvider {
 
       try {
         const model = ai.models.generateContent({
-          model: "gemini-3.5-flash",
+          model: "gemini-3-flash-preview",
           contents,
           config: {
             systemInstruction,
@@ -389,7 +386,7 @@ export class GeminiDirectProvider implements ModelProvider {
 
       try {
         const result = await ai.models.generateContentStream({
-          model: "gemini-3.5-flash",
+          model: "gemini-3-flash-preview",
           contents,
           config: {
             systemInstruction,

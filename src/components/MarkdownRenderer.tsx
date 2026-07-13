@@ -191,30 +191,10 @@ function fixMarkdownTables(text: string): string {
 function preprocessMarkdownContent(text: string): string {
   if (typeof text !== 'string' || !text) return '';
 
-  // Fix any \infinity or infinity with backslash in the raw text to \infty for KaTeX compatibility
-  let processedText = text.replace(/\\infinity\b/gi, '\\infty');
-
-  // 1. Temporarily extract and protect math blocks from regex operations that strip backslashes
-  const mathBlocks: string[] = [];
-  let protectedText = processedText;
-
-  // Protect block math $$ ... $$
-  protectedText = protectedText.replace(/\$\$([\s\S]+?)\$\$/g, (match) => {
-    mathBlocks.push(match);
-    return `__MATH_BLOCK_PLACEHOLDER_${mathBlocks.length - 1}__`;
-  });
-
-  // Protect inline math $ ... $
-  // We match inline math, ensuring we do not cross line boundaries or match empty/whitespace-only $
-  protectedText = protectedText.replace(/\$([^$\n]+?)\$/g, (match) => {
-    mathBlocks.push(match);
-    return `__MATH_BLOCK_PLACEHOLDER_${mathBlocks.length - 1}__`;
-  });
-
-  // 2. Disable indented code blocks by reducing any indentation that is 4 or more spaces to 2 spaces
+  // 0. Disable indented code blocks by reducing any indentation that is 4 or more spaces to 2 spaces
   // (unless it's inside a fenced code block with ```). This is because AI-generated lists/paragraphs
   // often get accidentally indented by 4+ spaces, which standard markdown renders as preformatted code blocks.
-  const lines = protectedText.split('\n');
+  const lines = text.split('\n');
   let inFencedCodeBlock = false;
   const processedLines = lines.map(line => {
     if (line.trim().startsWith('```')) {
@@ -235,118 +215,84 @@ function preprocessMarkdownContent(text: string): string {
     }
     return line;
   });
-  protectedText = processedLines.join('\n');
+  let processed = processedLines.join('\n');
+
+  // 1. Convert any mistakenly wrapped single-line paragraphs from math formatting to normal text
+  // If a block $ ... $ has 3 or more spaces, and lacks clear mathematical characters/indicators, strip the outer dollar signs.
+  // CRITICAL: We restrict matching to single lines to prevent an unclosed single dollar sign from crossing line boundaries and consuming the entire document.
+  processed = processed.replace(/\$([^$\n]+)\$/g, (match, p1) => {
+    const trimmed = p1.trim();
+    const spaceCount = (trimmed.match(/\s+/g) || []).length;
+    const hasMathSymbols = /([=+\-*/^_{}\\]|\\frac|\\sqrt|\\sum|\\int|\\alpha|\\beta|\\theta|\\pi|\\sigma|\\lambda|\\delta|\\partial|\\infty|\\ge|\\le|\\ne|\\cdot|\\times)/.test(trimmed);
+    
+    if (spaceCount >= 3 && !hasMathSymbols) {
+      return trimmed;
+    }
+    return match;
+  });
+
+  // 2. Also strip double dollar signs if used purely for a regular text paragraph
+  processed = processed.replace(/\$\$([^$\n]+)\$\$/g, (match, p1) => {
+    const trimmed = p1.trim();
+    const spaceCount = (trimmed.match(/\s+/g) || []).length;
+    const hasMathSymbols = /([=+\-*/^_{}\\]|\\frac|\\sqrt|\\sum|\\int|\\alpha|\\beta|\\theta|\\pi|\\sigma|\\lambda|\\delta|\\partial|\\infty|\\ge|\\le|\\ne|\\cdot|\\times)/.test(trimmed);
+    
+    if (spaceCount >= 3 && !hasMathSymbols) {
+      return trimmed;
+    }
+    return match;
+  });
 
   // 3. Fix unescaped backslashes that are followed by regular letters (but aren't real LaTeX commands)
   // This avoids KaTeX trying to interpret regular text containing \something (like \delocalized) as a math macro
-  // Since we are running this ONLY on protectedText (which has all math blocks removed), this is completely safe!
   const validCommands = new Set([
-    'frac', 'sqrt', 'sum', 'int', 'alpha', 'beta', 'theta', 'pi', 'sigma', 'lambda', 'delta', 'partial', 'infinity', 'infty', 'ge', 'le', 'ne', 'times', 'div', 'pm', 'mp', 'approx', 'equiv', 'cdots', 'dots', 'overline', 'underline', 'hat', 'bar', 'tilde', 'vec', 'text', 'left', 'right', 'begin', 'end', 'align', 'matrix', 'pmatrix', 'bmatrix', 'vmatrix', 'Vmatrix', 'cases', 'del', 'nabla', 'degree', 'sin', 'cos', 'tan', 'log', 'ln', 'lim', 'micro', 'mu', 'rho', 'phi', 'psi', 'omega', 'gamma', 'delta', 'epsilon', 'zeta', 'eta', 'iota', 'kappa', 'nu', 'xi', 'omicron', 'tau', 'upsilon', 'chi', 'Gamma', 'Delta', 'Theta', 'Lambda', 'Xi', 'Pi', 'Sigma', 'Upsilon', 'Phi', 'Psi', 'Omega', 'cdot', 'tag', 'limits', 'varepsilon',
+    'frac', 'sqrt', 'sum', 'int', 'alpha', 'beta', 'theta', 'pi', 'sigma', 'lambda', 'delta', 'partial', 'infinity', 'infty', 'ge', 'le', 'ne', 'times', 'div', 'pm', 'mp', 'approx', 'equiv', 'cdots', 'dots', 'overline', 'underline', 'hat', 'bar', 'tilde', 'vec', 'text', 'left', 'right', 'begin', 'end', 'align', 'matrix', 'pmatrix', 'bmatrix', 'vmatrix', 'Vmatrix', 'cases', 'del', 'nabla', 'degree', 'sin', 'cos', 'tan', 'log', 'ln', 'lim', 'micro', 'mu', 'rho', 'phi', 'psi', 'omega', 'gamma', 'delta', 'epsilon', 'zeta', 'eta', 'iota', 'kappa', 'nu', 'xi', 'omicron', 'tau', 'upsilon', 'chi', 'Gamma', 'Delta', 'Theta', 'Lambda', 'Xi', 'Pi', 'Sigma', 'Upsilon', 'Phi', 'Psi', 'Omega', 'cdot',
     'rightarrow', 'leftarrow', 'to', 'leftrightarrow', 'Rightarrow', 'Leftarrow', 'Leftrightarrow', 'mathrm', 'mathbf', 'mathit', 'mathsf', 'mathtt', 'mathcal', 'mathbb', 'mathfrak', 'ce', 'deg', 'leq', 'geq', 'neq', 'cong', 'propto', 'sim', 'subset', 'supset', 'subseteq', 'supseteq', 'in', 'ni', 'notin',
     'cup', 'cap', 'forall', 'exists', 'implies', 'iff', 'varnothing', 'emptyset', 'setminus'
   ]);
 
-  protectedText = protectedText.replace(/\\([a-zA-Z]+)/g, (match, word) => {
+  processed = processed.replace(/\\([a-zA-Z]+)/g, (match, word) => {
     if (validCommands.has(word.toLowerCase())) {
       return match; // Keep valid LaTeX command
     }
     return word; // Strip backslash from regular word (e.g., \delocalized -> delocalized)
   });
 
+  // 4. Fix missing backslashes for all math/logic/set keywords inside math blocks or interval notations
+  const mathKeywords = [
+    'cup', 'cap', 'subset', 'supset', 'subseteq', 'supseteq', 'in', 'notin', 
+    'setminus', 'emptyset', 'varnothing', 'infty', 'forall', 'exists', 
+    'implies', 'iff', 'to', 'le', 'leq', 'ge', 'geq', 'ne', 'neq', 
+    'approx', 'times', 'pm', 'div', 'cdot', 'alpha', 'beta', 'gamma', 
+    'delta', 'theta', 'omega', 'pi', 'sigma', 'mu', 'lambda', 'tau', 
+    'phi', 'psi'
+  ];
+
+  const fixMathKeywords = (mathContent: string) => {
+    let fixed = mathContent;
+    for (const kw of mathKeywords) {
+      const regex = new RegExp(`(?<!\\\\)\\b${kw}\\b`, 'g');
+      fixed = fixed.replace(regex, `\\${kw}`);
+    }
+    return fixed;
+  };
+
+  // Inside $$...$$ block math
+  processed = processed.replace(/\$\$([\s\S]+?)\$\$/g, (match, mathContent) => {
+    return `$$${fixMathKeywords(mathContent)}$$`;
+  });
+
+  // Inside $...$ inline math
+  processed = processed.replace(/\$([^$\n]+?)\$/g, (match, mathContent) => {
+    return `$${fixMathKeywords(mathContent)}$`;
+  });
+
   // For cases outside of math blocks that look exactly like interval notation (e.g. )cup( or ) cup ( )
-  protectedText = protectedText.replace(/(?<=[)\]])\s*(cup|cap)\s*(?=[([\]])/gi, (match, p1) => {
+  processed = processed.replace(/(?<=[)\]])\s*(cup|cap)\s*(?=[([\]])/gi, (match, p1) => {
     return p1.toLowerCase() === 'cup' ? '\\cup' : '\\cap';
   });
 
-  // 4. Restore the math blocks and apply math-specific corrections inside them
-  let restored = protectedText;
-  for (let i = 0; i < mathBlocks.length; i++) {
-    restored = restored.replace(`__MATH_BLOCK_PLACEHOLDER_${i}__`, () => {
-      const mathContent = mathBlocks[i];
-      
-      // Perform math-specific improvements inside the math blocks
-      // A. Convert any mistakenly stripped keywords or unescaped keywords inside math block back to LaTeX commands
-      const mathKeywords = [
-        'cup', 'cap', 'subset', 'supset', 'subseteq', 'supseteq', 'in', 'notin', 
-        'setminus', 'emptyset', 'varnothing', 'infty', 'forall', 'exists', 
-        'implies', 'iff', 'to', 'le', 'leq', 'ge', 'geq', 'ne', 'neq', 
-        'approx', 'times', 'pm', 'div', 'cdot', 'alpha', 'beta', 'gamma', 
-        'delta', 'theta', 'omega', 'pi', 'sigma', 'mu', 'lambda', 'tau', 
-        'phi', 'psi', 'varepsilon', 'varphi', 'limits', 'tag', 'vec', 'hat'
-      ];
-
-      const isBlock = mathContent.startsWith('$$');
-      let inner = isBlock ? mathContent.slice(2, -2) : mathContent.slice(1, -1);
-      
-      inner = inner.trim();
-      if (inner.endsWith('\\') && !inner.endsWith('\\\\')) {
-        inner = inner.slice(0, -1);
-      }
-      
-      let fixedInner = inner;
-      
-      // Fix infinity -> infty
-      fixedInner = fixedInner.replace(/\\?infinity\b/gi, 'infty');
-      
-      // Heuristic: If it looks like a runaway math block that consumed plain text, don't fix keywords
-      const stripped = fixedInner.replace(/\\(text|mathrm|textbf|textit)\{.*?\}/g, '');
-      const words = stripped.match(/(?<!\\)[a-zA-Z]{3,}/g) || [];
-      const isRunaway = words.length >= 3 && !isBlock;
-      
-      if (isRunaway) {
-        // Runaway block! Return as regular prose (no math delimiters).
-        // Un-escape incorrectly escaped english words that might have been saved in the DB
-        fixedInner = fixedInner.replace(/\\(in|to|cap|cup|times|pm|div|cdot|hat|vec|text)\b/gi, '$1');
-        // Fix escaped spaces like E\ 
-        fixedInner = fixedInner.replace(/\\\s/g, ' ');
-        // Strip trailing backslash if any
-        if (fixedInner.endsWith('\\')) fixedInner = fixedInner.slice(0, -1);
-        return fixedInner;
-      }
-
-      // Fix unescaped keywords in math block
-      for (const kw of mathKeywords) {
-        const regex = new RegExp(`(?<!\\\\)\\b${kw}\\b`, 'g');
-        fixedInner = fixedInner.replace(regex, `\\${kw}`);
-      }
-      
-      // Ensure standard limits usage for sum, int, prod inside display math block
-      fixedInner = fixedInner.replace(/\\?sum_?limits/g, '\\sum\\limits');
-      fixedInner = fixedInner.replace(/\\?int_?limits/g, '\\int\\limits');
-      fixedInner = fixedInner.replace(/\\?prod_?limits/g, '\\prod\\limits');
-
-      // Fix equation tags like tag1, tag2 -> \tag{1}, \tag{2}
-      fixedInner = fixedInner.replace(/\btag\s*(\d+)\b/g, '\\tag{$1}');
-
-      return isBlock ? `$$${fixedInner}$$` : `$${fixedInner}$`;
-    });
-  }
-
-  // 5. Convert any mistakenly wrapped single-line paragraphs from math formatting to normal text
-  // If a block $ ... $ has 3 or more spaces, and lacks clear mathematical characters/indicators, strip the outer dollar signs.
-  restored = restored.replace(/\$([^$\n]+)\$/g, (match, p1) => {
-    const trimmed = p1.trim();
-    const spaceCount = (trimmed.match(/\s+/g) || []).length;
-    const hasMathSymbols = /([=+\-*/^_{}\\]|\\frac|\\sqrt|\\sum|\\int|\\alpha|\\beta|\\theta|\\pi|\\sigma|\\lambda|\\delta|\\partial|\\infty|\\ge|\\le|\\ne|\\cdot|\\times)/.test(trimmed);
-    
-    if (spaceCount >= 3 && !hasMathSymbols) {
-      return trimmed;
-    }
-    return match;
-  });
-
-  restored = restored.replace(/\$\$([^$\n]+)\$\$/g, (match, p1) => {
-    const trimmed = p1.trim();
-    const spaceCount = (trimmed.match(/\s+/g) || []).length;
-    const hasMathSymbols = /([=+\-*/^_{}\\]|\\frac|\\sqrt|\\sum|\\int|\\alpha|\\beta|\\theta|\\pi|\\sigma|\\lambda|\\delta|\\partial|\\infty|\\ge|\\le|\\ne|\\cdot|\\times)/.test(trimmed);
-    
-    if (spaceCount >= 3 && !hasMathSymbols) {
-      return trimmed;
-    }
-    return match;
-  });
-
-  return restored;
+  return processed;
 }
 
 export default function MarkdownRenderer({ content = '', className = '' }: MarkdownRendererProps) {
