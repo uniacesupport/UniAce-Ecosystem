@@ -55,9 +55,7 @@ export default function LandingPage() {
       <nav className="fixed w-full bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md z-50 border-b border-slate-100 dark:border-zinc-800">
         <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-200 dark:shadow-none text-2xl">
-              🎓
-            </div>
+            <img src="/logo.jpg" alt="UniAce Logo" className="w-10 h-10 rounded-xl shadow-lg shadow-emerald-200 dark:shadow-none object-cover" />
             <span className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">UniAce</span>
           </div>
           <button 
@@ -260,9 +258,7 @@ export default function LandingPage() {
       <footer className="py-12 border-t border-slate-100 dark:border-zinc-800 bg-white dark:bg-zinc-950 transition-colors">
         <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-6">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-slate-900 dark:bg-zinc-800 rounded-lg flex items-center justify-center text-xl">
-              🎓
-            </div>
+            <img src="/logo.jpg" alt="UniAce Logo" className="w-8 h-8 rounded-lg object-cover" />
             <span className="font-bold text-slate-900 dark:text-white">UniAce</span>
           </div>
           <p className="text-slate-400 dark:text-zinc-500 text-sm">© 2024 UniAce Mastery Hub. All rights reserved.</p>
@@ -291,9 +287,7 @@ export default function LandingPage() {
               </button>
 
               <div className="text-center mb-8">
-                <div className="w-12 h-12 bg-emerald-500 rounded-2xl flex items-center justify-center text-2xl mx-auto mb-4">
-                  🎓
-                </div>
+                <img src="/logo.jpg" alt="UniAce Logo" className="w-12 h-12 rounded-2xl mx-auto mb-4 object-cover" />
                 <h3 className="text-2xl font-bold text-slate-900 dark:text-white">Welcome to UniAce</h3>
                 <p className="text-slate-500 text-xs mt-2">Log in with Google or use credentials provided by an administrator.</p>
               </div>

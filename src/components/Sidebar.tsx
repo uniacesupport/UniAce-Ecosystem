@@ -86,9 +86,7 @@ export default function Sidebar({
           >
             <div className="p-6 border-b border-slate-800 dark:border-zinc-900 flex justify-between items-center">
               <div className="flex items-center gap-3">
-                <div className={`${theme.bg} w-9 h-9 rounded-xl shadow-lg ${theme.shadow} flex items-center justify-center text-xl`}>
-                  🎓
-                </div>
+                <img src="/logo.jpg" alt="UniAce Logo" className="w-9 h-9 rounded-xl object-cover shadow-lg" />
                 <div>
                   <h1 className="text-lg font-black tracking-tight text-white leading-none">UniAce Hub</h1>
                   <p className={`${theme.text} text-[9px] font-bold uppercase tracking-widest mt-1`}>
