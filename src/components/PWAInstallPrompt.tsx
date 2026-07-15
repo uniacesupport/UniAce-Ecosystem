@@ -1,4 +1,4 @@
-import { Download, X, Smartphone, Monitor, Zap, Shield, Sparkles, ChevronRight } from 'lucide-react';
+import { Download, X, Smartphone, Monitor, Zap, Shield, Sparkles, ChevronRight, Share } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
@@ -7,6 +7,7 @@ export default function PWAInstallPrompt() {
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isVisible, setIsVisible] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
+  const [isIosDevice, setIsIosDevice] = useState(false);
   const { user } = useAuth();
 
   useEffect(() => {
@@ -17,49 +18,63 @@ export default function PWAInstallPrompt() {
     };
     checkStandalone();
 
+    const userAgent = window.navigator.userAgent.toLowerCase();
+    const ios = /iphone|ipad|ipod/.test(userAgent);
+    setIsIosDevice(ios);
+
+    const hasDeclined = localStorage.getItem('pwa_prompt_declined') === 'true';
+
+    let installTimer: any;
+
     const handleBeforeInstallPrompt = (e: any) => {
       e.preventDefault();
-      const hasDeclined = localStorage.getItem('pwa_prompt_declined') === 'true';
       if (hasDeclined) return;
+
       setDeferredPrompt(e);
-      const timer = setTimeout(() => {
+      
+      installTimer = setTimeout(() => {
         if (!isStandalone) {
           setIsVisible(true);
         }
       }, user ? 5000 : 2000);
-      return () => clearTimeout(timer);
     };
-    
-    // Check if we are on iOS/Safari which doesn't support beforeinstallprompt easily
-    const isIos = () => {
-      const userAgent = window.navigator.userAgent.toLowerCase();
-      return /iphone|ipad|ipod/.test(userAgent);
-    };
-    
-    // Aggressive fallback for unauthenticated users (Landing page) if they haven't declined
-    if (!user && !isStandalone && localStorage.getItem('pwa_prompt_declined') !== 'true') {
-      setTimeout(() => setIsVisible(true), 1500);
-    }
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    // Fallback for iOS or cases where beforeinstallprompt doesn't fire
+    let aggressiveTimer: any;
+    if (!isStandalone && !hasDeclined) {
+      aggressiveTimer = setTimeout(() => {
+        setIsVisible(true);
+      }, user ? 3000 : 1500);
+    }
 
     window.addEventListener('appinstalled', () => {
       setDeferredPrompt(null);
       setIsVisible(false);
       setIsStandalone(true);
-      console.log('UniAce was installed');
     });
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      if (installTimer) clearTimeout(installTimer);
+      if (aggressiveTimer) clearTimeout(aggressiveTimer);
     };
   }, [isStandalone, user]);
 
   const handleInstall = async () => {
-    if (!deferredPrompt) return;
+    if (isIosDevice) {
+      alert('To install on iOS:\n1. Tap the Share button at the bottom of Safari.\n2. Scroll down and tap "Add to Home Screen".');
+      return;
+    }
+
+    if (!deferredPrompt) {
+       alert('To install:\nLook for the install icon (a screen with a down arrow) in your browser address bar or use the browser menu to "Add to Home screen" / "Install App".');
+       return;
+    }
+    
     deferredPrompt.prompt();
     const { outcome } = await deferredPrompt.userChoice;
-    console.log(`User response to the install prompt: ${outcome}`);
     setDeferredPrompt(null);
     setIsVisible(false);
   };
@@ -69,7 +84,7 @@ export default function PWAInstallPrompt() {
     setIsVisible(false);
   };
 
-  if (isStandalone || !deferredPrompt) return null;
+  if (isStandalone) return null;
 
   // If not authenticated (Landing Page), show a highly descriptive, wider banner
   if (!user) {
