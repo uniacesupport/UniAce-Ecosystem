@@ -1,4 +1,6 @@
-import { Download, X, Smartphone, Monitor, Zap, Shield, Sparkles, ChevronRight } from 'lucide-react';
+const fs = require('fs');
+
+const content = `import { Download, X, Smartphone, Monitor, Zap, Shield, Sparkles, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
@@ -20,10 +22,6 @@ export default function PWAInstallPrompt() {
     const handleBeforeInstallPrompt = (e: any) => {
       // Prevent Chrome 67 and earlier from automatically showing the prompt
       e.preventDefault();
-      
-      const hasDeclined = localStorage.getItem('pwa_prompt_declined') === 'true';
-      if (hasDeclined) return;
-
       // Stash the event so it can be triggered later.
       setDeferredPrompt(e);
       
@@ -54,13 +52,8 @@ export default function PWAInstallPrompt() {
     if (!deferredPrompt) return;
     deferredPrompt.prompt();
     const { outcome } = await deferredPrompt.userChoice;
-    console.log(`User response to the install prompt: ${outcome}`);
+    console.log(\`User response to the install prompt: \${outcome}\`);
     setDeferredPrompt(null);
-    setIsVisible(false);
-  };
-
-  const handleDecline = () => {
-    localStorage.setItem('pwa_prompt_declined', 'true');
     setIsVisible(false);
   };
 
@@ -123,18 +116,12 @@ export default function PWAInstallPrompt() {
                   </div>
                 </div>
 
-                <div className="w-full md:w-auto flex flex-col sm:flex-row items-center gap-3">
+                <div className="w-full md:w-auto flex flex-col sm:flex-row gap-3">
                   <button
                     onClick={handleInstall}
-                    className="w-full sm:w-auto px-8 py-4 bg-emerald-500 hover:bg-emerald-400 text-slate-900 rounded-2xl font-bold text-lg transition-all shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-2"
+                    className="flex-1 sm:flex-none px-8 py-4 bg-emerald-500 hover:bg-emerald-400 text-slate-900 rounded-2xl font-bold text-lg transition-all shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-2"
                   >
                     Install App <ChevronRight size={20} />
-                  </button>
-                  <button
-                    onClick={handleDecline}
-                    className="px-6 py-4 text-slate-400 hover:text-slate-300 font-medium text-sm transition-colors whitespace-nowrap"
-                  >
-                    Don't show again
                   </button>
                 </div>
               </div>
@@ -199,12 +186,6 @@ export default function PWAInstallPrompt() {
                   Later
                 </button>
               </div>
-              <button
-                onClick={handleDecline}
-                className="mt-4 w-full text-center text-xs font-medium text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
-              >
-                Don't show again
-              </button>
             </div>
           </div>
         </motion.div>
@@ -212,3 +193,7 @@ export default function PWAInstallPrompt() {
     </AnimatePresence>
   );
 }
+`;
+
+fs.writeFileSync('src/components/PWAInstallPrompt.tsx', content);
+console.log('Fixed PWA Install Prompt');

@@ -1,6 +1,7 @@
 import { LogService } from '../services/logService';
 import { Module, View, CourseId } from '../types';
-import { LayoutGrid, Book, Layers, Activity, GraduationCap, X, ChevronLeft, FileText, Brain, Home, Award, Calculator as CalcIcon, Bot, Grid, LogIn, LogOut, User as UserIcon, BookOpen, Zap, BrainCircuit, Trophy, Settings, Maximize2, Calendar, Share2, Swords, Sun, Moon, Lock } from 'lucide-react';
+import {  LayoutGrid, Book, Layers, Activity, GraduationCap, X, ChevronLeft, FileText, Brain, Home, Award, Calculator as CalcIcon, Bot, Grid, LogIn, LogOut, User as UserIcon, BookOpen, Zap, BrainCircuit, Trophy, Settings, Maximize2, Calendar, Share2, Swords, Sun, Moon, Lock  } from 'lucide-react';
+import logo from '../assets/logo.png';
 import { motion, AnimatePresence } from 'motion/react';
 import { UserProgress } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -86,7 +87,7 @@ export default function Sidebar({
           >
             <div className="p-6 border-b border-slate-800 dark:border-zinc-900 flex justify-between items-center">
               <div className="flex items-center gap-3">
-                <img src="/logo.jpg" alt="UniAce Logo" className="w-9 h-9 rounded-xl object-cover shadow-lg" />
+                <img src={logo} alt="UniAce Logo" className="w-9 h-9 rounded-xl object-cover shadow-lg" />
                 <div>
                   <h1 className="text-lg font-black tracking-tight text-white leading-none">UniAce Hub</h1>
                   <p className={`${theme.text} text-[9px] font-bold uppercase tracking-widest mt-1`}>

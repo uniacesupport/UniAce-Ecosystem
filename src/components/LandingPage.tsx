@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sparkles, Brain, Trophy, Rocket, CheckCircle2, ArrowRight, Play, X, Mail, Lock, Loader2, AlertCircle } from 'lucide-react';
+import {  Sparkles, Brain, Trophy, Rocket, CheckCircle2, ArrowRight, Play, X, Mail, Lock, Loader2, AlertCircle  } from 'lucide-react';
+import logo from '../assets/logo.png';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 
@@ -55,7 +56,7 @@ export default function LandingPage() {
       <nav className="fixed w-full bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md z-50 border-b border-slate-100 dark:border-zinc-800">
         <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <img src="/logo.jpg" alt="UniAce Logo" className="w-10 h-10 rounded-xl shadow-lg shadow-emerald-200 dark:shadow-none object-cover" />
+            <img src={logo} alt="UniAce Logo" className="w-10 h-10 rounded-xl shadow-lg shadow-emerald-200 dark:shadow-none object-cover" />
             <span className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">UniAce</span>
           </div>
           <button 
@@ -258,10 +259,10 @@ export default function LandingPage() {
       <footer className="py-12 border-t border-slate-100 dark:border-zinc-800 bg-white dark:bg-zinc-950 transition-colors">
         <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-6">
           <div className="flex items-center gap-2">
-            <img src="/logo.jpg" alt="UniAce Logo" className="w-8 h-8 rounded-lg object-cover" />
+            <img src={logo} alt="UniAce Logo" className="w-8 h-8 rounded-lg object-cover" />
             <span className="font-bold text-slate-900 dark:text-white">UniAce</span>
           </div>
-          <p className="text-slate-400 dark:text-zinc-500 text-sm">© 2024 UniAce Mastery Hub. All rights reserved.</p>
+          <p className="text-slate-400 dark:text-zinc-500 text-sm">© {new Date().getFullYear()} UniAce Mastery Hub. All rights reserved.</p>
         </div>
       </footer>
 
@@ -287,7 +288,7 @@ export default function LandingPage() {
               </button>
 
               <div className="text-center mb-8">
-                <img src="/logo.jpg" alt="UniAce Logo" className="w-12 h-12 rounded-2xl mx-auto mb-4 object-cover" />
+                <img src={logo} alt="UniAce Logo" className="w-12 h-12 rounded-2xl mx-auto mb-4 object-cover" />
                 <h3 className="text-2xl font-bold text-slate-900 dark:text-white">Welcome to UniAce</h3>
                 <p className="text-slate-500 text-xs mt-2">Log in with Google or use credentials provided by an administrator.</p>
               </div>

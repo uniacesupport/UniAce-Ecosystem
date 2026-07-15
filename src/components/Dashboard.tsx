@@ -1,4 +1,5 @@
-import { Book, Layers, Activity, FileText, Brain, ArrowRight, GraduationCap, Award, Calculator, Zap, Flame, Sparkles, RefreshCw, Target, Loader2, Calendar, CheckCircle2, MessageCircle, Bot, Bell, Maximize2, Swords, Lightbulb, ShieldCheck, Camera, Layout, Lock, Download } from 'lucide-react';
+import {  Book, Layers, Activity, FileText, Brain, ArrowRight, GraduationCap, Award, Calculator, Zap, Flame, Sparkles, RefreshCw, Target, Loader2, Calendar, CheckCircle2, MessageCircle, Bot, Bell, Maximize2, Swords, Lightbulb, ShieldCheck, Camera, Layout, Lock, Download  } from 'lucide-react';
+import logo from '../assets/logo.png';
 import { motion } from 'motion/react';
 import { UserProgress, View, Module, CourseId, Assignment, Department, Semester } from '../types';
 import { getRecommendations } from '../utils/learningPath';
@@ -180,7 +181,7 @@ export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSele
         <header className="flex items-center justify-between mb-8 lg:pl-4 xl:pl-0">
           <div className="space-y-1">
             <h1 className="text-xl sm:text-3xl lg:text-4xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-3 flex-wrap">
-              <img src="/logo.jpg" alt="UniAce Logo" className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl object-cover inline-block" /> Hi {user?.displayName?.split(' ')[0] || 'Scholar'}
+              <img src={logo} alt="UniAce Logo" className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl object-cover inline-block" /> Hi {user?.displayName?.split(' ')[0] || 'Scholar'}
               <div className="flex items-center gap-2">
                 <span className="text-sm sm:text-lg bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 px-3 py-1 rounded-full border border-emerald-200 dark:border-emerald-800 whitespace-nowrap">
                   Lvl {progress.level}

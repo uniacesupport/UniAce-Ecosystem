@@ -1,4 +1,6 @@
-import { Download, X, Smartphone, Monitor, Zap, Shield, Sparkles, ChevronRight } from 'lucide-react';
+const fs = require('fs');
+
+const content = `import { Download, X, Smartphone, Monitor, Zap, Shield, Sparkles, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
@@ -54,7 +56,7 @@ export default function PWAInstallPrompt() {
     if (!deferredPrompt) return;
     deferredPrompt.prompt();
     const { outcome } = await deferredPrompt.userChoice;
-    console.log(`User response to the install prompt: ${outcome}`);
+    console.log(\`User response to the install prompt: \${outcome}\`);
     setDeferredPrompt(null);
     setIsVisible(false);
   };
@@ -212,3 +214,7 @@ export default function PWAInstallPrompt() {
     </AnimatePresence>
   );
 }
+`;
+
+fs.writeFileSync('src/components/PWAInstallPrompt.tsx', content);
+console.log('Added Don\'t show again');
