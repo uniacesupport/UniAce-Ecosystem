@@ -18,16 +18,10 @@ export default function PWAInstallPrompt() {
     checkStandalone();
 
     const handleBeforeInstallPrompt = (e: any) => {
-      // Prevent Chrome 67 and earlier from automatically showing the prompt
       e.preventDefault();
-      
       const hasDeclined = localStorage.getItem('pwa_prompt_declined') === 'true';
       if (hasDeclined) return;
-
-      // Stash the event so it can be triggered later.
       setDeferredPrompt(e);
-      
-      // Show the prompt after a short delay
       const timer = setTimeout(() => {
         if (!isStandalone) {
           setIsVisible(true);
@@ -35,6 +29,17 @@ export default function PWAInstallPrompt() {
       }, user ? 5000 : 2000);
       return () => clearTimeout(timer);
     };
+    
+    // Check if we are on iOS/Safari which doesn't support beforeinstallprompt easily
+    const isIos = () => {
+      const userAgent = window.navigator.userAgent.toLowerCase();
+      return /iphone|ipad|ipod/.test(userAgent);
+    };
+    
+    // Aggressive fallback for unauthenticated users (Landing page) if they haven't declined
+    if (!user && !isStandalone && localStorage.getItem('pwa_prompt_declined') !== 'true') {
+      setTimeout(() => setIsVisible(true), 1500);
+    }
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
 
