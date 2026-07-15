@@ -9,11 +9,6 @@ import { CourseProvider } from './context/CourseContext';
 import ErrorBoundary from './components/ErrorBoundary';
 
 import { ThemeProvider } from './context/ThemeContext';
-import { registerSW } from 'virtual:pwa-register';
-
-if ('serviceWorker' in navigator) {
-  registerSW({ immediate: true });
-}
 
 // Initialize theme immediately to prevent flash
 console.log('Main.tsx: Initializing application...');

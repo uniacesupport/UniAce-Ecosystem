@@ -16,7 +16,7 @@ export default defineConfig(({mode}) => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: ['logo192.png', 'logo512.png'],
+        includeAssets: ['icon.svg'],
         devOptions: {
           enabled: true
         },
@@ -27,16 +27,20 @@ export default defineConfig(({mode}) => {
           theme_color: '#ffffff',
           icons: [
             {
-              src: 'logo192.png',
-              sizes: '192x192',
-              type: 'image/png',
+              src: 'icon.svg',
+              sizes: 'any',
+              type: 'image/svg+xml',
               purpose: 'any maskable'
             },
             {
-              src: 'logo512.png',
+              src: 'icon.svg',
+              sizes: '192x192',
+              type: 'image/svg+xml'
+            },
+            {
+              src: 'icon.svg',
               sizes: '512x512',
-              type: 'image/png',
-              purpose: 'any maskable'
+              type: 'image/svg+xml'
             }
           ]
         },

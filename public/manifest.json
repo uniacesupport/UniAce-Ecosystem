@@ -1,0 +1,16 @@
+{
+  "name": "UniAce",
+  "short_name": "UniAce",
+  "description": "AI-powered university course generation, interactive quizzes, and smart tutoring. Master your subjects with UniAce.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#10b981",
+  "theme_color": "#10b981",
+  "icons": [
+    {
+      "src": "/logo.jpg",
+      "sizes": "192x192 512x512",
+      "type": "image/jpeg"
+    }
+  ]
+}

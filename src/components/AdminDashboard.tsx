@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import {  Upload, FileText, Plus, CheckCircle, Loader2, BookOpen, AlertCircle, Settings, Trash2, Users, Activity, Database, Search, Zap, Trophy, Star, Bot, Shield, BarChart3, Globe, Edit2, RefreshCw, Clock, FileQuestion, MessageSquare, ArrowLeft, HeartPulse, X, ArrowRight, Layers, Key, Cpu, Share2, Download, Filter, Send, ChevronLeft, ChevronRight, Mic, Book  } from 'lucide-react';
-import logo from '../assets/logo.png';
+import { Upload, FileText, Plus, CheckCircle, Loader2, BookOpen, AlertCircle, Settings, Trash2, Users, Activity, Database, Search, Zap, Trophy, Star, Bot, Shield, BarChart3, Globe, Edit2, RefreshCw, Clock, FileQuestion, MessageSquare, ArrowLeft, HeartPulse, X, ArrowRight, Layers, Key, Cpu, Share2, Download, Filter, Send, ChevronLeft, ChevronRight, Mic, Book } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -2481,7 +2480,7 @@ export default function AdminDashboard() {
               Back to App
             </button>
             <h1 className="text-4xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-3">
-              <img src={logo} alt="UniAce Logo" className="w-8 h-8 rounded-lg inline-block object-cover mr-2" /> Admin Dashboard
+              <img src="/logo.jpg" alt="UniAce Logo" className="w-8 h-8 rounded-lg inline-block object-cover mr-2" /> Admin Dashboard
               <span className={`text-[10px] px-2 py-1 rounded-lg border uppercase tracking-widest ${
                 isAdmin ? 'bg-rose-50 text-rose-600 border-rose-200 dark:bg-rose-900/20 dark:text-rose-400 dark:border-rose-800' :
                 isTutor ? 'bg-indigo-50 text-indigo-600 border-indigo-200 dark:bg-indigo-900/20 dark:text-indigo-400 dark:border-indigo-800' :
@@ -5816,7 +5815,7 @@ export default function AdminDashboard() {
                   {emailMode === 'welcome' && (
                     <div className="max-w-[500px] mx-auto">
                       <div className="text-center mb-6">
-                        <img src={logo} alt="UniAce Logo" className="w-12 h-12 object-cover rounded-xl mb-1 mx-auto" />
+                        <img src="/logo.jpg" alt="UniAce Logo" className="w-12 h-12 object-cover rounded-xl mb-1 mx-auto" />
                         <h1 className="text-[#10b981] text-2xl font-extrabold m-0">UniAce</h1>
                         <p className="text-[#64748b] text-xs m-0">Your AI-Powered Academic Companion</p>
                       </div>
@@ -5860,7 +5859,7 @@ export default function AdminDashboard() {
                   {emailMode === 'reminder' && (
                     <div className="max-w-[500px] mx-auto">
                       <div className="text-center mb-6">
-                        <img src={logo} alt="UniAce Logo" className="w-12 h-12 object-cover rounded-xl mb-1 mx-auto" />
+                        <img src="/logo.jpg" alt="UniAce Logo" className="w-12 h-12 object-cover rounded-xl mb-1 mx-auto" />
                         <h1 className="text-[#10b981] text-2xl font-extrabold m-0">UniAce</h1>
                         <p className="text-[#64748b] text-xs m-0">Your AI-Powered Academic Companion</p>
                       </div>
