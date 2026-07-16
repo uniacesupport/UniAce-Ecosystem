@@ -137,3 +137,8 @@
   @apply max-w-full overflow-x-auto overflow-y-hidden;
 }
 
+/* Hide KaTeX error red color so it blends with text if there's a parse error */
+.katex-error {
+  color: inherit !important;
+}
+

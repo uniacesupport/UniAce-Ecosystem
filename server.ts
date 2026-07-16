@@ -19,8 +19,8 @@ import { getAdminApp, getDb, isFirebaseInitialized } from './server/firebaseAdmi
 
 dotenv.config();
 
-const currentFilename = typeof __filename !== 'undefined' ? __filename : fileURLToPath(import.meta.url);
-const currentDirname = typeof __dirname !== 'undefined' ? __dirname : path.dirname(currentFilename);
+const currentFilename = typeof __filename !== 'undefined' ? __filename : '';
+const currentDirname = typeof __dirname !== 'undefined' ? __dirname : process.cwd();
 
 import { initializeVectorStore, findRelevantContentSemantic, addVectorItem, removeVectorItem } from './server/vectorSearch';
 
@@ -75,7 +75,7 @@ const StreamSchema = z.object({
 import { logger } from './server/logger';
 import { setupAdminRoutes } from './server/routes/admin';
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = 3000;
 
 // --- Global AI Providers & Circuit Breakers ---
 // Initialize providers unconditionally so they can dynamically fetch keys from Firestore
@@ -1798,7 +1798,7 @@ app.get('/api/admin/system-config', verifyAuth, async (req, res) => {
         caching: true
       },
       provider_config: {
-        gemini: { model: 'gemini-3-flash-preview', retry_limit: 3 },
+        gemini: { model: 'gemini-3.5-flash', retry_limit: 3 },
         groq: { model: 'llama-3.3-70b-versatile', retry_limit: 2 },
         mistral: { model: 'mistral-large-latest', retry_limit: 2 }
       }
@@ -2284,6 +2284,62 @@ app.post('/api/admin/delete-user', verifyAuth, async (req, res) => {
   } catch (error: any) {
     console.error('Error deleting user:', error);
     res.status(500).json({ error: error.message || 'Failed to delete user' });
+  }
+});
+
+// Admin API: Prune Orphaned Firestore Documents (Users deleted from Firebase Auth directly)
+app.post('/api/admin/prune-orphans', verifyAuth, async (req, res) => {
+  try {
+    const adminUid = (req as any).user.uid;
+    const app = getAdminApp();
+    const adminDoc = await app.firestore().collection('users').doc(adminUid).get();
+    const userEmail = (req as any).user.email;
+    
+    if (!isAdminEmail(userEmail) && (!adminDoc.exists || adminDoc.data()?.role !== 'admin')) {
+      return res.status(403).json({ error: 'Unauthorized: Admin access required' });
+    }
+
+    console.log('[Prune Orphans] Starting synchronization scan...');
+    
+    // 1. Fetch all Firestore users
+    const firestoreSnapshot = await app.firestore().collection('users').get();
+    const firestoreUids = firestoreSnapshot.docs.map(doc => doc.id);
+    
+    // 2. Fetch all Firebase Auth users in chunks of 1000
+    const authUids = new Set<string>();
+    let nextPageToken: string | undefined = undefined;
+    
+    do {
+      const listUsersResult = await app.auth().listUsers(1000, nextPageToken);
+      listUsersResult.users.forEach(userRecord => {
+        authUids.add(userRecord.uid);
+      });
+      nextPageToken = listUsersResult.pageToken;
+    } while (nextPageToken);
+
+    // 3. Identify orphans (Firestore IDs that do not exist in Auth)
+    // Guard: ignore known special/system IDs or the current admin UID
+    const orphans = firestoreUids.filter(uid => {
+      if (uid === adminUid) return false;
+      return !authUids.has(uid);
+    });
+    
+    console.log(`[Prune Orphans] Found ${orphans.length} orphaned Firestore documents.`);
+    
+    if (orphans.length > 0) {
+      const batch = app.firestore().batch();
+      orphans.forEach(uid => {
+        const docRef = app.firestore().collection('users').doc(uid);
+        batch.delete(docRef);
+      });
+      await batch.commit();
+      console.log(`[Prune Orphans] Successfully pruned ${orphans.length} orphaned Firestore documents.`);
+    }
+
+    res.json({ success: true, prunedCount: orphans.length, message: `Successfully pruned ${orphans.length} orphaned user documents.` });
+  } catch (error: any) {
+    console.error('Error pruning orphans:', error);
+    res.status(500).json({ error: error.message || 'Failed to prune orphaned user documents' });
   }
 });
 

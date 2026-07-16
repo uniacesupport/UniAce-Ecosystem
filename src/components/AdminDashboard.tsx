@@ -30,6 +30,30 @@ import AdminAffiliates from './AdminAffiliates';
 
 import { jsonrepair } from 'jsonrepair';
 
+function parseFirestoreDate(val: any): Date | null {
+  if (!val) return null;
+  if (val instanceof Date) return val;
+  if (typeof val.toDate === 'function') {
+    try {
+      return val.toDate();
+    } catch (e) {}
+  }
+  if (typeof val.seconds === 'number') {
+    return new Date(val.seconds * 1000);
+  }
+  if (typeof val._seconds === 'number') {
+    return new Date(val._seconds * 1000);
+  }
+  if (val.seconds && typeof val.seconds.seconds === 'number') {
+    return new Date(val.seconds.seconds * 1000);
+  }
+  if (typeof val === 'string' || typeof val === 'number') {
+    const d = new Date(val);
+    if (!isNaN(d.getTime())) return d;
+  }
+  return null;
+}
+
 export default function AdminDashboard() {
   const { courses, refreshCourses } = useCourses();
   const [archivedCourses, setArchivedCourses] = useState<Record<string, Course>>({});
@@ -1758,8 +1782,8 @@ export default function AdminDashboard() {
         else if (role === 'moderator') stats.moderators++;
 
         if (data.lastActive) {
-          const lastActive = data.lastActive.toDate ? data.lastActive.toDate() : (data.lastActive.seconds ? new Date(data.lastActive.seconds * 1000) : new Date(data.lastActive));
-          if (!isNaN(lastActive.getTime()) && lastActive > oneDayAgo) stats.activeToday++;
+          const lastActive = parseFirestoreDate(data.lastActive);
+          if (lastActive && !isNaN(lastActive.getTime()) && lastActive > oneDayAgo) stats.activeToday++;
         }
       });
       
@@ -1770,6 +1794,47 @@ export default function AdminDashboard() {
     } finally {
       setIsLoadingUsers(false);
     }
+  };
+
+  const [isPruningOrphans, setIsPruningOrphans] = useState(false);
+
+  const handlePruneOrphans = async () => {
+    if (!isAdmin) {
+      showToast('Unauthorized: Admin access required', 'error');
+      return;
+    }
+    
+    setConfirmModal({
+      title: 'Prune Orphaned User Records?',
+      message: 'This will compare all user accounts in Firestore against Firebase Authentication. Any Firestore user document that has no corresponding active Authentication record (e.g., users deleted from Firebase console directly) will be permanently pruned. This keeps your directory perfectly synchronized.',
+      onConfirm: async () => {
+        setConfirmModal(null);
+        setIsPruningOrphans(true);
+        try {
+          const idToken = await auth.currentUser?.getIdToken();
+          const response = await fetch('/api/admin/prune-orphans', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${idToken}`
+            }
+          });
+          
+          const data = await response.json();
+          if (response.ok) {
+            showToast(data.message || `Prune complete. Removed ${data.prunedCount} orphaned records.`, 'success');
+            fetchUsers();
+          } else {
+            showToast(data.error || 'Failed to prune orphaned users', 'error');
+          }
+        } catch (error: any) {
+          console.error('Error pruning orphaned users:', error);
+          showToast(`Error: ${error.message}`, 'error');
+        } finally {
+          setIsPruningOrphans(false);
+        }
+      }
+    });
   };
 
   useEffect(() => {
@@ -1801,8 +1866,8 @@ export default function AdminDashboard() {
         else if (role === 'moderator') stats.moderators++;
 
         if (data.lastActive) {
-          const lastActive = data.lastActive.toDate ? data.lastActive.toDate() : (data.lastActive.seconds ? new Date(data.lastActive.seconds * 1000) : new Date(data.lastActive));
-          if (!isNaN(lastActive.getTime()) && lastActive > oneDayAgo) stats.activeToday++;
+          const lastActive = parseFirestoreDate(data.lastActive);
+          if (lastActive && !isNaN(lastActive.getTime()) && lastActive > oneDayAgo) stats.activeToday++;
         }
       });
       
@@ -2480,7 +2545,7 @@ export default function AdminDashboard() {
               Back to App
             </button>
             <h1 className="text-4xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-3">
-              <img src="/logo.jpg" alt="UniAce Logo" className="w-8 h-8 rounded-lg inline-block object-cover mr-2" /> Admin Dashboard
+              🎓 Admin Dashboard
               <span className={`text-[10px] px-2 py-1 rounded-lg border uppercase tracking-widest ${
                 isAdmin ? 'bg-rose-50 text-rose-600 border-rose-200 dark:bg-rose-900/20 dark:text-rose-400 dark:border-rose-800' :
                 isTutor ? 'bg-indigo-50 text-indigo-600 border-indigo-200 dark:bg-indigo-900/20 dark:text-indigo-400 dark:border-indigo-800' :
@@ -3846,24 +3911,35 @@ export default function AdminDashboard() {
                 </button>
 
                 {isAdmin && (
-                  <button
-                    onClick={() => {
-                      setUserFormName('');
-                      setUserFormEmail('');
-                      setUserFormPassword('');
-                      setUserFormRole('student');
-                      setUserFormDepartment('');
-                      setUserFormAcademicLevel('100');
-                      setUserFormPlanType('free');
-                      setUserFormSparks(50);
-                      setSelectedUserForEdit(null);
-                      setIsAddUserModalOpen(true);
-                    }}
-                    className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-lg shadow-blue-500/20 transition-all active:scale-95"
-                  >
-                    <Plus size={16} />
-                    Add User
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handlePruneOrphans}
+                      disabled={isPruningOrphans}
+                      className="flex items-center gap-2 px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-lg shadow-amber-500/20 transition-all active:scale-95 disabled:opacity-50"
+                      title="Sync with Firebase Authentication and prune users deleted in Firebase console"
+                    >
+                      {isPruningOrphans ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+                      Sync & Prune Orphans
+                    </button>
+                    <button
+                      onClick={() => {
+                        setUserFormName('');
+                        setUserFormEmail('');
+                        setUserFormPassword('');
+                        setUserFormRole('student');
+                        setUserFormDepartment('');
+                        setUserFormAcademicLevel('100');
+                        setUserFormPlanType('free');
+                        setUserFormSparks(50);
+                        setSelectedUserForEdit(null);
+                        setIsAddUserModalOpen(true);
+                      }}
+                      className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-lg shadow-blue-500/20 transition-all active:scale-95"
+                    >
+                      <Plus size={16} />
+                      Add User
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
@@ -3960,7 +4036,7 @@ export default function AdminDashboard() {
                                </td>
                                <td className="py-4">
                                  <div className="text-xs text-slate-500">
-                                   {user.lastActive ? (() => { const d = user.lastActive.toDate ? user.lastActive.toDate() : (user.lastActive.seconds ? new Date(user.lastActive.seconds * 1000) : new Date(user.lastActive)); return isNaN(d.getTime()) ? 'Never' : d.toLocaleDateString(); })() : 'Never'}
+                                   {user.lastActive ? (() => { const d = parseFirestoreDate(user.lastActive); return (!d || isNaN(d.getTime())) ? 'Never' : d.toLocaleDateString(); })() : 'Never'}
                                  </div>
                                </td>
                                <td className="py-4 text-right">
@@ -5815,13 +5891,13 @@ export default function AdminDashboard() {
                   {emailMode === 'welcome' && (
                     <div className="max-w-[500px] mx-auto">
                       <div className="text-center mb-6">
-                        <img src="/logo.jpg" alt="UniAce Logo" className="w-12 h-12 object-cover rounded-xl mb-1 mx-auto" />
+                        <div className="text-3xl mb-1">🎓</div>
                         <h1 className="text-[#10b981] text-2xl font-extrabold m-0">UniAce</h1>
                         <p className="text-[#64748b] text-xs m-0">Your AI-Powered Academic Companion</p>
                       </div>
 
                       <div className="bg-[#f8fafc] rounded-3xl p-6 border border-[#e2e8f0] space-y-4">
-                        <h2 className="text-lg font-bold text-slate-800 mt-0">Hi {commStudentName || 'Student'}, welcome to the future of studying!</h2>
+                        <h2 className="text-lg font-bold text-slate-800 mt-0">Hi {commStudentName || 'Student'}, welcome to the future of studying! 🎓</h2>
                         
                         <p className="text-sm text-slate-600">You've just unlocked <strong>{commWelcomeTrialDays} Days of UniAce Premium</strong>. That means unlimited AI Tutor access, smart quizzes, and personalized study plans are all yours for the next week.</p>
 
@@ -5859,7 +5935,7 @@ export default function AdminDashboard() {
                   {emailMode === 'reminder' && (
                     <div className="max-w-[500px] mx-auto">
                       <div className="text-center mb-6">
-                        <img src="/logo.jpg" alt="UniAce Logo" className="w-12 h-12 object-cover rounded-xl mb-1 mx-auto" />
+                        <div className="text-3xl mb-1">🎓</div>
                         <h1 className="text-[#10b981] text-2xl font-extrabold m-0">UniAce</h1>
                         <p className="text-[#64748b] text-xs m-0">Your AI-Powered Academic Companion</p>
                       </div>

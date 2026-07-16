@@ -59,7 +59,7 @@ export default function PaywallManager({ onUpgrade }: PaywallManagerProps) {
 
           <div className="space-y-3">
             <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">
-              Your Premium Trial has Ended
+              Your Premium Trial has Ended 🎓
             </h2>
             <p className="text-slate-600 dark:text-zinc-400 font-medium">
               Keep acing your courses. Choose your plan to unlock 24/7 AI tutoring, advanced analytics, and unlimited progress tracking.

@@ -319,7 +319,7 @@ SECURITY RULES:
         const apiKey = process.env.GEMINI_API_KEY;
         const ai = new GoogleGenAI({ apiKey });
         const model = ai.models.generateContent({
-          model: "gemini-3-flash-preview",
+          model: "gemini-3.5-flash",
           contents: parts,
           config: {
             systemInstruction,
