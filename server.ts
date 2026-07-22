@@ -1798,7 +1798,7 @@ app.get('/api/admin/system-config', verifyAuth, async (req, res) => {
         caching: true
       },
       provider_config: {
-        gemini: { model: 'gemini-3.5-flash', retry_limit: 3 },
+        gemini: { model: 'gemini-3.6-flash', retry_limit: 3 },
         groq: { model: 'llama-3.3-70b-versatile', retry_limit: 2 },
         mistral: { model: 'mistral-large-latest', retry_limit: 2 }
       }
@@ -2937,7 +2937,7 @@ app.post('/api/ai/stream', verifyAuth, async (req, res) => {
 });
 
 // --- Logging API ---
-app.post('/api/logs', verifyAuth, async (req, res) => {
+app.post('/api/logs', async (req, res) => {
   try {
     const { level, category, message, details, userId, userEmail } = req.body;
     
@@ -5280,7 +5280,7 @@ async function startServer() {
         
         // Handle setup message
         if (payload.setup && !sessionPromise) {
-          let voiceModel = "gemini-3.1-flash-live-preview";
+          let voiceModel = "gemini-2.0-flash-exp";
           try {
             const appAdmin = getAdminApp();
             if (appAdmin) {

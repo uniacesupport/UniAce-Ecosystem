@@ -189,12 +189,20 @@ export class DynamicKeyRotator {
 
   async getModel(): Promise<string> {
     await this.fetchKeys();
-    return this.configuredModel;
+    let model = (this.configuredModel || '').trim();
+    if (!model) return '';
+    if (model.toLowerCase().includes('gemini 3.6 flash') || model.toLowerCase().includes('gemini-3.6-flash')) return 'gemini-3.6-flash';
+    model = model.toLowerCase().replace(/[^a-z0-9.\-\/]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+    return model;
   }
 
   async getFallbackModel(): Promise<string> {
     await this.fetchKeys();
-    return this.configuredFallbackModel;
+    let model = (this.configuredFallbackModel || '').trim();
+    if (!model) return '';
+    if (model.toLowerCase().includes('gemini 3.6 flash') || model.toLowerCase().includes('gemini-3.6-flash')) return 'gemini-3.6-flash';
+    model = model.toLowerCase().replace(/[^a-z0-9.\-\/]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+    return model;
   }
 
   async getNextKey(): Promise<string> {
@@ -349,7 +357,7 @@ export class GeminiDirectProvider implements ModelProvider {
 
       try {
         const model = ai.models.generateContent({
-          model: await this.rotator.getModel() || (function(){ throw new Error('Primary model not configured for gemini'); })(),
+          model: (await this.rotator.getModel()).trim() || 'gemini-3.6-flash',
           contents,
           config: {
             systemInstruction,
@@ -389,7 +397,7 @@ export class GeminiDirectProvider implements ModelProvider {
 
       try {
         const result = await ai.models.generateContentStream({
-          model: await this.rotator.getModel() || (function(){ throw new Error('Primary model not configured for gemini'); })(),
+          model: (await this.rotator.getModel()).trim() || 'gemini-3.6-flash',
           contents,
           config: {
             systemInstruction,
@@ -455,10 +463,9 @@ export class OpenRouterFreeProvider implements ModelProvider {
   async generate(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean }): Promise<ModelResponse> {
     return retry(async () => {
       const apiKey = await this.rotator.getNextKey();
-      let model = await this.rotator.getModel();
+      let model = (await this.rotator.getModel()).trim();
       if (!model) throw new Error('Primary model not configured for openrouter. Please configure it in settings.');
-      let fallbackModel = await this.rotator.getFallbackModel();
-      if (!fallbackModel) throw new Error('Fallback model not configured for openrouter. Please configure it in settings.');
+      let fallbackModel = (await this.rotator.getFallbackModel()).trim();
       const openai = new OpenAI({
         baseURL: "https://openrouter.ai/api/v1",
         apiKey: apiKey,
@@ -494,6 +501,7 @@ export class OpenRouterFreeProvider implements ModelProvider {
       } catch (error: any) {
         // If rate limited (429), fallback to paid model
         if (error.status === 429) {
+          if (!fallbackModel) throw error;
           console.log(`[OpenRouterFree] Rate limit hit on ${model}, falling back to ${fallbackModel}`);
           try {
             const paidResponse = await openai.chat.completions.create({
@@ -532,10 +540,9 @@ export class OpenRouterFreeProvider implements ModelProvider {
   async stream(messages: any[], options: { complexity: 'high' | 'standard' }, onChunk: (chunk: string) => void): Promise<ModelResponse> {
     return retry(async () => {
       const apiKey = await this.rotator.getNextKey();
-      let model = await this.rotator.getModel();
+      let model = (await this.rotator.getModel()).trim();
       if (!model) throw new Error('Primary model not configured for openrouter. Please configure it in settings.');
-      let fallbackModel = await this.rotator.getFallbackModel();
-      if (!fallbackModel) throw new Error('Fallback model not configured for openrouter. Please configure it in settings.');
+      let fallbackModel = (await this.rotator.getFallbackModel()).trim();
 
       const openai = new OpenAI({
         baseURL: "https://openrouter.ai/api/v1",
@@ -573,6 +580,7 @@ export class OpenRouterFreeProvider implements ModelProvider {
       } catch (error: any) {
         // If rate limited (429), fallback to paid model
         if (error.status === 429) {
+          if (!fallbackModel) throw error;
           console.log(`[OpenRouterFree Stream] Rate limit hit on ${model}, falling back to ${fallbackModel}`);
           try {
             const paidStream = await openai.chat.completions.create({
@@ -652,7 +660,7 @@ export class MistralProvider implements ModelProvider {
 
       try {
         const response = await mistral.chat.complete({
-          model: await this.rotator.getModel() || (function(){ throw new Error('Primary model not configured for mistral'); })(),
+          model: (await this.rotator.getModel()).trim() || (options.complexity === 'high' ? 'mistral-large-latest' : 'mistral-small-latest'),
           temperature: 0.5,
           maxTokens: 8192,
           messages: messages,
@@ -684,7 +692,7 @@ export class MistralProvider implements ModelProvider {
 
       try {
         const stream = await mistral.chat.stream({
-          model: await this.rotator.getModel() || (function(){ throw new Error('Primary model not configured for mistral'); })(),
+          model: (await this.rotator.getModel()).trim() || (options.complexity === 'high' ? 'mistral-large-latest' : 'mistral-small-latest'),
           temperature: 0.5,
           maxTokens: 8192,
           messages: messages
@@ -757,7 +765,7 @@ export class GroqProvider implements ModelProvider {
 
       try {
         const response = await groq.chat.completions.create({
-          model: await this.rotator.getModel() || (function(){ throw new Error('Primary model not configured for groq'); })(),
+          model: (await this.rotator.getModel()).trim() || (options.complexity === 'high' ? 'llama-3.3-70b-versatile' : 'llama-3.1-8b-instant'),
           temperature: 0.5,
           max_tokens: options.complexity === 'high' ? 4096 : 2048,
           messages: truncatedMessages,
@@ -793,7 +801,7 @@ export class GroqProvider implements ModelProvider {
 
       try {
         const stream = await groq.chat.completions.create({
-          model: await this.rotator.getModel() || (function(){ throw new Error('Primary model not configured for groq'); })(),
+          model: (await this.rotator.getModel()).trim() || (options.complexity === 'high' ? 'llama-3.3-70b-versatile' : 'llama-3.1-8b-instant'),
           temperature: 0.5,
           max_tokens: options.complexity === 'high' ? 4096 : 2048,
           messages: truncatedMessages,
@@ -924,9 +932,8 @@ export class CohereProvider implements ModelProvider {
       const lastMessage = messages[messages.length - 1].content;
 
       try {
-        const dbModel = await this.rotator.getModel();
-        const selectedModel = dbModel;
-        if (!selectedModel) throw new Error('Primary model not configured for cohere');
+        const dbModel = (await this.rotator.getModel()).trim();
+        const selectedModel = dbModel || (options.complexity === 'high' ? 'command-r-plus-08-2024' : 'command-r-08-2024');
 
         const response = await cohere.chat({
           model: selectedModel,
@@ -965,9 +972,8 @@ export class CohereProvider implements ModelProvider {
       const lastMessage = messages[messages.length - 1].content;
 
       try {
-        const dbModel = await this.rotator.getModel();
-        const selectedModel = dbModel;
-        if (!selectedModel) throw new Error('Primary model not configured for cohere');
+        const dbModel = (await this.rotator.getModel()).trim();
+        const selectedModel = dbModel || (options.complexity === 'high' ? 'command-r-plus-08-2024' : 'command-r-08-2024');
 
         const stream = await cohere.chatStream({
           model: selectedModel,
@@ -1014,7 +1020,7 @@ export class HuggingFaceProvider implements ModelProvider {
 
       try {
         const response = await hf.chatCompletion({
-          model: await this.rotator.getModel() || (function(){ throw new Error('Primary model not configured for huggingface'); })(),
+          model: (await this.rotator.getModel()).trim() || 'mistralai/Mistral-7B-Instruct-v0.2',
           messages: messages,
           max_tokens: 4096,
           temperature: 0.5,
@@ -1054,7 +1060,7 @@ export class HuggingFaceProvider implements ModelProvider {
 
       try {
         const stream = hf.chatCompletionStream({
-          model: await this.rotator.getModel() || (function(){ throw new Error('Primary model not configured for huggingface'); })(),
+          model: (await this.rotator.getModel()).trim() || 'mistralai/Mistral-7B-Instruct-v0.2',
           messages: messages,
           max_tokens: 4096,
           temperature: 0.5,

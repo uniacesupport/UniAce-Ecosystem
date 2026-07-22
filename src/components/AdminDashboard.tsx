@@ -194,7 +194,7 @@ export default function AdminDashboard() {
     vision: 'gemini_direct',
     past_questions: 'gemini_direct',
     voice_tutor: 'gemini_direct',
-    voice_tutor_model: 'gemini-3.1-flash-live-preview'
+    voice_tutor_model: 'gemini-2.0-flash-exp'
   });
   const [logs, setLogs] = useState<SystemLog[]>([]);
   const [isLoadingLogs, setIsLoadingLogs] = useState(false);
@@ -5253,7 +5253,7 @@ export default function AdminDashboard() {
                           Active Live Model:
                         </span>
                         {[
-                          'gemini-3.1-flash-live-preview',
+                          'gemini-2.0-flash-exp',
                           'gemini-2.0-flash-exp',
                           'gemini-2.5-flash',
                           'gemini-2.5-pro'
@@ -5262,7 +5262,7 @@ export default function AdminDashboard() {
                             key={model}
                             onClick={() => updateRoutingConfig('voice_tutor_model', model)}
                             className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold border transition-all ${
-                              (routingConfig.voice_tutor_model || 'gemini-3.1-flash-live-preview') === model
+                              (routingConfig.voice_tutor_model || 'gemini-2.0-flash-exp') === model
                                 ? 'bg-amber-500/10 border-amber-500 text-amber-700 dark:text-amber-400 font-bold shadow-xs'
                                 : 'border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
                             }`}
@@ -5304,7 +5304,7 @@ export default function AdminDashboard() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {[
                 { id: 'gemini_direct', label: 'Gemini', desc: 'Direct API keys for Google Gemini SDK.' },
-                { id: 'openrouter', label: 'OpenRouter', desc: 'Keys for OpenRouter (with Gemini Flash fallback).' },
+                { id: 'openrouter', label: 'OpenRouter', desc: 'Keys for OpenRouter.' },
                 { id: 'groq', label: 'Groq (Turbo)', desc: 'Direct API keys for Groq Cloud.' },
                 { id: 'mistral_direct', label: 'Mistral', desc: 'Direct API keys for Mistral AI Platform.' },
                 { id: 'cohere', label: 'Cohere', desc: 'Direct API keys for Cohere AI.' },
