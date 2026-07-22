@@ -190,7 +190,7 @@ export default function ApiKeyManagerModal({ provider, onClose }: ApiKeyManagerM
                     type="text"
                     value={model}
                     onChange={(e) => setModel(e.target.value)}
-                    placeholder="e.g. openrouter/free or openrouter/auto"
+                    placeholder="e.g. openrouter/auto-beta or meta/muse-spark-1.1"
                     className="w-full px-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:text-white"
                   />
                 </div>

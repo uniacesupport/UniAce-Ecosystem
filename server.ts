@@ -2511,7 +2511,7 @@ const ACADEMIC_INTELLIGENCE_DIRECTIVE = `
 `;
 
 // --- Test AI Route Without Auth ---
-app.post('/api/ai/test-generate', async (req, res) => {
+app.post('/api/ai/test-generate', verifyAuth, async (req, res) => {
   try {
     const { prompt, systemInstruction, responseFormat, maxTokens, complexity, taskType } = req.body;
     let aiResponse;
@@ -2937,7 +2937,7 @@ app.post('/api/ai/stream', verifyAuth, async (req, res) => {
 });
 
 // --- Logging API ---
-app.post('/api/logs', async (req, res) => {
+app.post('/api/logs', verifyAuth, async (req, res) => {
   try {
     const { level, category, message, details, userId, userEmail } = req.body;
     
@@ -2980,10 +2980,6 @@ app.post('/api/course/generate', verifyAuth, async (req, res) => {
     const app = getAdminApp();
     const userDoc = await app.firestore().collection('users').doc(user.uid).get();
     const userData = userDoc.data();
-    
-    if (userData?.role !== 'admin') {
-      return res.status(403).json({ error: 'Unauthorized: Only admins can generate courses' });
-    }
 
     let aiResponseText = '';
     let lastError;

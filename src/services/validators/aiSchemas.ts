@@ -114,7 +114,8 @@ export function autoHealQuestion(q: any): any {
     options,
     correctAnswer,
     answer: correctAnswer,
-    explanation: explanation || `The correct answer is: ${correctAnswer}.`
+    explanation: explanation || `The correct answer is: ${correctAnswer}.`,
+    difficulty: Math.max(1, Math.min(5, Math.round(Number(q.difficulty) || 3)))
   };
 }
 
@@ -127,7 +128,7 @@ export const QuizQuestionSchema = z.object({
   correctAnswer: z.string().min(1, 'Correct answer cannot be empty'),
   explanation: z.string().optional().default(''),
   hint: z.string().optional().default(''),
-  difficulty: z.number().int().min(1).max(5).optional().default(3),
+  difficulty: z.number().optional().default(3),
 }).transform((q) => autoHealQuestion(q));
 
 export const QuizQuestionsResponseSchema = z.object({

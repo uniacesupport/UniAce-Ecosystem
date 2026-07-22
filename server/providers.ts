@@ -349,7 +349,7 @@ export class GeminiDirectProvider implements ModelProvider {
 
       try {
         const model = ai.models.generateContent({
-          model: "gemini-3.5-flash",
+          model: await this.rotator.getModel() || "gemini-3.5-flash",
           contents,
           config: {
             systemInstruction,
@@ -389,7 +389,7 @@ export class GeminiDirectProvider implements ModelProvider {
 
       try {
         const result = await ai.models.generateContentStream({
-          model: "gemini-3.5-flash",
+          model: await this.rotator.getModel() || "gemini-3.5-flash",
           contents,
           config: {
             systemInstruction,
@@ -455,14 +455,8 @@ export class OpenRouterFreeProvider implements ModelProvider {
   async generate(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean }): Promise<ModelResponse> {
     return retry(async () => {
       const apiKey = await this.rotator.getNextKey();
-      let model = await this.rotator.getModel() || 'openrouter/free';
-      if (model.includes('gemini-2.0-flash-exp:free') || model.includes('gemini-2.0-flash-lite-preview-02-05:free') || model === 'openrouter/auto') {
-          model = 'openrouter/free';
-      }
-      let fallbackModel = await this.rotator.getFallbackModel() || 'openrouter/free';
-      if (fallbackModel.includes('gemini-2.0-flash-exp:free') || fallbackModel.includes('gemini-2.0-flash-lite-preview-02-05:free') || fallbackModel === 'openrouter/auto') {
-          fallbackModel = 'openrouter/free';
-      }
+      let model = await this.rotator.getModel() || 'openrouter/auto-beta';
+      let fallbackModel = await this.rotator.getFallbackModel() || 'meta/muse-spark-1.1';
       const openai = new OpenAI({
         baseURL: "https://openrouter.ai/api/v1",
         apiKey: apiKey,
@@ -536,14 +530,8 @@ export class OpenRouterFreeProvider implements ModelProvider {
   async stream(messages: any[], options: { complexity: 'high' | 'standard' }, onChunk: (chunk: string) => void): Promise<ModelResponse> {
     return retry(async () => {
       const apiKey = await this.rotator.getNextKey();
-      let model = await this.rotator.getModel() || 'openrouter/free';
-      if (model.includes('gemini-2.0-flash-exp:free') || model.includes('gemini-2.0-flash-lite-preview-02-05:free') || model === 'openrouter/auto') {
-          model = 'openrouter/free';
-      }
-      let fallbackModel = await this.rotator.getFallbackModel() || 'openrouter/free';
-      if (fallbackModel.includes('gemini-2.0-flash-exp:free') || fallbackModel.includes('gemini-2.0-flash-lite-preview-02-05:free') || fallbackModel === 'openrouter/auto') {
-          fallbackModel = 'openrouter/free';
-      }
+      let model = await this.rotator.getModel() || 'openrouter/auto-beta';
+      let fallbackModel = await this.rotator.getFallbackModel() || 'meta/muse-spark-1.1';
 
       const openai = new OpenAI({
         baseURL: "https://openrouter.ai/api/v1",
@@ -660,7 +648,7 @@ export class MistralProvider implements ModelProvider {
 
       try {
         const response = await mistral.chat.complete({
-          model: options.complexity === 'high' ? 'mistral-large-latest' : 'mistral-small-latest',
+          model: await this.rotator.getModel() || (options.complexity === 'high' ? 'mistral-large-latest' : 'mistral-small-latest'),
           temperature: 0.5,
           maxTokens: 8192,
           messages: messages,
@@ -692,7 +680,7 @@ export class MistralProvider implements ModelProvider {
 
       try {
         const stream = await mistral.chat.stream({
-          model: options.complexity === 'high' ? 'mistral-large-latest' : 'mistral-small-latest',
+          model: await this.rotator.getModel() || (options.complexity === 'high' ? 'mistral-large-latest' : 'mistral-small-latest'),
           temperature: 0.5,
           maxTokens: 8192,
           messages: messages
@@ -765,7 +753,7 @@ export class GroqProvider implements ModelProvider {
 
       try {
         const response = await groq.chat.completions.create({
-          model: options.complexity === 'high' ? 'llama-3.3-70b-versatile' : 'llama-3.1-8b-instant',
+          model: await this.rotator.getModel() || (options.complexity === 'high' ? 'llama-3.3-70b-versatile' : 'llama-3.1-8b-instant'),
           temperature: 0.5,
           max_tokens: options.complexity === 'high' ? 4096 : 2048,
           messages: truncatedMessages,
@@ -801,7 +789,7 @@ export class GroqProvider implements ModelProvider {
 
       try {
         const stream = await groq.chat.completions.create({
-          model: options.complexity === 'high' ? 'llama-3.3-70b-versatile' : 'llama-3.1-8b-instant',
+          model: await this.rotator.getModel() || (options.complexity === 'high' ? 'llama-3.3-70b-versatile' : 'llama-3.1-8b-instant'),
           temperature: 0.5,
           max_tokens: options.complexity === 'high' ? 4096 : 2048,
           messages: truncatedMessages,
@@ -1020,7 +1008,7 @@ export class HuggingFaceProvider implements ModelProvider {
 
       try {
         const response = await hf.chatCompletion({
-          model: 'mistralai/Mistral-7B-Instruct-v0.2',
+          model: await this.rotator.getModel() || 'mistralai/Mistral-7B-Instruct-v0.2',
           messages: messages,
           max_tokens: 4096,
           temperature: 0.5,
@@ -1060,7 +1048,7 @@ export class HuggingFaceProvider implements ModelProvider {
 
       try {
         const stream = hf.chatCompletionStream({
-          model: 'mistralai/Mistral-7B-Instruct-v0.2',
+          model: await this.rotator.getModel() || 'mistralai/Mistral-7B-Instruct-v0.2',
           messages: messages,
           max_tokens: 4096,
           temperature: 0.5,
