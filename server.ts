@@ -698,7 +698,7 @@ app.get('/api/user/quota', verifyAuth, async (req, res) => {
 });
 
 // 0. Debug Endpoint
-app.get('/api/debug', (req, res) => {
+app.get('/api/debug', verifyAuth, (req, res) => {
   res.json({
     nodeEnv: process.env.NODE_ENV,
     isAdminInitialized: isFirebaseInitialized(),
@@ -5185,11 +5185,6 @@ async function startServer() {
               providers.push(providerMap[pName]);
             }
           }
-        } else if (fastMode) {
-          // Fast Mode overrides general preference with Groq or lightweight providers
-          if (groqBreaker) providers.push(groqBreaker);
-          if (mistralDirectBreaker) providers.push(mistralDirectBreaker);
-          if (geminiDirectBreaker) providers.push(geminiDirectBreaker);
         } else {
           // Regular chat uses the preferred provider, with fallbacks
           if (providerMap[preferredProviderName]) {
