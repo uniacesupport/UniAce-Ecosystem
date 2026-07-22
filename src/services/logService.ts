@@ -19,12 +19,14 @@ export const LogService = {
   async log(level: LogLevel, category: LogCategory, message: string, details?: any) {
     try {
       const user = auth.currentUser;
+      const token = user ? await user.getIdToken(true) : null;
       
       // Call backend API for logging
       const response = await fetch('/api/logs', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
         },
         body: JSON.stringify({
           level,
