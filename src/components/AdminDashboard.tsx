@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, FileText, Plus, CheckCircle, Loader2, BookOpen, AlertCircle, Settings, Trash2, Users, Activity, Database, Search, Zap, Trophy, Star, Bot, Shield, BarChart3, Globe, Edit2, RefreshCw, Clock, FileQuestion, MessageSquare, ArrowLeft, HeartPulse, X, ArrowRight, Layers, Key, Cpu, Share2, Download, Filter, Send, ChevronLeft, ChevronRight, Mic, Book } from 'lucide-react';
+import { Upload, FileText, Plus, CheckCircle, Loader2, BookOpen, AlertCircle, Settings, Trash2, Users, Activity, Database, Search, Zap, Trophy, Star, Bot, Shield, BarChart3, Globe, Edit2, RefreshCw, Clock, FileQuestion, MessageSquare, ArrowLeft, HeartPulse, X, ArrowRight, Layers, Key, Cpu, Share2, Download, Filter, Send, ChevronLeft, ChevronRight, Mic, Book, Terminal } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -27,6 +27,7 @@ import { CurriculumIntegrityService } from '../services/curriculumIntegrity';
 import { usePermissions } from '../hooks/usePermissions';
 import { useInstitution } from '../context/InstitutionContext';
 import AdminAffiliates from './AdminAffiliates';
+import MarkdownRenderer from './MarkdownRenderer';
 
 import { jsonrepair } from 'jsonrepair';
 
@@ -178,7 +179,8 @@ export default function AdminDashboard() {
     groq: { active: false, totalKeys: 0, exhaustedKeys: 0, usingEnv: false, usingDb: false },
     mistral_direct: { active: false, totalKeys: 0, exhaustedKeys: 0, usingEnv: false, usingDb: false },
     cohere: { active: false, totalKeys: 0, exhaustedKeys: 0, usingEnv: false, usingDb: false },
-    huggingface: { active: false, totalKeys: 0, exhaustedKeys: 0, usingEnv: false, usingDb: false }
+    huggingface: { active: false, totalKeys: 0, exhaustedKeys: 0, usingEnv: false, usingDb: false },
+    nvidia: { active: false, totalKeys: 0, exhaustedKeys: 0, usingEnv: false, usingDb: false }
   });
   const [aiMetrics, setAiMetrics] = useState<any>({});
   const [aiChartData, setAiChartData] = useState<any[]>([]);
@@ -193,8 +195,8 @@ export default function AdminDashboard() {
     rag: 'openrouter_free',
     vision: 'gemini_direct',
     past_questions: 'gemini_direct',
-    voice_tutor: 'gemini_direct',
-    voice_tutor_model: 'gemini-2.0-flash-exp'
+    voice_tutor: 'nvidia',
+    voice_tutor_model: 'nemotron-voicechat'
   });
   const [logs, setLogs] = useState<SystemLog[]>([]);
   const [isLoadingLogs, setIsLoadingLogs] = useState(false);
@@ -281,13 +283,14 @@ export default function AdminDashboard() {
     };
   }, []);
   const [generationProgress, setGenerationProgress] = useState(0);
-  const [aiProvider, setAiProvider] = useState<'gemini_direct' | 'openrouter_free' | 'mistral_direct' | 'groq' | 'cohere' | 'huggingface'>('gemini_direct');
+  const [aiProvider, setAiProvider] = useState<'gemini_direct' | 'openrouter_free' | 'mistral_direct' | 'groq' | 'cohere' | 'huggingface' | 'nvidia'>('gemini_direct');
   const [globalAiMode, setGlobalAiMode] = useState<'normal' | 'fast'>('normal');
   const [isUpdatingAiMode, setIsUpdatingAiMode] = useState(false);
   const [testKeyProvider, setTestKeyProvider] = useState<string>('gemini_direct');
   const [testKeyInput, setTestKeyInput] = useState('');
   const [testKeyResult, setTestKeyResult] = useState<any>(null);
   const [isTestingKey, setIsTestingKey] = useState(false);
+  const [routerTestTelemetry, setRouterTestTelemetry] = useState<{ loading: boolean; error?: string; data?: any } | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -2988,6 +2991,17 @@ export default function AdminDashboard() {
                     <Bot size={16} />
                     Hugging Face
                   </button>
+                  <button
+                    onClick={() => setAiProvider('nvidia')}
+                    className={`px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 transition-all ${
+                      aiProvider === 'nvidia'
+                        ? 'bg-emerald-100 text-emerald-700 border-2 border-emerald-500 dark:bg-emerald-900/30 dark:text-emerald-400'
+                        : 'bg-white text-slate-600 border-2 border-slate-200 hover:border-emerald-300 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700 dark:hover:border-emerald-700'
+                    }`}
+                  >
+                    <Cpu size={16} />
+                    NVIDIA NIM
+                  </button>
                 </div>
               </div>
 
@@ -4999,6 +5013,35 @@ export default function AdminDashboard() {
                   </div>
                 </div>
               </div>
+
+              {/* NVIDIA NIM Card */}
+              <div className={`p-6 rounded-3xl border-2 transition-all ${aiProviderStatus.nvidia?.active ? 'border-emerald-500/20 bg-emerald-50/30 dark:bg-emerald-500/5' : 'border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50'}`}>
+                <div className="flex items-center justify-between mb-4">
+                  <div className="p-3 rounded-2xl bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400">
+                    <Cpu size={24} />
+                  </div>
+                  <div className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${aiProviderStatus.nvidia?.active ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}>
+                    {aiProviderStatus.nvidia?.active ? 'Active' : 'Offline'}
+                  </div>
+                </div>
+                <h3 className="font-bold text-slate-900 dark:text-white">NVIDIA NIM</h3>
+                <div className="mt-4 space-y-2">
+                  <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
+                    <span>Keys</span>
+                    <span className="text-slate-900 dark:text-white">
+                      {aiProviderStatus.nvidia?.totalKeys || 0} ({aiProviderStatus.nvidia?.exhaustedKeys || 0} exhausted)
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
+                    <span>Latency</span>
+                    <span className="text-slate-500">{aiMetrics.nvidia?.latency || 'N/A'}</span>
+                  </div>
+                  <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
+                    <span>Uptime</span>
+                    <span className="text-slate-900 dark:text-white">{aiMetrics.nvidia?.uptime || 'N/A'}</span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -5187,9 +5230,11 @@ export default function AdminDashboard() {
 
               <div className="grid grid-cols-1 gap-4">
                 {[
+                  { id: 'deep_reasoning', label: 'Deep Reasoning & Proofs (STEM)', icon: Cpu, recommended: 'nvidia', desc: 'Complex calculus, physics derivations, and multi-step logic (NVIDIA Nemotron / Qwen-80B).' },
+                  { id: 'coding', label: 'Software & Code Generation', icon: Terminal, recommended: 'nvidia', desc: 'Programming, debugging, algorithms, and SQL synthesis.' },
                   { id: 'chat', label: 'Student Chat (Q&A)', icon: Bot, recommended: 'groq', desc: 'Real-time conversational assistance.' },
                   { id: 'quiz', label: 'Quiz Generation', icon: Trophy, recommended: 'groq', desc: 'Creating assessments and practice questions.' },
-                  { id: 'lesson', label: 'Lesson Content', icon: BookOpen, recommended: 'cohere', desc: 'Writing detailed educational modules.' },
+                  { id: 'lesson', label: 'Lesson Content', icon: BookOpen, recommended: 'nvidia', desc: 'Writing detailed educational modules and deep topic guides.' },
                   { id: 'skeleton', label: 'Course Skeletons', icon: Layers, recommended: 'cohere', desc: 'Structuring curriculum outlines and hierarchies.' },
                   { id: 'recommendation', label: 'Smart Recommendations', icon: Star, recommended: 'cohere', desc: 'Analyzing student data for study plans.' },
                   { id: 'formulas', label: 'Formula Vault & Search', icon: Book, recommended: 'cohere', desc: 'Finding and generating university-level mathematical and scientific formulas.' },
@@ -5197,7 +5242,7 @@ export default function AdminDashboard() {
                   { id: 'rag', label: 'Knowledge Retrieval', icon: Database, recommended: 'openrouter_free', desc: 'Searching and summarizing internal documents.' },
                   { id: 'vision', label: 'Vision Processing', icon: Search, recommended: 'gemini_direct', desc: 'Analyzing images and handwritten notes.' },
                   { id: 'past_questions', label: 'Past Questions Extraction', icon: FileText, recommended: 'gemini_direct', desc: 'Extracting questions from uploaded PDFs.' },
-                  { id: 'voice_tutor', label: 'Voice Tutor WebSockets', icon: Mic, recommended: 'gemini_direct', desc: 'Real-time audio-to-audio conversational study sessions. Locked to Gemini Direct due to proprietary Google Multimodal Live WebSockets.' }
+                  { id: 'voice_tutor', label: 'Voice Tutor Engine', icon: Mic, recommended: 'nvidia', desc: 'Interactive audio-to-text voice tutor study sessions (NVIDIA Nemotron Voicechat / Google Gemini Direct).' }
                 ].map((task) => (
                   <div key={task.id} className="flex flex-col p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 gap-3">
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -5217,22 +5262,23 @@ export default function AdminDashboard() {
                       </div>
 
                       <div className="flex items-center gap-3 flex-wrap">
-                        {task.id !== 'voice_tutor' && (
-                          <button
-                            onClick={() => updateRoutingConfig(task.id, task.recommended)}
-                            className="px-3 py-1.5 rounded-lg text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors border border-indigo-200 dark:border-indigo-800"
-                          >
-                            Use Recommended
-                          </button>
-                        )}
+                        <button
+                          onClick={() => updateRoutingConfig(task.id, task.recommended)}
+                          className="px-3 py-1.5 rounded-lg text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors border border-indigo-200 dark:border-indigo-800"
+                        >
+                          Use Recommended
+                        </button>
                         <div className="flex items-center gap-1 bg-white dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700 overflow-x-auto scrollbar-hide max-w-full">
-                          {(task.id === 'voice_tutor'
-                            ? ['gemini_direct']
-                            : ['gemini_direct', 'groq', 'mistral_direct', 'openrouter_free', 'cohere', 'huggingface']
-                          ).map((provider) => (
+                          {['nvidia', 'gemini_direct', 'groq', 'mistral_direct', 'openrouter_free', 'cohere', 'huggingface'].map((provider) => (
                             <button
                               key={provider}
-                              onClick={() => updateRoutingConfig(task.id, provider)}
+                              onClick={() => {
+                                updateRoutingConfig(task.id, provider);
+                                if (task.id === 'voice_tutor') {
+                                  if (provider === 'nvidia') updateRoutingConfig('voice_tutor_model', 'nemotron-voicechat');
+                                  else if (provider === 'gemini_direct') updateRoutingConfig('voice_tutor_model', 'gemini-2.0-flash-exp');
+                                }
+                              }}
                               className={`px-3 py-1.5 rounded-lg text-[10px] font-bold capitalize transition-all whitespace-nowrap ${
                                 routingConfig[task.id as keyof typeof routingConfig] === provider
                                   ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-sm'
@@ -5246,23 +5292,31 @@ export default function AdminDashboard() {
                       </div>
                     </div>
 
-                    {/* Conditional sub-configuration for Gemini Voice Tutor Model selection */}
-                    {task.id === 'voice_tutor' && routingConfig[task.id as keyof typeof routingConfig] === 'gemini_direct' && (
+                    {/* Conditional sub-configuration for Voice Tutor Model selection */}
+                    {task.id === 'voice_tutor' && (
                       <div className="mt-1 flex flex-wrap items-center gap-2 border-t border-slate-200/60 dark:border-slate-700/60 pt-3">
                         <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mr-1">
-                          Active Live Model:
+                          Active Voice Model ({routingConfig.voice_tutor || 'nvidia'}):
                         </span>
-                        {[
-                          'gemini-2.0-flash-exp',
-                          'gemini-2.5-flash',
-                          'gemini-2.5-pro'
-                        ].map((model) => (
+                        {(routingConfig.voice_tutor === 'nvidia' || !routingConfig.voice_tutor
+                          ? [
+                              'nemotron-voicechat',
+                              'nvidia/nemotron-mini-4b-instruct',
+                              'nvidia/llama-3.1-nemotron-70b-instruct',
+                              'nvidia/nemotron-4-340b-instruct'
+                            ]
+                          : [
+                              'gemini-2.0-flash-exp',
+                              'gemini-2.5-flash',
+                              'gemini-2.5-pro'
+                            ]
+                        ).map((model) => (
                           <button
                             key={model}
                             onClick={() => updateRoutingConfig('voice_tutor_model', model)}
                             className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold border transition-all ${
-                              (routingConfig.voice_tutor_model || 'gemini-2.0-flash-exp') === model
-                                ? 'bg-amber-500/10 border-amber-500 text-amber-700 dark:text-amber-400 font-bold shadow-xs'
+                              (routingConfig.voice_tutor_model || (routingConfig.voice_tutor === 'gemini_direct' ? 'gemini-2.0-flash-exp' : 'nemotron-voicechat')) === model
+                                ? 'bg-emerald-500/10 border-emerald-500 text-emerald-700 dark:text-emerald-400 font-bold shadow-xs'
                                 : 'border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
                             }`}
                           >
@@ -5270,12 +5324,155 @@ export default function AdminDashboard() {
                           </button>
                         ))}
                         <span className="text-[10px] text-slate-400 italic ml-auto">
-                          (Requires Google bidirectional streaming support)
+                          {routingConfig.voice_tutor === 'nvidia' ? '(NVIDIA NIM High-Performance Nemotron Voice Inference)' : '(Google Bidirectional Multimodal Streaming)'}
                         </span>
                       </div>
                     )}
                   </div>
                 ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Interactive Dynamic Router Tester Playground */}
+          <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 rounded-3xl p-8 text-white shadow-xl border border-indigo-500/20 mt-8">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h2 className="text-2xl font-bold flex items-center gap-2">
+                  <Cpu className="text-emerald-400 animate-pulse" size={28} />
+                  Dynamic AI Router & Model Role Inspector
+                </h2>
+                <p className="text-indigo-200/80 text-sm mt-1">
+                  Test prompt intent classification, role persona injection, provider assignment, and live response timing.
+                </p>
+              </div>
+              <span className="px-3 py-1 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-full text-xs font-bold uppercase tracking-wider">
+                Live Test Playground
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="space-y-4">
+                <label className="block text-xs font-bold text-indigo-300 uppercase tracking-wider">
+                  Test Student Prompt / Inquiry
+                </label>
+                <textarea
+                  id="admin-router-test-prompt"
+                  rows={4}
+                  className="w-full p-4 rounded-2xl bg-slate-950/80 border border-indigo-500/30 text-white placeholder-slate-500 text-sm focus:ring-2 focus:ring-emerald-400 focus:outline-none"
+                  placeholder="e.g. Derive Schrodinger's time-independent wave equation for a particle in a 1D potential box..."
+                  defaultValue="Prove by induction that the sum of the first n positive integers is n(n+1)/2, and explain the step-by-step calculus derivation."
+                />
+                
+                <div className="flex gap-2 flex-wrap">
+                  <button
+                    onClick={() => {
+                      const el = document.getElementById('admin-router-test-prompt') as HTMLTextAreaElement;
+                      if (el) el.value = "Prove by induction that the sum of the first n positive integers is n(n+1)/2, and explain the step-by-step calculus derivation.";
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-indigo-900/40 border border-indigo-500/30 text-xs text-indigo-200 hover:bg-indigo-900/70"
+                  >
+                    Math Proof Sample
+                  </button>
+                  <button
+                    onClick={() => {
+                      const el = document.getElementById('admin-router-test-prompt') as HTMLTextAreaElement;
+                      if (el) el.value = "Write a Python function implementing quicksort algorithm with O(n log n) average time complexity and memory optimization.";
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-indigo-900/40 border border-indigo-500/30 text-xs text-indigo-200 hover:bg-indigo-900/70"
+                  >
+                    Coding Sample
+                  </button>
+                  <button
+                    onClick={() => {
+                      const el = document.getElementById('admin-router-test-prompt') as HTMLTextAreaElement;
+                      if (el) el.value = "Generate 5 key flashcards for organic chemistry functional groups and their infrared spectroscopy absorption bands.";
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-indigo-900/40 border border-indigo-500/30 text-xs text-indigo-200 hover:bg-indigo-900/70"
+                  >
+                    Flashcard Sample
+                  </button>
+                </div>
+
+                <button
+                  onClick={async () => {
+                    const el = document.getElementById('admin-router-test-prompt') as HTMLTextAreaElement;
+                    if (!el) return;
+                    setRouterTestTelemetry({ loading: true });
+                    try {
+                      const { callAI } = await import('../services/ai');
+                      const promptText = el.value || "Hello";
+                      const start = Date.now();
+                      const res = await callAI(promptText, "You are testing the AI router.", undefined, undefined, 'high', 'chat');
+                      const elapsed = Date.now() - start;
+                      setRouterTestTelemetry({
+                        loading: false,
+                        data: {
+                          taskType: res.meta?.taskType || 'chat',
+                          provider: res.meta?.providerLabel || res.meta?.providerUsed || 'Groq',
+                          reasoning: res.meta?.reasoning || 'Auto Classified',
+                          text: res.text || '',
+                          elapsed
+                        }
+                      });
+                    } catch (err: any) {
+                      setRouterTestTelemetry({ loading: false, error: err.message });
+                    }
+                  }}
+                  disabled={routerTestTelemetry?.loading}
+                  className="w-full py-3 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-slate-950 font-bold rounded-2xl shadow-lg transition-all flex items-center justify-center gap-2"
+                >
+                  {routerTestTelemetry?.loading ? <Loader2 className="animate-spin" size={18} /> : <Zap size={18} />}
+                  {routerTestTelemetry?.loading ? 'Classifying & Testing Router...' : 'Test Dynamic Router Engine'}
+                </button>
+              </div>
+
+              <div className="bg-slate-950/90 rounded-2xl p-5 border border-indigo-500/20 flex flex-col justify-between">
+                <div>
+                  <h3 className="text-xs font-bold text-indigo-300 uppercase tracking-wider mb-3">
+                    Router Diagnostic Telemetry Output
+                  </h3>
+                  {routerTestTelemetry?.loading && (
+                    <div className="text-xs text-amber-400 font-bold animate-pulse p-4 bg-amber-500/10 rounded-xl border border-amber-500/20">
+                      Classifying intent and testing provider execution...
+                    </div>
+                  )}
+
+                  {routerTestTelemetry?.error && (
+                    <div className="text-xs text-rose-400 font-bold p-4 bg-rose-500/10 rounded-xl border border-rose-500/20">
+                      Test Error: {routerTestTelemetry.error}
+                    </div>
+                  )}
+
+                  {routerTestTelemetry?.data && (
+                    <div className="space-y-3 text-xs text-slate-200">
+                      <div className="p-3 bg-indigo-900/50 rounded-xl border border-indigo-500/30 flex justify-between items-center font-mono">
+                        <div><span className="text-indigo-400 font-bold">Detected Workload:</span> <span className="text-emerald-300 font-bold uppercase">{routerTestTelemetry.data.taskType}</span></div>
+                        <div className="text-[10px] text-slate-400">{routerTestTelemetry.data.elapsed}ms total</div>
+                      </div>
+                      <div className="p-3 bg-slate-900 rounded-xl border border-slate-700 font-mono">
+                        <div><span className="text-amber-400 font-bold">Assigned Engine:</span> {routerTestTelemetry.data.provider}</div>
+                        <div className="text-[10px] text-slate-400 mt-1"><span className="text-indigo-300 font-bold">Intent Logic:</span> {routerTestTelemetry.data.reasoning}</div>
+                      </div>
+                      <div className="p-4 bg-slate-950 rounded-xl border border-slate-800 text-slate-200 max-h-80 overflow-y-auto leading-relaxed">
+                        <span className="text-emerald-400 font-bold block mb-2 font-mono">Generated Output Snippet:</span>
+                        <div className="prose prose-invert max-w-none text-xs">
+                          <MarkdownRenderer content={routerTestTelemetry.data.text} />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {!routerTestTelemetry && (
+                    <div className="text-xs text-slate-400 italic">
+                      Click "Test Dynamic Router Engine" above to trigger real-time intent classification and model execution inspect.
+                    </div>
+                  )}
+                </div>
+                <div className="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-400 font-mono">
+                  <span>Engine Status: <span className="text-emerald-400 font-bold">Active & Routing</span></span>
+                  <span>Fallbacks: <span className="text-indigo-300 font-bold">Circuit Breaker Enabled</span></span>
+                </div>
               </div>
             </div>
           </div>
@@ -5307,7 +5504,8 @@ export default function AdminDashboard() {
                 { id: 'groq', label: 'Groq (Turbo)', desc: 'Direct API keys for Groq Cloud.' },
                 { id: 'mistral_direct', label: 'Mistral', desc: 'Direct API keys for Mistral AI Platform.' },
                 { id: 'cohere', label: 'Cohere', desc: 'Direct API keys for Cohere AI.' },
-                { id: 'huggingface', label: 'Hugging Face', desc: 'Direct API keys for Hugging Face Hub.' }
+                { id: 'huggingface', label: 'Hugging Face', desc: 'Direct API keys for Hugging Face Hub.' },
+                { id: 'nvidia', label: 'NVIDIA NIM', desc: 'Direct API keys for NVIDIA Nemotron-3 Super 120B & NIM models.' }
               ].map(provider => (
                 <div key={provider.id} className="p-6 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
                   <div className="flex items-center justify-between mb-4">

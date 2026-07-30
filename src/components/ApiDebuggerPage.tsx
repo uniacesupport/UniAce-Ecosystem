@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Zap, Key, Loader2, CheckCircle, AlertCircle, ChevronLeft, Send, History, Trash2, Copy, Code, Globe, Settings, Plus, X, Clock, Database, Shield, Search } from 'lucide-react';
+import { Zap, Key, Loader2, CheckCircle, AlertCircle, ChevronLeft, Send, History, Trash2, Copy, Code, Globe, Settings, Plus, X, Clock, Database, Shield, Search, Check } from 'lucide-react';
 import { auth } from '../firebase';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -21,6 +21,34 @@ export const ApiDebuggerPage = ({ onBack, showToast }: { onBack: () => void, sho
   const [testKeyInput, setTestKeyInput] = useState('');
   const [testKeyResult, setTestKeyResult] = useState<any>(null);
   const [isTestingKey, setIsTestingKey] = useState(false);
+  const [isSavingKey, setIsSavingKey] = useState(false);
+
+  const handleSaveTestedKey = async () => {
+    if (!testKeyInput || !testKeyResult?.success) return;
+    const targetProvider = testKeyResult.correctedProvider || testKeyProvider;
+    setIsSavingKey(true);
+    try {
+      const idToken = await auth.currentUser?.getIdToken();
+      const res = await fetch('/api/admin/save-provider-key', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${idToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ provider: targetProvider, key: testKeyInput })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showToast(`Saved and hot-reloaded key for ${targetProvider.toUpperCase()}!`, "success");
+      } else {
+        showToast(data.error || "Failed to save key", "error");
+      }
+    } catch (err: any) {
+      showToast("Error saving key: " + err.message, "error");
+    } finally {
+      setIsSavingKey(false);
+    }
+  };
 
   // Advanced Debugger State
   const [method, setMethod] = useState('GET');
@@ -429,20 +457,50 @@ export const ApiDebuggerPage = ({ onBack, showToast }: { onBack: () => void, sho
                     <option value="openrouter">OpenRouter</option>
                     <option value="cohere">Cohere</option>
                     <option value="huggingface">Hugging Face</option>
+                    <option value="nvidia">NVIDIA NIM (Nemotron-3-Super-120B)</option>
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">API Key to Test</label>
+                  <div className="flex justify-between items-center mb-2">
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">API Key to Test</label>
+                    {testKeyInput.trim().startsWith('nvapi-') && (
+                      <span className="text-[10px] font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">
+                        NVIDIA NIM Signature (nvapi-...)
+                      </span>
+                    )}
+                    {testKeyInput.trim().startsWith('gsk_') && (
+                      <span className="text-[10px] font-bold text-indigo-500 bg-indigo-500/10 px-2 py-0.5 rounded-md border border-indigo-500/20">
+                        Groq Signature (gsk_...)
+                      </span>
+                    )}
+                    {testKeyInput.trim().startsWith('AIzaSy') && (
+                      <span className="text-[10px] font-bold text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20">
+                        Gemini Signature (AIzaSy...)
+                      </span>
+                    )}
+                  </div>
                   <div className="relative">
                     <input 
                       type="password"
                       value={testKeyInput}
                       onChange={(e) => setTestKeyInput(e.target.value)}
-                      placeholder="Enter key to validate..."
+                      placeholder="Enter key to validate (e.g. nvapi-..., gsk_..., AIzaSy...)"
                       className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-700 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none pr-10"
                     />
                     <Key className="absolute right-3 top-3.5 text-slate-400" size={18} />
                   </div>
+                  {testKeyInput.trim().startsWith('nvapi-') && testKeyProvider !== 'nvidia' && (
+                    <div className="mt-2 text-[11px] text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 p-2 rounded-lg border border-amber-200 dark:border-amber-800/40 flex items-center justify-between">
+                      <span>Tip: 'nvapi-...' keys belong to NVIDIA NIM. Selecting 'NVIDIA NIM' is recommended.</span>
+                      <button 
+                        type="button"
+                        onClick={() => setTestKeyProvider('nvidia')}
+                        className="ml-2 px-2 py-0.5 bg-amber-500 text-slate-950 font-bold rounded text-[10px]"
+                      >
+                        Switch to NVIDIA
+                      </button>
+                    </div>
+                  )}
                 </div>
                 <button 
                   onClick={handleTestApiKey}
@@ -461,15 +519,51 @@ export const ApiDebuggerPage = ({ onBack, showToast }: { onBack: () => void, sho
                     animate={{ opacity: 1, scale: 1 }}
                     className={`p-6 rounded-2xl border h-full flex flex-col justify-center ${testKeyResult.success ? 'bg-emerald-50 border-emerald-100 dark:bg-emerald-900/20 dark:border-emerald-800' : 'bg-rose-50 border-rose-100 dark:bg-rose-900/20 dark:border-rose-800'}`}
                   >
-                    <div className="flex items-center gap-2 mb-3">
+                    <div className="flex items-center gap-2 mb-2">
                       {testKeyResult.success ? <CheckCircle className="text-emerald-500" size={20} /> : <AlertCircle className="text-rose-500" size={20} />}
-                      <span className={`text-sm font-bold ${testKeyResult.success ? 'text-emerald-700' : 'text-rose-700'}`}>
-                        {testKeyResult.success ? 'Key is Valid' : 'Validation Failed'}
+                      <span className={`text-sm font-bold ${testKeyResult.success ? 'text-emerald-700 dark:text-emerald-300' : 'text-rose-700 dark:text-rose-300'}`}>
+                        {testKeyResult.autoCorrected ? 'Key Validated via Auto-Correction' : (testKeyResult.success ? 'Key is Valid' : 'Validation Failed')}
                       </span>
                     </div>
-                    <p className={`text-xs ${testKeyResult.success ? 'text-emerald-600' : 'text-rose-600'} break-words`}>
+
+                    {testKeyResult.autoCorrected && (
+                      <div className="mb-3 px-3 py-1.5 bg-indigo-500/10 border border-indigo-500/30 rounded-xl text-[11px] text-indigo-700 dark:text-indigo-300 font-medium">
+                        ✨ <strong>Smart Cross-Provider Routing:</strong> Tested and verified using <strong>{testKeyResult.correctedProvider?.toUpperCase()}</strong>.
+                      </div>
+                    )}
+
+                    <p className={`text-xs ${testKeyResult.success ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'} break-words leading-relaxed`}>
                       {testKeyResult.success ? testKeyResult.message : testKeyResult.error}
                     </p>
+
+                    {testKeyResult.recommendation && (
+                      <p className="mt-3 text-[11px] text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 p-2.5 rounded-xl border border-indigo-200 dark:border-indigo-800/40">
+                        💡 {testKeyResult.recommendation}
+                      </p>
+                    )}
+
+                    {testKeyResult.tip && (
+                      <p className="mt-3 text-[11px] text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30 p-2.5 rounded-xl border border-amber-200 dark:border-amber-800/40">
+                        ⚡ {testKeyResult.tip}
+                      </p>
+                    )}
+
+                    {testKeyResult.latency && (
+                      <div className="mt-3 text-[10px] text-slate-400 font-mono">
+                        Latency: {testKeyResult.latency}
+                      </div>
+                    )}
+
+                    {testKeyResult.success && (
+                      <button
+                        onClick={handleSaveTestedKey}
+                        disabled={isSavingKey}
+                        className="mt-4 w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-2"
+                      >
+                        {isSavingKey ? <Loader2 className="animate-spin" size={16} /> : <Check size={16} />}
+                        {isSavingKey ? 'Saving Key...' : `Apply Key to ${(testKeyResult.correctedProvider || testKeyProvider).toUpperCase()} System Config`}
+                      </button>
+                    )}
                   </motion.div>
                 ) : (
                   <div className="h-full border-2 border-dashed border-slate-100 dark:border-slate-700 rounded-2xl flex flex-col items-center justify-center p-6 text-center">

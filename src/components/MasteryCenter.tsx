@@ -7,6 +7,7 @@ import { GamificationService, LEVELS } from '../services/gamification';
 import Badges from './Gamification/Badges';
 import Leaderboard from './Gamification/Leaderboard';
 import AnalyticsCharts from './Analytics/AnalyticsCharts';
+import QuizTrendsDashboard from './Analytics/QuizTrendsDashboard';
 import { useAuth } from '../context/AuthContext';
 import LockedFeature from './LockedFeature';
 
@@ -218,6 +219,11 @@ export default function MasteryCenter({ progress, onBack, activeCourseId, syllab
                 </div>
               </section>
             </LockedFeature>
+
+            {/* Quiz Trends */}
+            <section className="space-y-6">
+              <QuizTrendsDashboard quizHistory={progress.quizHistory} activeCourseId={activeCourseId} />
+            </section>
 
             {/* Knowledge Heatmap */}
             <section className="space-y-6">

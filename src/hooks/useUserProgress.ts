@@ -398,6 +398,28 @@ export function useUserProgress() {
     }
   };
 
+  
+  const recordQuizScore = (courseId: string, topicId: string, score: number) => {
+    setProgress(prev => {
+      const history = prev.quizHistory || [];
+      const newHistory = [...history, {
+        date: new Date().toISOString(),
+        score,
+        courseId,
+        topicId
+      }];
+      // Keep only last 100 quizzes to prevent unlimited growth
+      if (newHistory.length > 100) newHistory.shift();
+      const tempProgress = {
+        ...prev,
+        quizHistory: newHistory,
+        quizzesCompleted: (prev.quizzesCompleted || 0) + 1
+      };
+      saveImmediately(tempProgress);
+      return tempProgress;
+    });
+  };
+
   const recordStudyTime = (topicId: string, seconds: number) => {
     setProgress(prev => ({
       ...prev,
@@ -609,5 +631,5 @@ export function useUserProgress() {
     return () => clearTimeout(timer);
   }, [user, profile, effectiveEnrolledCourses, isOnline]);
 
-  return { progress: effectiveProgress, integrityIssues, addXp, updateMastery, recordStudyTime, unlockAchievement, markTopicAsStudied, addBookmark, removeBookmark, enrollCourse, unenrollCourse, updateSRSData, updateAIPersonality, isOnline, checkAndUpdateStreak };
+  return { progress: effectiveProgress, integrityIssues, addXp, updateMastery, recordQuizScore, recordStudyTime, unlockAchievement, markTopicAsStudied, addBookmark, removeBookmark, enrollCourse, unenrollCourse, updateSRSData, updateAIPersonality, isOnline, checkAndUpdateStreak };
 }

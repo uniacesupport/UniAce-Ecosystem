@@ -87,7 +87,7 @@ function AppContent() {
     }
   }, [theme]);
   const { courses, refreshCourses } = useCourses();
-  const { progress, addXp, updateMastery, recordStudyTime, addBookmark, removeBookmark, enrollCourse, unenrollCourse, updateAIPersonality, isOnline, checkAndUpdateStreak } = useUserProgress();
+  const { progress, addXp, updateMastery, recordQuizScore, recordStudyTime, addBookmark, removeBookmark, enrollCourse, unenrollCourse, updateAIPersonality, isOnline, checkAndUpdateStreak } = useUserProgress();
   
   // Activate advanced self-healing for robust dynamic client-state integrity
   useSelfHealing();
@@ -584,7 +584,8 @@ function AppContent() {
             toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
             onQuizComplete={(topicId, score) => {
               updateMastery(topicId, score);
-              addXp(score * 2); // 2 XP per percentage point
+              if (activeCourseId) recordQuizScore(activeCourseId, topicId, score);
+              addXp(score * 2);
               triggerRecalibration(topicId, score);
             }}
             onQuickCheckComplete={(topicId) => {
@@ -606,6 +607,7 @@ function AppContent() {
               courseId={activeCourseId || undefined}
               onQuizComplete={(topicId, score) => {
                 updateMastery(topicId, score);
+                if (activeCourseId) recordQuizScore(activeCourseId, topicId, score);
                 addXp(score * 2);
                 triggerRecalibration(topicId, score);
               }}

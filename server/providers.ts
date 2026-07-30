@@ -15,8 +15,8 @@ export interface ModelResponse {
 
 export interface ModelProvider {
   readonly name: string;
-  generate(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean }): Promise<ModelResponse>;
-  stream(messages: any[], options: { complexity: 'high' | 'standard' }, onChunk: (chunk: string) => void): Promise<ModelResponse>;
+  generate(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean, model?: string }): Promise<ModelResponse>;
+  stream(messages: any[], options: { complexity: 'high' | 'standard', model?: string }, onChunk: (chunk: string) => void): Promise<ModelResponse>;
 }
 
 const ProviderResponseSchema = z.object({
@@ -1096,6 +1096,117 @@ export class HuggingFaceProvider implements ModelProvider {
         throw error;
       }
     }, 'HuggingFace');
+  }
+}
+
+export class NvidiaProvider implements ModelProvider {
+  private rotator: DynamicKeyRotator;
+  public readonly name = 'nvidia';
+
+  constructor(apiKey: string = '') {
+    this.rotator = new DynamicKeyRotator('nvidia', apiKey);
+  }
+
+  private ensureJsonInMessages(messages: any[]) {
+    if (!messages || messages.length === 0) return;
+    const lastMessage = messages[messages.length - 1];
+    const jsonRequirement = " (Your response MUST be a valid JSON object. Ensure the output is strictly valid JSON with no markdown backticks unless part of JSON strings.)";
+    
+    if (typeof lastMessage.content === 'string') {
+      if (!lastMessage.content.toLowerCase().includes('json')) {
+        lastMessage.content += jsonRequirement;
+      }
+    } else if (Array.isArray(lastMessage.content)) {
+      const hasJson = lastMessage.content.some((part: any) => 
+        part.type === 'text' && part.text.toLowerCase().includes('json')
+      );
+      if (!hasJson) {
+        lastMessage.content.push({ type: 'text', text: jsonRequirement });
+      }
+    }
+  }
+
+  async generate(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean, model?: string }): Promise<ModelResponse> {
+    return retry(async () => {
+      const apiKey = await this.rotator.getNextKey();
+      let model = (options?.model || await this.rotator.getModel() || '').trim() || 'nemotron-voicechat';
+      
+      const openai = new OpenAI({
+        baseURL: "https://integrate.api.nvidia.com/v1",
+        apiKey: apiKey,
+      });
+
+      if (options.jsonMode) {
+        this.ensureJsonInMessages(messages);
+      }
+
+      try {
+        const response = await openai.chat.completions.create({
+          model: model,
+          messages: messages,
+          max_tokens: 8192,
+          temperature: 0.5,
+          response_format: options.jsonMode ? { type: "json_object" } : undefined
+        });
+
+        return {
+          text: response.choices[0]?.message?.content || '',
+          usage: {
+            promptTokens: response.usage?.prompt_tokens || 0,
+            completionTokens: response.usage?.completion_tokens || 0,
+            totalTokens: response.usage?.total_tokens || 0
+          },
+          finishReason: response.choices[0]?.finish_reason || 'stop'
+        };
+      } catch (error: any) {
+        if (error.status === 401 || error.status === 403) {
+          this.rotator.markKeyExhausted(apiKey);
+        }
+        throw error;
+      }
+    }, 'Nvidia');
+  }
+
+  async stream(messages: any[], options: { complexity: 'high' | 'standard', model?: string }, onChunk: (chunk: string) => void): Promise<ModelResponse> {
+    return retry(async () => {
+      const apiKey = await this.rotator.getNextKey();
+      let model = (options?.model || await this.rotator.getModel() || '').trim() || 'nemotron-voicechat';
+
+      const openai = new OpenAI({
+        baseURL: "https://integrate.api.nvidia.com/v1",
+        apiKey: apiKey,
+      });
+
+      try {
+        const stream = await openai.chat.completions.create({
+          model: model,
+          messages: messages,
+          max_tokens: 8192,
+          temperature: 0.5,
+          stream: true
+        });
+
+        let fullText = '';
+        for await (const chunk of stream) {
+          const content = chunk.choices[0]?.delta?.content || '';
+          if (content) {
+            fullText += content;
+            onChunk(content);
+          }
+        }
+
+        return {
+          text: fullText,
+          usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+          finishReason: 'stop'
+        };
+      } catch (error: any) {
+        if (error.status === 401 || error.status === 403) {
+          this.rotator.markKeyExhausted(apiKey);
+        }
+        throw error;
+      }
+    }, 'Nvidia');
   }
 }
 

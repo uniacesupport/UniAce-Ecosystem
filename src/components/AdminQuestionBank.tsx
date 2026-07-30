@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, FileText, Plus, CheckCircle, Loader2, AlertCircle, Save, Trash2, Edit2, Search, List, FileUp, Bot, Shield, Zap, Star } from 'lucide-react';
+import { Upload, FileText, Plus, CheckCircle, Loader2, AlertCircle, Save, Trash2, Edit2, Search, List, FileUp, Bot, Shield, Zap, Star, Cpu } from 'lucide-react';
 import { db, auth } from '../firebase';
 import { collection, getDocs, getDoc, doc, deleteDoc, updateDoc } from 'firebase/firestore';
 import { jsonrepair } from 'jsonrepair';
@@ -28,7 +28,7 @@ export default function AdminQuestionBank() {
   
   // Bulk Tab State
   const [extractedQuestions, setExtractedQuestions] = useState<any[]>([]);
-  const [selectedProvider, setSelectedProvider] = useState<'gemini_direct' | 'openrouter_free' | 'mistral_direct' | 'groq' | 'cohere' | 'huggingface'>('gemini_direct');
+  const [selectedProvider, setSelectedProvider] = useState<'gemini_direct' | 'openrouter_free' | 'mistral_direct' | 'groq' | 'cohere' | 'huggingface' | 'nvidia'>('gemini_direct');
 
   // Single Add State
   const [singleQuestion, setSingleQuestion] = useState({
@@ -668,6 +668,17 @@ export default function AdminQuestionBank() {
               >
                 <Bot size={16} />
                 Hugging Face
+              </button>
+              <button
+                onClick={() => setSelectedProvider('nvidia')}
+                className={`px-4 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 transition-all ${
+                  selectedProvider === 'nvidia'
+                    ? 'bg-emerald-100 text-emerald-700 border-2 border-emerald-500 dark:bg-emerald-900/30 dark:text-emerald-400'
+                    : 'bg-slate-50 text-slate-600 border-2 border-slate-100 hover:border-emerald-300 dark:bg-slate-900 dark:text-slate-400 dark:border-slate-700 dark:hover:border-emerald-700'
+                }`}
+              >
+                <Cpu size={16} />
+                NVIDIA NIM
               </button>
             </div>
             <p className="text-[10px] text-slate-500 mt-3 italic">

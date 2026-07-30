@@ -52,7 +52,7 @@ export const callAI = async (prompt: any, systemInstruction?: string, responseFo
   }
   
   const data = await response.json();
-  return { text: data.text };
+  return { text: data.text, meta: data.meta };
 };
 
 const extractJSON = (text: string) => {
@@ -352,7 +352,7 @@ SECURITY RULES:
       uri: chunk.web?.uri || '#'
     })).filter((s: any) => s.uri !== '#') || [];
 
-    return { text: sanitizedText, sources };
+    return { text: sanitizedText, sources, meta: response.meta };
   },
 
   generateMiniLessonStream: async function* (

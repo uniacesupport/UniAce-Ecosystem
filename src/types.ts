@@ -141,6 +141,7 @@ export interface UserProgress {
   aiPersonality?: AIPersonality;
   learningProfile?: LearningProfile;
   quizzesCompleted?: number;
+  quizHistory?: { date: string; score: number; courseId: string; topicId?: string; title?: string }[];
 }
 
 export interface Bookmark {
@@ -186,6 +187,14 @@ export interface ChatMessage {
   image?: string;
   sources?: { title: string; uri: string }[];
   pdfContent?: string;
+  meta?: {
+    providerUsed?: string;
+    providerLabel?: string;
+    taskType?: string;
+    complexity?: string;
+    reasoning?: string;
+    latencyMs?: number;
+  };
 }
 
 export type QuestionType = 'multiple-choice' | 'fill-in-the-blank';

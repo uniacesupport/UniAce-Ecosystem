@@ -89,7 +89,8 @@ export default function VoiceTutor({ isOpen, onClose, pdfContent, systemInstruct
           history: [], // We could track history here if needed
           context: contextStr,
           complexity: 'standard',
-          personality: 'encouraging'
+          personality: 'encouraging',
+          taskType: 'voice_tutor'
         })
       });
 
@@ -208,9 +209,14 @@ export default function VoiceTutor({ isOpen, onClose, pdfContent, systemInstruct
             className="bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-3xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col relative"
           >
             <div className="flex items-center justify-between p-5 border-b border-slate-100 dark:border-zinc-800/50">
-              <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-200">
-                Voice Tutor
-              </h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-200">
+                  Voice Tutor
+                </h2>
+                <span className="px-2 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 text-[10px] font-bold tracking-wide border border-emerald-300/50 dark:border-emerald-800/50">
+                  NVIDIA Nemotron
+                </span>
+              </div>
               <button
                 onClick={handleClose}
                 className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-zinc-800 dark:hover:text-slate-300 rounded-full transition-colors"

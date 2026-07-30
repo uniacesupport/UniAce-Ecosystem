@@ -191,8 +191,21 @@ function fixMarkdownTables(text: string): string {
 function preprocessMarkdownContent(text: string): string {
   if (typeof text !== 'string' || !text) return '';
 
-  // Fix any \infinity or infinity with backslash in the raw text to \infty for KaTeX compatibility
-  let processedText = text.replace(/\\infinity\b/gi, '\\infty');
+  // 0. Remove markdown backticks if they are wrapping a LaTeX math block entirely
+  // e.g. `\[ S_k = 1 \]` -> \[ S_k = 1 \]
+  let processedText = text
+    .replace(/`(\\\([\s\S]+?\\\))` /g, '$1 ') // inline code with trailing space
+    .replace(/ `(\\\([\s\S]+?\\\))`/g, ' $1') // inline code with leading space
+    .replace(/`(\\\([\s\S]+?\\\))/g, '$1')   // inline code
+    .replace(/`(\\\[[\s\S]+?\\\])`/g, '$1')   // block code
+    .replace(/```math\n([\s\S]+?)\n```/g, '\n\n$$\n$1\n$$\n\n') // fenced math code blocks
+    .replace(/```latex\n([\s\S]+?)\n```/g, '\n\n$$\n$1\n$$\n\n') // fenced latex code blocks
+    .replace(/\\infinity\b/gi, '\\infty');
+
+  // Normalize LaTeX delimiters \( ... \) -> $ ... $ and \[ ... \] -> $$ ... $$
+  processedText = processedText
+    .replace(/\\\[([\s\S]+?)\\\]/g, (_m, p1) => `\n\n$$\n${p1.trim()}\n$$\n\n`)
+    .replace(/\\\(([\s\S]+?)\\\)/g, (_m, p1) => `$${p1.trim()}$`);
 
   // 1. Temporarily extract and protect math blocks from regex operations that strip backslashes
   const mathBlocks: string[] = [];
@@ -205,7 +218,6 @@ function preprocessMarkdownContent(text: string): string {
   });
 
   // Protect inline math $ ... $
-  // We match inline math, ensuring we do not cross line boundaries or match empty/whitespace-only $
   protectedText = protectedText.replace(/\$([^$\n]+?)\$/g, (match) => {
     mathBlocks.push(match);
     return `__MATH_BLOCK_PLACEHOLDER_${mathBlocks.length - 1}__`;
@@ -241,9 +253,9 @@ function preprocessMarkdownContent(text: string): string {
   // This avoids KaTeX trying to interpret regular text containing \something (like \delocalized) as a math macro
   // Since we are running this ONLY on protectedText (which has all math blocks removed), this is completely safe!
   const validCommands = new Set([
-    'frac', 'sqrt', 'sum', 'int', 'alpha', 'beta', 'theta', 'pi', 'sigma', 'lambda', 'delta', 'partial', 'infinity', 'infty', 'ge', 'le', 'ne', 'times', 'div', 'pm', 'mp', 'approx', 'equiv', 'cdots', 'dots', 'overline', 'underline', 'hat', 'bar', 'tilde', 'vec', 'text', 'left', 'right', 'begin', 'end', 'align', 'matrix', 'pmatrix', 'bmatrix', 'vmatrix', 'Vmatrix', 'cases', 'del', 'nabla', 'degree', 'sin', 'cos', 'tan', 'log', 'ln', 'lim', 'micro', 'mu', 'rho', 'phi', 'psi', 'omega', 'gamma', 'delta', 'epsilon', 'zeta', 'eta', 'iota', 'kappa', 'nu', 'xi', 'omicron', 'tau', 'upsilon', 'chi', 'Gamma', 'Delta', 'Theta', 'Lambda', 'Xi', 'Pi', 'Sigma', 'Upsilon', 'Phi', 'Psi', 'Omega', 'cdot', 'tag', 'limits', 'varepsilon',
+    'frac', 'sqrt', 'sum', 'int', 'alpha', 'beta', 'theta', 'pi', 'sigma', 'lambda', 'delta', 'partial', 'infinity', 'infty', 'ge', 'le', 'ne', 'times', 'div', 'pm', 'mp', 'approx', 'equiv', 'cdots', 'dots', 'overline', 'underline', 'hat', 'bar', 'tilde', 'vec', 'text', 'left', 'right', 'begin', 'end', 'align', 'aligned', 'matrix', 'pmatrix', 'bmatrix', 'vmatrix', 'Vmatrix', 'cases', 'del', 'nabla', 'degree', 'sin', 'cos', 'tan', 'log', 'ln', 'lim', 'micro', 'mu', 'rho', 'phi', 'psi', 'omega', 'gamma', 'delta', 'epsilon', 'zeta', 'eta', 'iota', 'kappa', 'nu', 'xi', 'omicron', 'tau', 'upsilon', 'chi', 'Gamma', 'Delta', 'Theta', 'Lambda', 'Xi', 'Pi', 'Sigma', 'Upsilon', 'Phi', 'Psi', 'Omega', 'cdot', 'tag', 'limits', 'varepsilon',
     'rightarrow', 'leftarrow', 'to', 'leftrightarrow', 'Rightarrow', 'Leftarrow', 'Leftrightarrow', 'mathrm', 'mathbf', 'mathit', 'mathsf', 'mathtt', 'mathcal', 'mathbb', 'mathfrak', 'ce', 'deg', 'leq', 'geq', 'neq', 'cong', 'propto', 'sim', 'subset', 'supset', 'subseteq', 'supseteq', 'in', 'ni', 'notin',
-    'cup', 'cap', 'forall', 'exists', 'implies', 'iff', 'varnothing', 'emptyset', 'setminus'
+    'cup', 'cap', 'forall', 'exists', 'implies', 'iff', 'varnothing', 'emptyset', 'setminus', 'displaystyle'
   ]);
 
   protectedText = protectedText.replace(/\\([a-zA-Z]+)/g, (match, word) => {

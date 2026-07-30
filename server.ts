@@ -24,7 +24,7 @@ const currentDirname = typeof __dirname !== 'undefined' ? __dirname : process.cw
 
 import { initializeVectorStore, findRelevantContentSemantic, addVectorItem, removeVectorItem } from './server/vectorSearch';
 
-import { GeminiDirectProvider, MistralProvider, GroqProvider, CohereProvider, HuggingFaceProvider, OpenRouterFreeProvider, CircuitBreaker } from './server/providers';
+import { GeminiDirectProvider, MistralProvider, GroqProvider, CohereProvider, HuggingFaceProvider, OpenRouterFreeProvider, NvidiaProvider, CircuitBreaker } from './server/providers';
 import { getCachedResponse, setCachedResponse } from './server/cache';
 import { MailService } from './server/mailService';
 import { telemetry } from './server/telemetry';
@@ -85,6 +85,7 @@ const globalMistralDirectProvider = new MistralProvider(process.env.MISTRAL_API_
 const globalGroqProvider = new GroqProvider(process.env.GROQ_API_KEY || '');
 const globalCohereProvider = new CohereProvider(process.env.COHERE_API_KEY || '');
 const globalHuggingFaceProvider = new HuggingFaceProvider(process.env.HUGGINGFACE_API_KEY || '');
+const globalNvidiaProvider = new NvidiaProvider(process.env.NVIDIA_API_KEY || '');
 
 const globalGeminiDirectBreaker = new CircuitBreaker(globalGeminiDirectProvider);
 const globalOpenRouterFreeBreaker = new CircuitBreaker(globalOpenRouterFreeProvider);
@@ -92,6 +93,7 @@ const globalMistralDirectBreaker = new CircuitBreaker(globalMistralDirectProvide
 const globalGroqBreaker = new CircuitBreaker(globalGroqProvider);
 const globalCohereBreaker = new CircuitBreaker(globalCohereProvider);
 const globalHuggingFaceBreaker = new CircuitBreaker(globalHuggingFaceProvider);
+const globalNvidiaBreaker = new CircuitBreaker(globalNvidiaProvider);
 
 // --- Telemetry Helper ---
 async function generateWithTelemetry(provider: CircuitBreaker, messages: any[], options: any) {
@@ -107,6 +109,83 @@ async function generateWithTelemetry(provider: CircuitBreaker, messages: any[], 
     throw error;
   }
 }
+
+// --- Dynamic Intent Classification & Role Directive Engine ---
+function classifyTaskIntent(promptInput: any, requestedTaskType?: string): { taskType: string; complexity: 'standard' | 'high'; reasoning: string } {
+  let text = '';
+  if (typeof promptInput === 'string') {
+    text = promptInput.toLowerCase();
+  } else if (promptInput && typeof promptInput === 'object') {
+    text = JSON.stringify(promptInput).toLowerCase();
+  }
+
+  // 1. Explicit Non-Chat Task Types
+  if (requestedTaskType && !['chat', 'default', 'general'].includes(requestedTaskType)) {
+    return { 
+      taskType: requestedTaskType, 
+      complexity: ['quiz', 'lesson', 'deep_reasoning', 'coding', 'skeleton', 'past_questions'].includes(requestedTaskType) ? 'high' : 'standard', 
+      reasoning: `Explicit workload requested: ${requestedTaskType}` 
+    };
+  }
+
+  // 2. Math & Deep Science / Calculus Reasoning
+  const deepReasoningKeywords = ['prove', 'derive', 'calculus', 'quantum', 'eigenvalue', 'integral', 'differential equation', 'matrix proof', 'physics proof', 'step-by-step proof', 'complex derivation', 'theorem proof', 'schrodinger', 'thermodynamics', 'partial derivative', 'vector space'];
+  if (deepReasoningKeywords.some(kw => text.includes(kw)) || text.includes('$$') || (text.includes('x^') && text.length > 70)) {
+    return { taskType: 'deep_reasoning', complexity: 'high', reasoning: 'Detected deep mathematical derivation or advanced STEM proof requirement' };
+  }
+
+  // 3. Programming & Algorithm Code Generation
+  const codingKeywords = ['code', 'function', 'class', 'python', 'javascript', 'typescript', 'react', 'java', 'c++', 'algorithm', 'debug', 'sql', 'syntax', 'data structure', 'recursion', 'html', 'css', 'script', 'bug fix'];
+  if (codingKeywords.some(kw => text.includes(kw))) {
+    return { taskType: 'coding', complexity: 'high', reasoning: 'Detected software engineering or programmatic logic task' };
+  }
+
+  // 4. Flashcards & Study Aid Extraction
+  if (text.includes('flashcard') || text.includes('key terms') || text.includes('rapid facts') || text.includes('definition list')) {
+    return { taskType: 'flashcard', complexity: 'standard', reasoning: 'Detected rapid flashcard extraction request' };
+  }
+
+  // 5. Quiz & Practice Questions
+  if (text.includes('quiz') || text.includes('multiple choice') || text.includes('practice questions') || text.includes('test me')) {
+    return { taskType: 'quiz', complexity: 'high', reasoning: 'Detected interactive assessment generation' };
+  }
+
+  // 6. Lesson & Curriculum Structuring
+  if (text.includes('lesson plan') || text.includes('module syllabus') || text.includes('teach me chapter') || text.includes('course outline')) {
+    return { taskType: 'lesson', complexity: 'high', reasoning: 'Detected comprehensive lesson or syllabus structure request' };
+  }
+
+  return { taskType: 'chat', complexity: 'standard', reasoning: 'Standard academic dialogue & interactive Q&A' };
+}
+
+function getRolePersonaDirective(providerName: string, taskType: string): string {
+  switch (providerName) {
+    case 'nvidia':
+      return `\n\n[NVIDIA NEMOTRON ROLE DIRECTIVE]: You are operating as UniAce's Deep Academic & Reasoning Core (NVIDIA Nemotron-3 Super / Qwen-80B). You specialize in multi-step logical deduction, rigorous academic proofs, software algorithms, and university curriculum synthesis. Maintain absolute mathematical accuracy and high academic rigor.`;
+    case 'groq':
+      return `\n\n[GROQ RAPID CORE ROLE DIRECTIVE]: You are operating as UniAce's Instant Speed Academic Tutor (Groq Llama-3). You specialize in rapid response, engaging student conversation, and immediate Q&A feedback. Be concise, punchy, and clear.`;
+    case 'gemini_direct':
+      return `\n\n[GEMINI MULTIMODAL DIRECTIVE]: You are operating as UniAce's Visual & Multimodal Academic Expert (Gemini 2.0 Flash). You excel in image analysis, visual diagrams, and multi-disciplinary university curricula.`;
+    case 'cohere':
+      return `\n\n[COHERE ACADEMIC DIRECTIVE]: You are operating as UniAce's Structured Curriculum & Course Architect. You excel in clear hierarchy, concise outlines, and structured lesson plans.`;
+    case 'mistral_direct':
+      return `\n\n[MISTRAL REASONING DIRECTIVE]: You are operating as UniAce's Analytical Logic & Math Tutor.`;
+    case 'huggingface':
+      return `\n\n[HUGGINGFACE EXTRACTION DIRECTIVE]: You are operating as UniAce's Fast Flashcard & Fact Extraction Core.`;
+    default:
+      return `\n\n[UNIACE AI ENGINE DIRECTIVE]: You are operating as UniAce's Adaptive Academic Engine.`;
+  }
+}
+
+const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
+  nvidia: 'NVIDIA NIM (Nemotron-3 / Qwen-80B)',
+  groq: 'Groq (Llama-3 70B Fast)',
+  gemini_direct: 'Gemini 2.0 Flash Direct',
+  cohere: 'Cohere Command R+',
+  mistral_direct: 'Mistral Large Direct',
+  huggingface: 'Hugging Face Hub',
+  openrouter_free: 'OpenRouter Free Tier'
+};
 
 // Global Error Handlers for the process
 process.on('uncaughtException', (err) => {
@@ -1459,6 +1538,11 @@ app.post('/api/chat', verifyAuth, async (req, res) => {
     const huggingFaceBreaker = globalHuggingFaceBreaker;
     const geminiDirectBreaker = globalGeminiDirectBreaker;
 
+    // DYNAMIC INTENT CLASSIFICATION FOR CHAT
+    const classified = classifyTaskIntent(message, 'chat');
+    const effectiveTaskType = classified.taskType;
+    const effectiveComplexity = complexity || classified.complexity;
+
     // Fetch dynamic task routing config for chat
     let routingConfig: any = { chat: 'groq' };
     try {
@@ -1472,42 +1556,39 @@ app.post('/api/chat', verifyAuth, async (req, res) => {
       console.warn("Failed to fetch routing config for POST chat route:", err);
     }
 
-    try {
-      const preferredProviderName = routingConfig.chat || 'groq';
-      const providers = [];
+    let successfulProviderName = 'groq';
+    const reqStart = Date.now();
 
-      const providerMap: Record<string, any> = {
-        gemini_direct: geminiDirectBreaker,
-        mistral_direct: mistralBreaker,
-        groq: groqBreaker,
-        cohere: cohereBreaker,
-        huggingface: huggingFaceBreaker,
-        openrouter_free: openRouterFreeBreaker
+    try {
+      const preferredProviderName = routingConfig[effectiveTaskType] || routingConfig.chat || 'groq';
+      
+      const providerMap: Record<string, { breaker: any, name: string }> = {
+        gemini_direct: { breaker: geminiDirectBreaker, name: 'gemini_direct' },
+        mistral_direct: { breaker: mistralBreaker, name: 'mistral_direct' },
+        groq: { breaker: groqBreaker, name: 'groq' },
+        cohere: { breaker: cohereBreaker, name: 'cohere' },
+        huggingface: { breaker: huggingFaceBreaker, name: 'huggingface' },
+        openrouter_free: { breaker: openRouterFreeBreaker, name: 'openrouter_free' },
+        nvidia: { breaker: globalNvidiaBreaker || globalNvidiaProvider, name: 'nvidia' }
       };
 
+      const providerQueue: string[] = [];
+      if (providerMap[preferredProviderName]) {
+        providerQueue.push(preferredProviderName);
+      }
+
       if (image) {
-        // Force vision-supporting providers for multimodal tasks
-        const visionSupportingProviders = ['gemini_direct', 'openrouter_free'];
-        if (visionSupportingProviders.includes(preferredProviderName) && providerMap[preferredProviderName]) {
-          providers.push(providerMap[preferredProviderName]);
-        }
-        for (const pName of visionSupportingProviders) {
-          if (pName !== preferredProviderName && providerMap[pName]) {
-            providers.push(providerMap[pName]);
+        // Force vision-supporting providers
+        for (const pName of ['gemini_direct', 'nvidia', 'openrouter_free']) {
+          if (!providerQueue.includes(pName) && providerMap[pName]) {
+            providerQueue.push(pName);
           }
         }
       } else {
-        // Regular chat uses the preferred provider, with fallbacks
-        if (providerMap[preferredProviderName]) {
-          providers.push(providerMap[preferredProviderName]);
-        }
-        
-        // Dynamically add all other available providers
-        const dynamicFallbacks = Object.keys(providerMap).filter(p => p !== preferredProviderName);
-        dynamicFallbacks.sort(() => Math.random() - 0.5); // Randomize to distribute load dynamically
-        for (const pName of dynamicFallbacks) {
-          if (providerMap[pName]) {
-            providers.push(providerMap[pName]);
+        // Add dynamic fallbacks
+        for (const key of Object.keys(providerMap)) {
+          if (!providerQueue.includes(key)) {
+            providerQueue.push(key);
           }
         }
       }
@@ -1515,22 +1596,35 @@ app.post('/api/chat', verifyAuth, async (req, res) => {
       let lastError;
       let validationError;
       
-      for (const provider of providers) {
+      for (const provKey of providerQueue) {
+        const provObj = providerMap[provKey];
+        if (!provObj || !provObj.breaker) continue;
+
         try {
-          aiResponse = await generateWithTelemetry(provider, messages, { complexity });
+          // DYNAMIC ROLE PERSONA INJECTION
+          const roleDirective = getRolePersonaDirective(provKey, effectiveTaskType);
+          const augmentedMessages = messages.map((m: any, idx: number) => {
+            if (idx === 0 && m.role === 'system') {
+              return { ...m, content: m.content + roleDirective };
+            }
+            return m;
+          });
+
+          aiResponse = await generateWithTelemetry(provObj.breaker, augmentedMessages, { complexity: effectiveComplexity });
           if (aiResponse) {
             const validation = validateAIResponse(aiResponse.text);
             if (validation.isValid) {
+              successfulProviderName = provKey;
               break;
             } else {
               validationError = validation.error;
-              console.warn(`AI Response validation failed for provider, trying next...`, validation.error);
+              console.warn(`AI Response validation failed for provider [${provKey}], trying next...`, validation.error);
               aiResponse = null;
             }
           }
         } catch (err) {
           lastError = err;
-          console.warn(`AI Provider failed, trying next...`, err);
+          console.warn(`AI Provider [${provKey}] failed in /api/chat, trying next...`, err);
         }
       }
 
@@ -1561,7 +1655,8 @@ app.post('/api/chat', verifyAuth, async (req, res) => {
         context: context || null,
         timestamp: admin.firestore.FieldValue.serverTimestamp(),
         complexity,
-        tokens: totalTokens
+        tokens: totalTokens,
+        providerUsed: successfulProviderName
       }).catch(err => console.error('Failed to log chat analytics:', err));
     }
 
@@ -1583,9 +1678,19 @@ app.post('/api/chat', verifyAuth, async (req, res) => {
       });
     }
 
+    const latencyMs = Date.now() - reqStart;
+
     res.json({ 
       response: responseText, 
-      sparksRemaining: isFreeUser ? finalSparks : 999999 
+      sparksRemaining: isFreeUser ? finalSparks : 999999,
+      meta: {
+        providerUsed: successfulProviderName,
+        providerLabel: PROVIDER_DISPLAY_NAMES[successfulProviderName] || successfulProviderName,
+        taskType: effectiveTaskType,
+        complexity: effectiveComplexity,
+        reasoning: classified.reasoning,
+        latencyMs
+      }
     });
 
   } catch (error: any) {
@@ -1733,7 +1838,8 @@ app.get('/api/admin/ai-status', verifyAuth, async (req, res) => {
       groq: getProviderStatus('groq', process.env.GROQ_API_KEY),
       mistral_direct: getProviderStatus('mistral_direct', process.env.MISTRAL_API_KEY),
       cohere: getProviderStatus('cohere', process.env.COHERE_API_KEY),
-      huggingface: getProviderStatus('huggingface', process.env.HUGGINGFACE_API_KEY)
+      huggingface: getProviderStatus('huggingface', process.env.HUGGINGFACE_API_KEY),
+      nvidia: getProviderStatus('nvidia', process.env.NVIDIA_API_KEY)
     };
     
     const metrics = telemetry.getMetrics();
@@ -2651,72 +2757,107 @@ app.post('/api/ai/generate', verifyAuth, async (req, res) => {
     messages.push({ role: 'user', content: sanitizedPrompt });
 
 
+    // DYNAMIC INTENT CLASSIFICATION ENGINE
+    const classified = classifyTaskIntent(prompt, taskType);
+    const effectiveTaskType = classified.taskType;
+    const effectiveComplexity = complexity || classified.complexity;
+
     const routingDoc = await appAdmin.firestore().collection('system_config').doc('routing').get();
     const routingConfig = routingDoc.data() || {
       chat: 'groq',
+      deep_reasoning: 'nvidia',
+      coding: 'nvidia',
       quiz: 'groq',
-      lesson: 'groq',
+      lesson: 'nvidia',
       skeleton: 'cohere',
       recommendation: 'cohere',
       flashcard: 'huggingface',
       rag: 'openrouter_free',
       vision: 'gemini_direct',
-      past_questions: 'gemini_direct'
+      past_questions: 'gemini_direct',
+      voice_tutor: 'nvidia',
+      voice_tutor_model: 'nemotron-voicechat'
     };
     
     const TASK_ROUTING_TABLE: Record<string, { primary: string, fallbacks: string[] }> = {
-      'chat': { primary: 'groq', fallbacks: ['cohere'] },
-      'quiz': { primary: 'groq', fallbacks: ['openrouter_free'] },
-      'skeleton': { primary: 'cohere', fallbacks: ['openrouter_free'] },
-      'recommendation': { primary: 'cohere', fallbacks: ['openrouter_free'] },
-      'lesson': { primary: 'groq', fallbacks: ['openrouter_free', 'cohere'] },
-      'flashcard': { primary: 'huggingface', fallbacks: ['groq', 'openrouter_free'] },
-      'rag': { primary: 'openrouter_free', fallbacks: [] },
-      'vision': { primary: 'gemini_direct', fallbacks: [] },
-      'past_questions': { primary: 'gemini_direct', fallbacks: [] },
-      'default': { primary: 'groq', fallbacks: ['openrouter_free', 'cohere'] }
+      'chat': { primary: 'groq', fallbacks: ['nvidia', 'cohere', 'openrouter_free'] },
+      'deep_reasoning': { primary: 'nvidia', fallbacks: ['groq', 'gemini_direct', 'cohere'] },
+      'coding': { primary: 'nvidia', fallbacks: ['groq', 'mistral_direct', 'openrouter_free'] },
+      'quiz': { primary: 'groq', fallbacks: ['nvidia', 'openrouter_free'] },
+      'skeleton': { primary: 'cohere', fallbacks: ['nvidia', 'openrouter_free'] },
+      'recommendation': { primary: 'cohere', fallbacks: ['nvidia', 'openrouter_free'] },
+      'lesson': { primary: 'nvidia', fallbacks: ['groq', 'openrouter_free', 'cohere'] },
+      'flashcard': { primary: 'huggingface', fallbacks: ['groq', 'nvidia'] },
+      'rag': { primary: 'openrouter_free', fallbacks: ['nvidia', 'groq'] },
+      'vision': { primary: 'gemini_direct', fallbacks: ['nvidia'] },
+      'past_questions': { primary: 'gemini_direct', fallbacks: ['nvidia', 'groq'] },
+      'voice_tutor': { primary: 'nvidia', fallbacks: ['gemini_direct', 'groq', 'cohere'] },
+      'default': { primary: 'groq', fallbacks: ['nvidia', 'openrouter_free', 'cohere'] }
     };
 
-    const routeConfig = TASK_ROUTING_TABLE[taskType] || TASK_ROUTING_TABLE['default'];
-    const primaryProviderName = req.body.preferredProvider || routingConfig[taskType] || routeConfig.primary;
+    const routeConfig = TASK_ROUTING_TABLE[effectiveTaskType] || TASK_ROUTING_TABLE['default'];
+    const primaryProviderName = req.body.preferredProvider || routingConfig[effectiveTaskType] || routeConfig.primary;
     
-    const providerMap: Record<string, any> = {
-      gemini_direct: globalGeminiDirectBreaker,
-      mistral_direct: globalMistralDirectBreaker,
-      groq: globalGroqBreaker,
-      cohere: globalCohereBreaker,
-      huggingface: globalHuggingFaceBreaker,
-      openrouter_free: globalOpenRouterFreeBreaker
+    const providerMap: Record<string, { breaker: any, name: string }> = {
+      gemini_direct: { breaker: globalGeminiDirectBreaker, name: 'gemini_direct' },
+      mistral_direct: { breaker: globalMistralDirectBreaker, name: 'mistral_direct' },
+      groq: { breaker: globalGroqBreaker, name: 'groq' },
+      cohere: { breaker: globalCohereBreaker, name: 'cohere' },
+      huggingface: { breaker: globalHuggingFaceBreaker, name: 'huggingface' },
+      openrouter_free: { breaker: globalOpenRouterFreeBreaker, name: 'openrouter_free' },
+      nvidia: { breaker: globalNvidiaBreaker || globalNvidiaProvider, name: 'nvidia' }
     };
     
-    const providers = [];
+    const providerQueue: string[] = [];
     if (providerMap[primaryProviderName]) {
-      providers.push(providerMap[primaryProviderName]);
+      providerQueue.push(primaryProviderName);
     }
     
-    // Add fallbacks
-    const fallbackExclusion = typeof primaryProviderName !== "undefined" ? primaryProviderName : (typeof preferredProviderName !== "undefined" ? preferredProviderName : "");
-    const dynamicFallbacks = Object.keys(providerMap).filter(p => p !== fallbackExclusion);
-    dynamicFallbacks.sort(() => Math.random() - 0.5);
-    for (const fallbackName of dynamicFallbacks) {
-      if (providerMap[fallbackName]) {
-        providers.push(providerMap[fallbackName]);
+    // Add configured fallbacks first
+    for (const fb of routeConfig.fallbacks) {
+      if (!providerQueue.includes(fb) && providerMap[fb]) {
+        providerQueue.push(fb);
+      }
+    }
+
+    // Add remaining providers as dynamic safety nets
+    for (const key of Object.keys(providerMap)) {
+      if (!providerQueue.includes(key)) {
+        providerQueue.push(key);
       }
     }
 
     let aiResponse;
     let lastError;
+    let successfulProviderName = primaryProviderName;
+    const reqStart = Date.now();
 
-    for (const provider of providers) {
+    for (const provKey of providerQueue) {
+      const provObj = providerMap[provKey];
+      if (!provObj || !provObj.breaker) continue;
+
       try {
-        aiResponse = await generateWithTelemetry(provider, messages, { 
-          complexity: complexity === 'quiz' ? 'high' : 'high', // Use high for quality
+        // DYNAMIC ROLE PERSONA INJECTION FOR SELECTED MODEL
+        const roleDirective = getRolePersonaDirective(provKey, effectiveTaskType);
+        const augmentedMessages = messages.map((m: any, idx: number) => {
+          if (idx === 0 && m.role === 'system') {
+            return { ...m, content: m.content + roleDirective };
+          }
+          return m;
+        });
+
+        aiResponse = await generateWithTelemetry(provObj.breaker, augmentedMessages, { 
+          complexity: effectiveComplexity === 'quiz' ? 'high' : 'high',
           jsonMode: responseFormat === 'json'
         });
-        if (aiResponse && aiResponse.text && aiResponse.text.trim().length > 5) break;
+
+        if (aiResponse && aiResponse.text && aiResponse.text.trim().length > 5) {
+          successfulProviderName = provKey;
+          break;
+        }
       } catch (err) {
         lastError = err;
-        console.warn(`AI Provider failed in generate endpoint, trying next...`, err);
+        console.warn(`AI Provider [${provKey}] failed in generate endpoint, trying next...`, err);
       }
     }
 
@@ -2724,7 +2865,19 @@ app.post('/api/ai/generate', verifyAuth, async (req, res) => {
       throw lastError || new Error('No AI providers available or all failed');
     }
 
-    res.json({ text: aiResponse.text });
+    const latencyMs = Date.now() - reqStart;
+
+    res.json({ 
+      text: aiResponse.text,
+      meta: {
+        providerUsed: successfulProviderName,
+        providerLabel: PROVIDER_DISPLAY_NAMES[successfulProviderName] || successfulProviderName,
+        taskType: effectiveTaskType,
+        complexity: effectiveComplexity,
+        reasoning: classified.reasoning,
+        latencyMs
+      }
+    });
 
   } catch (error: any) {
     console.error('OpenRouter Generate Error:', error);
@@ -2814,24 +2967,33 @@ app.post('/api/ai/stream', verifyAuth, async (req, res) => {
     messages.push({ role: 'user', content: sanitizedPrompt });
 
 
+    // DYNAMIC INTENT CLASSIFICATION FOR STREAMING
+    const classified = classifyTaskIntent(prompt, taskType);
+    const effectiveTaskType = classified.taskType;
+    const effectiveComplexity = complexity || classified.complexity;
+
     const routingDoc = await appAdmin.firestore().collection('system_config').doc('routing').get();
     const routingConfig = routingDoc.data() || {
       chat: 'groq',
+      deep_reasoning: 'nvidia',
+      coding: 'nvidia',
       quiz: 'groq',
-      lesson: 'groq',
+      lesson: 'nvidia',
       skeleton: 'cohere',
       recommendation: 'cohere',
       flashcard: 'huggingface',
       rag: 'openrouter_free',
       vision: 'gemini_direct',
-      past_questions: 'gemini_direct'
+      past_questions: 'gemini_direct',
+      voice_tutor: 'nvidia',
+      voice_tutor_model: 'nemotron-voicechat'
     };
     
     // Fetch Global AI Mode
     const aiModeDoc = await appAdmin.firestore().collection('system_config').doc('ai_mode').get();
     const globalAiMode = aiModeDoc.exists ? aiModeDoc.data()?.mode : 'normal';
     
-    let preferredProviderName = req.body.preferredProvider || routingConfig[taskType || 'lesson'] || 'cohere';
+    let preferredProviderName = req.body.preferredProvider || routingConfig[effectiveTaskType] || 'groq';
     
     // If Global Fast Mode is enabled, force Groq for all students
     if (globalAiMode === 'fast') {
@@ -2840,19 +3002,22 @@ app.post('/api/ai/stream', verifyAuth, async (req, res) => {
     }
     
     const TASK_ROUTING_TABLE: Record<string, { primary: string, fallbacks: string[] }> = {
-      'chat': { primary: 'groq', fallbacks: ['cohere'] },
-      'quiz': { primary: 'groq', fallbacks: ['openrouter_free'] },
-      'skeleton': { primary: 'cohere', fallbacks: ['openrouter_free'] },
-      'recommendation': { primary: 'cohere', fallbacks: ['openrouter_free'] },
-      'lesson': { primary: 'groq', fallbacks: ['openrouter_free', 'cohere'] },
-      'flashcard': { primary: 'huggingface', fallbacks: ['groq', 'openrouter_free'] },
-      'rag': { primary: 'openrouter_free', fallbacks: [] },
-      'vision': { primary: 'gemini_direct', fallbacks: [] },
-      'past_questions': { primary: 'gemini_direct', fallbacks: [] },
-      'default': { primary: 'groq', fallbacks: ['openrouter_free', 'cohere'] }
+      'chat': { primary: 'groq', fallbacks: ['nvidia', 'cohere', 'openrouter_free'] },
+      'deep_reasoning': { primary: 'nvidia', fallbacks: ['groq', 'gemini_direct', 'cohere'] },
+      'coding': { primary: 'nvidia', fallbacks: ['groq', 'mistral_direct', 'openrouter_free'] },
+      'quiz': { primary: 'groq', fallbacks: ['nvidia', 'openrouter_free'] },
+      'skeleton': { primary: 'cohere', fallbacks: ['nvidia', 'openrouter_free'] },
+      'recommendation': { primary: 'cohere', fallbacks: ['nvidia', 'openrouter_free'] },
+      'lesson': { primary: 'nvidia', fallbacks: ['groq', 'openrouter_free', 'cohere'] },
+      'flashcard': { primary: 'huggingface', fallbacks: ['groq', 'nvidia'] },
+      'rag': { primary: 'openrouter_free', fallbacks: ['nvidia', 'groq'] },
+      'vision': { primary: 'gemini_direct', fallbacks: ['nvidia'] },
+      'past_questions': { primary: 'gemini_direct', fallbacks: ['nvidia', 'groq'] },
+      'voice_tutor': { primary: 'nvidia', fallbacks: ['gemini_direct', 'groq', 'cohere'] },
+      'default': { primary: 'groq', fallbacks: ['nvidia', 'openrouter_free', 'cohere'] }
     };
 
-    const routeConfig = TASK_ROUTING_TABLE[taskType] || TASK_ROUTING_TABLE['default'];
+    const routeConfig = TASK_ROUTING_TABLE[effectiveTaskType] || TASK_ROUTING_TABLE['default'];
     
     const providerMap: Record<string, any> = {
       gemini_direct: globalGeminiDirectBreaker,
@@ -2860,8 +3025,15 @@ app.post('/api/ai/stream', verifyAuth, async (req, res) => {
       groq: globalGroqBreaker,
       cohere: globalCohereBreaker,
       huggingface: globalHuggingFaceBreaker,
-      openrouter_free: globalOpenRouterFreeBreaker
+      openrouter_free: globalOpenRouterFreeBreaker,
+      nvidia: globalNvidiaBreaker || globalNvidiaProvider
     };
+
+    // Inject Role Persona Directive into messages
+    const roleDirective = getRolePersonaDirective(preferredProviderName, effectiveTaskType);
+    if (messages[0] && messages[0].role === 'system') {
+      messages[0].content += roleDirective;
+    }
     
     const providers = [];
     if (providerMap[preferredProviderName]) {
@@ -3037,7 +3209,8 @@ app.post('/api/course/generate', verifyAuth, async (req, res) => {
       huggingface: huggingFaceBreaker,
       gemini: geminiDirectBreaker,
       mistral: mistralDirectBreaker,
-      openrouter_free: globalOpenRouterFreeBreaker
+      openrouter_free: globalOpenRouterFreeBreaker,
+      nvidia: globalNvidiaBreaker || globalNvidiaProvider
     };
 
     let providers = [];
@@ -3387,6 +3560,9 @@ app.post('/api/admin/extract-questions', verifyAuth, async (req, res) => {
     } else if (provider === 'huggingface') {
       aiProvider = globalHuggingFaceProvider;
       if (!aiProvider) throw new Error('Hugging Face API Key missing');
+    } else if (provider === 'nvidia') {
+      aiProvider = globalNvidiaProvider;
+      if (!aiProvider) throw new Error('NVIDIA API Key missing');
     } else if (provider === 'gemini') {
       // Legacy support
       aiProvider = globalGeminiDirectProvider;
@@ -3508,7 +3684,8 @@ app.post('/api/formulas/search', verifyAuth, async (req, res) => {
       groq: globalGroqBreaker || globalGroqProvider,
       cohere: globalCohereBreaker || globalCohereProvider,
       huggingface: globalHuggingFaceBreaker || globalHuggingFaceProvider,
-      openrouter_free: globalOpenRouterFreeBreaker || globalOpenRouterFreeProvider
+      openrouter_free: globalOpenRouterFreeBreaker || globalOpenRouterFreeProvider,
+      nvidia: globalNvidiaBreaker || globalNvidiaProvider
     };
 
     const providers = [];
@@ -4441,7 +4618,18 @@ app.post('/api/admin/ai-mode', verifyAuth, async (req, res) => {
   }
 });
 
-// 2. Test API Key
+// 2. Test API Key with Dynamic Signature Detection & Auto-Correction
+function detectApiKeySignature(key: string): string | null {
+  if (!key || typeof key !== 'string') return null;
+  const k = key.trim();
+  if (k.startsWith('nvapi-')) return 'nvidia';
+  if (k.startsWith('gsk_')) return 'groq';
+  if (k.startsWith('AIzaSy')) return 'gemini_direct';
+  if (k.startsWith('sk-or-v1-')) return 'openrouter';
+  if (k.startsWith('hf_')) return 'huggingface';
+  return null;
+}
+
 app.post('/api/admin/test-api-key', verifyAuth, async (req, res) => {
   const adminUid = (req as any).user.uid;
   const { provider, key } = req.body;
@@ -4457,16 +4645,21 @@ app.post('/api/admin/test-api-key', verifyAuth, async (req, res) => {
     let testResult: any;
     const testMessages = [{ role: 'user', content: 'Say "API Key Test Successful" if you can read this.' }];
 
-    let testProvider;
-    switch (provider) {
-      case 'gemini_direct': testProvider = new GeminiDirectProvider(key); break;
-      case 'mistral_direct': testProvider = new MistralProvider(key); break;
-      case 'groq': testProvider = new GroqProvider(key); break;
-      case 'openrouter': testProvider = new OpenRouterFreeProvider(key); break;
-      case 'cohere': testProvider = new CohereProvider(key); break;
-      case 'huggingface': testProvider = new HuggingFaceProvider(key); break;
-      default: throw new Error('Unsupported provider for testing');
-    }
+    const createProviderInstance = (provName: string, apiKey: string) => {
+      switch (provName) {
+        case 'gemini_direct': return new GeminiDirectProvider(apiKey);
+        case 'mistral_direct': return new MistralProvider(apiKey);
+        case 'groq': return new GroqProvider(apiKey);
+        case 'openrouter': return new OpenRouterFreeProvider(apiKey);
+        case 'cohere': return new CohereProvider(apiKey);
+        case 'huggingface': return new HuggingFaceProvider(apiKey);
+        case 'nvidia': return new NvidiaProvider(apiKey);
+        default: throw new Error(`Unsupported provider: ${provName}`);
+      }
+    };
+
+    const detectedSignatureProvider = detectApiKeySignature(key);
+    let testProvider = createProviderInstance(provider, key);
 
     const startTime = Date.now();
     try {
@@ -4477,15 +4670,110 @@ app.post('/api/admin/test-api-key', verifyAuth, async (req, res) => {
         success: true, 
         message: testResult.text,
         latency: `${latency}ms`,
-        usage: testResult.usage
+        usage: testResult.usage,
+        testedProvider: provider,
+        detectedSignature: detectedSignatureProvider
       });
-    } catch (err: any) {
+    } catch (primaryErr: any) {
+      console.warn(`[Admin Key Test] Primary provider '${provider}' failed:`, primaryErr.message);
+
+      // Attempt Dynamic Auto-Correction if signature points to another provider
+      if (detectedSignatureProvider && detectedSignatureProvider !== provider) {
+        try {
+          console.log(`[Admin Key Test] Attempting dynamic auto-correction test using detected signature provider '${detectedSignatureProvider}'...`);
+          const fallbackProvider = createProviderInstance(detectedSignatureProvider, key);
+          const fallbackStart = Date.now();
+          const fallbackResult = await fallbackProvider.generate(testMessages, { complexity: 'standard' });
+          const fallbackLatency = Date.now() - fallbackStart;
+
+          const providerNames: Record<string, string> = {
+            nvidia: 'NVIDIA NIM (nvapi-...)',
+            groq: 'Groq (gsk_...)',
+            gemini_direct: 'Google Gemini (AIzaSy...)',
+            openrouter: 'OpenRouter (sk-or-v1-...)',
+            huggingface: 'Hugging Face (hf_...)'
+          };
+
+          return res.json({
+            success: true,
+            autoCorrected: true,
+            testedProvider: provider,
+            correctedProvider: detectedSignatureProvider,
+            message: `Key is VALID for ${providerNames[detectedSignatureProvider] || detectedSignatureProvider.toUpperCase()}! (Primary selection '${provider}' failed because key prefix matches '${detectedSignatureProvider}')`,
+            recommendation: `Note: This key format belongs to ${providerNames[detectedSignatureProvider] || detectedSignatureProvider}. Please add it to the ${providerNames[detectedSignatureProvider] || detectedSignatureProvider} API Key field for optimal routing.`,
+            latency: `${fallbackLatency}ms`,
+            usage: fallbackResult.usage
+          });
+        } catch (fallbackErr: any) {
+          console.warn(`[Admin Key Test] Fallback provider '${detectedSignatureProvider}' also failed:`, fallbackErr.message);
+        }
+      }
+
       res.json({ 
         success: false, 
-        error: err.message,
-        details: err.stack
+        error: primaryErr.message,
+        details: primaryErr.stack,
+        testedProvider: provider,
+        detectedSignature: detectedSignatureProvider,
+        tip: detectedSignatureProvider ? `This key starts with '${key.slice(0, 6)}...' which matches ${detectedSignatureProvider.toUpperCase()}. Try selecting '${detectedSignatureProvider}' as the target provider.` : undefined
       });
     }
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Save & Hot-Reload Provider API Key
+app.post('/api/admin/save-provider-key', verifyAuth, async (req, res) => {
+  const adminUid = (req as any).user.uid;
+  const { provider, key } = req.body;
+  const app = getAdminApp();
+  if (!app) return res.status(503).json({ error: 'Service unavailable' });
+
+  try {
+    const adminDoc = await app.firestore().collection('users').doc(adminUid).get();
+    if (adminDoc.data()?.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+
+    if (!provider || !key) {
+      return res.status(400).json({ error: 'Provider and key are required' });
+    }
+
+    const envVarMap: Record<string, string> = {
+      gemini_direct: 'GEMINI_API_KEY',
+      mistral_direct: 'MISTRAL_API_KEY',
+      groq: 'GROQ_API_KEY',
+      openrouter: 'OPENROUTER_API_KEY',
+      openrouter_free: 'OPENROUTER_API_KEY',
+      cohere: 'COHERE_API_KEY',
+      huggingface: 'HUGGINGFACE_API_KEY',
+      nvidia: 'NVIDIA_API_KEY'
+    };
+
+    const envVar = envVarMap[provider];
+    if (envVar) {
+      process.env[envVar] = key;
+    }
+
+    // Update global provider instance live
+    if (provider === 'gemini_direct' && globalGeminiDirectProvider) (globalGeminiDirectProvider as any).apiKey = key;
+    if (provider === 'mistral_direct' && globalMistralDirectProvider) (globalMistralDirectProvider as any).apiKey = key;
+    if (provider === 'groq' && globalGroqProvider) (globalGroqProvider as any).apiKey = key;
+    if ((provider === 'openrouter' || provider === 'openrouter_free') && globalOpenRouterFreeProvider) (globalOpenRouterFreeProvider as any).apiKey = key;
+    if (provider === 'cohere' && globalCohereProvider) (globalCohereProvider as any).apiKey = key;
+    if (provider === 'huggingface' && globalHuggingFaceProvider) (globalHuggingFaceProvider as any).apiKey = key;
+    if (provider === 'nvidia' && globalNvidiaProvider) (globalNvidiaProvider as any).apiKey = key;
+
+    // Save to Firestore system_config/api_keys
+    await app.firestore().collection('system_config').doc('api_keys').set({
+      [provider]: key,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedBy: adminUid
+    }, { merge: true });
+
+    res.json({
+      success: true,
+      message: `Successfully saved and hot-reloaded API key for ${provider.toUpperCase()}`
+    });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -5171,7 +5459,8 @@ async function startServer() {
           groq: groqBreaker,
           cohere: cohereBreaker,
           huggingface: huggingFaceBreaker,
-          openrouter_free: openRouterFreeBreaker
+          openrouter_free: openRouterFreeBreaker,
+          nvidia: globalNvidiaBreaker || globalNvidiaProvider
         };
 
         if (image) {

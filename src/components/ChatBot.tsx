@@ -427,7 +427,8 @@ export default function ChatBot({
 
       const modelMsg: ChatMessage = { 
         role: "model", 
-        text: data.response
+        text: data.response,
+        meta: data.meta
       };
       setMessages((prev) => [...prev, modelMsg]);
       setSparksRemaining(data.sparksRemaining);
@@ -619,21 +620,31 @@ export default function ChatBot({
                       </div>
                     )}
                     {msg.role === "model" && (
-                      <div className="mt-4 flex gap-2">
-                        <button 
-                          onClick={() => speakText(msg.text)}
-                          className="text-emerald-500 hover:text-emerald-600 transition-colors p-1"
-                          title="Read aloud"
-                        >
-                          <Volume2 size={16} />
-                        </button>
-                        <button 
-                          onClick={() => copyToClipboard(msg.text, i)}
-                          className="text-slate-400 hover:text-emerald-500 transition-colors p-1"
-                          title="Copy"
-                        >
-                          {copiedId === i ? <Check size={16} className="text-emerald-500" /> : <Copy size={16} />}
-                        </button>
+                      <div className="mt-3 pt-2 border-t border-slate-100 dark:border-zinc-800/80 flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex gap-2 items-center">
+                          <button 
+                            onClick={() => speakText(msg.text)}
+                            className="text-emerald-500 hover:text-emerald-600 transition-colors p-1"
+                            title="Read aloud"
+                          >
+                            <Volume2 size={16} />
+                          </button>
+                          <button 
+                            onClick={() => copyToClipboard(msg.text, i)}
+                            className="text-slate-400 hover:text-emerald-500 transition-colors p-1"
+                            title="Copy"
+                          >
+                            {copiedId === i ? <Check size={16} className="text-emerald-500" /> : <Copy size={16} />}
+                          </button>
+                        </div>
+                        {msg.meta && (
+                          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-[10px] font-bold text-slate-600 dark:text-zinc-300 shadow-2xs">
+                            <Zap size={10} className="text-emerald-500" />
+                            <span>{msg.meta.providerLabel || msg.meta.providerUsed || 'AI Engine'}</span>
+                            {msg.meta.taskType && <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 uppercase text-[8px] font-extrabold">{msg.meta.taskType}</span>}
+                            {msg.meta.latencyMs && <span className="text-slate-400 font-mono text-[9px]">{msg.meta.latencyMs}ms</span>}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
