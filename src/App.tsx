@@ -776,6 +776,7 @@ function AppContent() {
           isOpen={isVoiceTutorOpen} 
           onClose={() => setIsVoiceTutorOpen(false)} 
           pdfContent={activePdfText || undefined}
+          personality={progress?.aiPersonality}
           systemInstruction={`You are UniAce, a Senior Academic AI Tutor. You follow the Nigerian University System (NUC/CCMAS) standards for curriculum alignment, but your primary role is to teach the specific academic subject the student is currently studying.
 
 Your teaching strategy:

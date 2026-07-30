@@ -2752,9 +2752,21 @@ app.post('/api/ai/generate-image', verifyAuth, async (req, res) => {
     
     if (!apiKey) throw new Error('NVIDIA API key not configured on server');
 
+    let routingConfig: any = {};
+    try {
+      const appAdmin = getAdminApp();
+      const routingDoc = await appAdmin.firestore().collection('system_config').doc('routing').get();
+      if (routingDoc.exists) {
+        routingConfig = routingDoc.data() || {};
+      }
+    } catch (e) {
+      console.warn("Failed to fetch routing config for image gen:", e);
+    }
+
     const isComplex = complexity === 'high' || prompt.length > 100;
-    const primaryModel = isComplex ? 'black-forest-labs/flux.1-dev' : 'black-forest-labs/flux.1-schnell';
-    const fallbackModel = isComplex ? 'black-forest-labs/flux.1-schnell' : 'black-forest-labs/flux.1-dev';
+    const configuredModel = routingConfig.nvidia_image_model || 'black-forest-labs/flux.1-dev';
+    const primaryModel = configuredModel;
+    const fallbackModel = primaryModel === 'black-forest-labs/flux.1-dev' ? 'black-forest-labs/flux.1-schnell' : 'black-forest-labs/flux.1-dev';
     
     let response = await fetch(`https://ai.api.nvidia.com/v1/genai/${primaryModel}`, {
       method: "POST",
@@ -2909,7 +2921,9 @@ app.post('/api/ai/generate', verifyAuth, async (req, res) => {
       vision: 'gemini_direct',
       past_questions: 'gemini_direct',
       voice_tutor: 'nvidia',
-      voice_tutor_model: 'nemotron-voicechat'
+      voice_tutor_model: 'nemotron-voicechat',
+      nvidia_text_model: 'nvidia/nemotron-3-super-120b-a12b',
+      nvidia_image_model: 'black-forest-labs/flux.1-dev'
     };
     
     const TASK_ROUTING_TABLE: Record<string, { primary: string, fallbacks: string[] }> = {
@@ -2983,7 +2997,7 @@ app.post('/api/ai/generate', verifyAuth, async (req, res) => {
         aiResponse = await generateWithTelemetry(provObj.breaker, augmentedMessages, { 
           complexity: effectiveComplexity === 'quiz' ? 'high' : 'high',
           jsonMode: responseFormat === 'json',
-          model: effectiveTaskType === 'voice_tutor' ? routingConfig.voice_tutor_model : undefined
+          model: effectiveTaskType === 'voice_tutor' ? routingConfig.voice_tutor_model : (provKey === 'nvidia' ? (routingConfig.nvidia_text_model || 'nvidia/nemotron-3-super-120b-a12b') : undefined)
         });
 
         if (aiResponse && aiResponse.text && aiResponse.text.trim().length > 5) {
@@ -3121,7 +3135,9 @@ app.post('/api/ai/stream', verifyAuth, async (req, res) => {
       vision: 'gemini_direct',
       past_questions: 'gemini_direct',
       voice_tutor: 'nvidia',
-      voice_tutor_model: 'nemotron-voicechat'
+      voice_tutor_model: 'nemotron-voicechat',
+      nvidia_text_model: 'nvidia/nemotron-3-super-120b-a12b',
+      nvidia_image_model: 'black-forest-labs/flux.1-dev'
     };
     
     // Fetch Global AI Mode
@@ -3205,9 +3221,10 @@ app.post('/api/ai/stream', verifyAuth, async (req, res) => {
         console.log(`[AI Stream] Trying provider: ${providerName}`);
         
         // Add a timeout for the entire stream to prevent hanging
+        const isNvidia = (provider as any).provider?.name === 'nvidia' || (provider as any).name === 'nvidia';
         const streamPromise = provider.stream(messages, { 
           complexity,
-          model: effectiveTaskType === 'voice_tutor' ? routingConfig.voice_tutor_model : undefined
+          model: effectiveTaskType === 'voice_tutor' ? routingConfig.voice_tutor_model : (isNvidia ? (routingConfig.nvidia_text_model || 'nvidia/nemotron-3-super-120b-a12b') : undefined)
         }, (chunk) => {
           res.write(`data: ${JSON.stringify({ text: chunk })}\n\n`);
         });

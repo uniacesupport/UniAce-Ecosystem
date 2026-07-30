@@ -9,6 +9,8 @@ import { AIService } from "../services/ai";
 import { useAuth } from "../context/AuthContext";
 import { useWebSocketChat } from "../hooks/useWebSocketChat";
 import PricingModal from './PricingModal';
+import { db } from '../firebase';
+import { doc, getDoc } from 'firebase/firestore';
 
 interface ChatBotProps {
   isFullPage?: boolean;
@@ -109,8 +111,27 @@ export default function ChatBot({
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const recognitionRef = useRef<any>(null);
   const [copiedId, setCopiedId] = useState<number | null>(null);
+  const [defaultPersonality, setDefaultPersonality] = useState<AIPersonality>('encouraging');
 
-  const currentPersonality = progress?.aiPersonality || 'encouraging';
+  useEffect(() => {
+    const fetchDefaultPersonality = async () => {
+      try {
+        const docRef = doc(db, 'system_config', 'routing');
+        const snap = await getDoc(docRef);
+        if (snap.exists()) {
+          const data = snap.data();
+          if (data && data.default_personality) {
+            setDefaultPersonality(data.default_personality as AIPersonality);
+          }
+        }
+      } catch (e) {
+        console.warn("Failed to fetch default personality in ChatBot:", e);
+      }
+    };
+    fetchDefaultPersonality();
+  }, []);
+
+  const currentPersonality = progress?.aiPersonality || defaultPersonality || 'encouraging';
 
   const personalities: { id: AIPersonality; label: string; icon: string; desc: string }[] = [
     { id: 'encouraging', label: 'Coach', icon: '🏆', desc: 'Strategic & high-performance motivation' },

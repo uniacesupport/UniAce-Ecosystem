@@ -210,7 +210,10 @@ export default function AdminDashboard() {
     vision: 'gemini_direct',
     past_questions: 'gemini_direct',
     voice_tutor: 'nvidia',
-    voice_tutor_model: 'nemotron-voicechat'
+    voice_tutor_model: 'nemotron-voicechat',
+    nvidia_text_model: 'nvidia/nemotron-3-super-120b-a12b',
+    nvidia_image_model: 'black-forest-labs/flux.1-dev',
+    default_personality: 'encouraging'
   });
   const [logs, setLogs] = useState<SystemLog[]>([]);
   const [isLoadingLogs, setIsLoadingLogs] = useState(false);
@@ -5289,24 +5292,86 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-700">
-                <div className="flex flex-col gap-1">
-                   <span className="font-bold text-slate-700 dark:text-slate-300">Master AI Mode</span>
-                   <span className="text-xs text-slate-500">Overrides individual task routing below. Select a single key to rule them all.</span>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="flex flex-col gap-2 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-700 justify-between">
+                  <div className="flex flex-col gap-1">
+                     <span className="font-bold text-slate-700 dark:text-slate-300 text-sm">Master AI Mode</span>
+                     <span className="text-xs text-slate-500">Overrides individual task routing below. Select a single key to rule them all.</span>
+                  </div>
+                  <select
+                    value={(routingConfig as any).global_provider || ''}
+                    onChange={(e) => updateRoutingConfig('global_provider', e.target.value)}
+                    className="bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl px-4 py-2 text-sm font-bold text-slate-700 dark:text-slate-300 outline-none focus:ring-2 focus:ring-indigo-500 transition-all mt-3"
+                  >
+                    <option value="">Off (Use Task Matrix)</option>
+                    <option value="nvidia">NVIDIA API</option>
+                    <option value="gemini_direct">Gemini API</option>
+                    <option value="openrouter_free">OpenRouter API</option>
+                    <option value="groq">Groq API</option>
+                    <option value="mistral_direct">Mistral API</option>
+                    <option value="cohere">Cohere API</option>
+                  </select>
                 </div>
-                <select
-                  value={(routingConfig as any).global_provider || ''}
-                  onChange={(e) => updateRoutingConfig('global_provider', e.target.value)}
-                  className="bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl px-4 py-2 text-sm font-bold text-slate-700 dark:text-slate-300 outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-                >
-                  <option value="">Off (Use Task Matrix)</option>
-                  <option value="nvidia">NVIDIA API</option>
-                  <option value="gemini_direct">Gemini API</option>
-                  <option value="openrouter_free">OpenRouter API</option>
-                  <option value="groq">Groq API</option>
-                  <option value="mistral_direct">Mistral API</option>
-                  <option value="cohere">Cohere API</option>
-                </select>
+
+                <div className="flex flex-col gap-2 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-700 justify-between">
+                  <div className="flex flex-col gap-1">
+                     <span className="font-bold text-slate-700 dark:text-slate-300 text-sm">Default Companion Profile</span>
+                     <span className="text-xs text-slate-500">The default profile for new students until they manually select another one in the chat.</span>
+                  </div>
+                  <select
+                    value={(routingConfig as any).default_personality || 'encouraging'}
+                    onChange={(e) => updateRoutingConfig('default_personality', e.target.value)}
+                    className="bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl px-4 py-2 text-sm font-bold text-slate-700 dark:text-slate-300 outline-none focus:ring-2 focus:ring-indigo-500 transition-all mt-3"
+                  >
+                    <option value="encouraging">🏆 Coach (Supportive & Encouraging)</option>
+                    <option value="strict">👨‍🏫 Professor (Rigorous & Academically Precise)</option>
+                    <option value="socratic">🤔 Mentor (Deep Socratic Inquiry)</option>
+                    <option value="humorous">🤪 Buddy (Witty & Engaged)</option>
+                    <option value="master">🧠 Grandmaster (Direct & Omniscient)</option>
+                    <option value="debate">🤺 Debater (Challenging Peer)</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* NVIDIA NIM Orchestration settings */}
+              <div className="mt-6 border-t border-slate-100 dark:border-slate-700 pt-6">
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-4">
+                  <Cpu className="text-emerald-500 animate-pulse" size={18} />
+                  NVIDIA NIM Orchestration Settings
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="flex flex-col gap-2 p-4 bg-slate-50 dark:bg-slate-900/40 rounded-2xl border border-slate-100 dark:border-slate-700">
+                    <div>
+                      <span className="font-bold text-slate-700 dark:text-slate-300 text-xs block">NVIDIA Text / STEM Core Model</span>
+                      <span className="text-[10px] text-slate-500">Active model for physics, logic, calculus, and programming tasks.</span>
+                    </div>
+                    <select
+                      value={(routingConfig as any).nvidia_text_model || 'nvidia/nemotron-3-super-120b-a12b'}
+                      onChange={(e) => updateRoutingConfig('nvidia_text_model', e.target.value)}
+                      className="bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2 text-[11px] font-bold text-slate-700 dark:text-slate-300 outline-none focus:ring-2 focus:ring-indigo-500 transition-all mt-1"
+                    >
+                      <option value="nvidia/nemotron-3-super-120b-a12b">NVIDIA Nemotron-3 Super 120B (High Reasoning)</option>
+                      <option value="nvidia/llama-3.1-nemotron-70b-instruct">Llama 3.1 Nemotron 70B Instruct</option>
+                      <option value="nvidia/nemotron-4-340b-instruct">NVIDIA Nemotron-4 340B Instruct</option>
+                      <option value="nvidia/nemotron-mini-4b-instruct">NVIDIA Nemotron Mini 4B Instruct</option>
+                    </select>
+                  </div>
+
+                  <div className="flex flex-col gap-2 p-4 bg-slate-50 dark:bg-slate-900/40 rounded-2xl border border-slate-100 dark:border-slate-700">
+                    <div>
+                      <span className="font-bold text-slate-700 dark:text-slate-300 text-xs block">NVIDIA FLUX Image Generator</span>
+                      <span className="text-[10px] text-slate-500">Active model for diagram illustrations and math-to-image features.</span>
+                    </div>
+                    <select
+                      value={(routingConfig as any).nvidia_image_model || 'black-forest-labs/flux.1-dev'}
+                      onChange={(e) => updateRoutingConfig('nvidia_image_model', e.target.value)}
+                      className="bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2 text-[11px] font-bold text-slate-700 dark:text-slate-300 outline-none focus:ring-2 focus:ring-indigo-500 transition-all mt-1"
+                    >
+                      <option value="black-forest-labs/flux.1-dev">Black Forest Labs FLUX.1 Dev</option>
+                      <option value="black-forest-labs/flux.1-schnell">Black Forest Labs FLUX.1 Schnell</option>
+                    </select>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -5399,6 +5464,7 @@ export default function AdminDashboard() {
                         {(routingConfig.voice_tutor === 'nvidia' || !routingConfig.voice_tutor
                           ? [
                               'nemotron-voicechat',
+                              'nvidia/nemotron-3-super-120b-a12b',
                               'nvidia/nemotron-mini-4b-instruct',
                               'nvidia/llama-3.1-nemotron-70b-instruct',
                               'nvidia/nemotron-4-340b-instruct'

@@ -2,20 +2,43 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Mic, Loader2, Volume2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { AIPersonality } from '../types';
+import { db } from '../firebase';
+import { doc, getDoc } from 'firebase/firestore';
 
 interface VoiceTutorProps {
   isOpen: boolean;
   onClose: () => void;
   pdfContent?: string;
   systemInstruction?: string;
+  personality?: AIPersonality;
 }
 
-export default function VoiceTutor({ isOpen, onClose, pdfContent, systemInstruction }: VoiceTutorProps) {
+export default function VoiceTutor({ isOpen, onClose, pdfContent, systemInstruction, personality }: VoiceTutorProps) {
   const { user } = useAuth();
   const [isListening, setIsListening] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [statusText, setStatusText] = useState('Tap microphone to speak');
+  const [defaultPersonality, setDefaultPersonality] = useState<AIPersonality>('encouraging');
+
+  useEffect(() => {
+    const fetchDefaultPersonality = async () => {
+      try {
+        const docRef = doc(db, 'system_config', 'routing');
+        const snap = await getDoc(docRef);
+        if (snap.exists()) {
+          const data = snap.data();
+          if (data && data.default_personality) {
+            setDefaultPersonality(data.default_personality as AIPersonality);
+          }
+        }
+      } catch (e) {
+        console.warn("Failed to fetch default personality in VoiceTutor:", e);
+      }
+    };
+    fetchDefaultPersonality();
+  }, []);
   
   const recognitionRef = useRef<any>(null);
   const synthesisRef = useRef<SpeechSynthesis | null>(null);
@@ -89,7 +112,7 @@ export default function VoiceTutor({ isOpen, onClose, pdfContent, systemInstruct
           history: [], // We could track history here if needed
           context: contextStr,
           complexity: 'standard',
-          personality: 'encouraging',
+          personality: personality || defaultPersonality || 'encouraging',
           taskType: 'voice_tutor'
         })
       });
