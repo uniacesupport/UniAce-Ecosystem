@@ -1129,7 +1129,10 @@ export class NvidiaProvider implements ModelProvider {
   async generate(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean, model?: string }): Promise<ModelResponse> {
     return retry(async () => {
       const apiKey = await this.rotator.getNextKey();
-      let model = (options?.model || await this.rotator.getModel() || '').trim() || 'nemotron-voicechat';
+      let model = (options?.model || await this.rotator.getModel() || '').trim();
+      if (!model || model === 'nemotron-voicechat') {
+        model = 'nvidia/llama-3.1-nemotron-70b-instruct';
+      }
       
       const openai = new OpenAI({
         baseURL: "https://integrate.api.nvidia.com/v1",
@@ -1170,7 +1173,10 @@ export class NvidiaProvider implements ModelProvider {
   async stream(messages: any[], options: { complexity: 'high' | 'standard', model?: string }, onChunk: (chunk: string) => void): Promise<ModelResponse> {
     return retry(async () => {
       const apiKey = await this.rotator.getNextKey();
-      let model = (options?.model || await this.rotator.getModel() || '').trim() || 'nemotron-voicechat';
+      let model = (options?.model || await this.rotator.getModel() || '').trim();
+      if (!model || model === 'nemotron-voicechat') {
+        model = 'nvidia/llama-3.1-nemotron-70b-instruct';
+      }
 
       const openai = new OpenAI({
         baseURL: "https://integrate.api.nvidia.com/v1",

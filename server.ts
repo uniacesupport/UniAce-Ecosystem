@@ -2982,7 +2982,8 @@ app.post('/api/ai/generate', verifyAuth, async (req, res) => {
 
         aiResponse = await generateWithTelemetry(provObj.breaker, augmentedMessages, { 
           complexity: effectiveComplexity === 'quiz' ? 'high' : 'high',
-          jsonMode: responseFormat === 'json'
+          jsonMode: responseFormat === 'json',
+          model: effectiveTaskType === 'voice_tutor' ? routingConfig.voice_tutor_model : undefined
         });
 
         if (aiResponse && aiResponse.text && aiResponse.text.trim().length > 5) {
@@ -3204,7 +3205,10 @@ app.post('/api/ai/stream', verifyAuth, async (req, res) => {
         console.log(`[AI Stream] Trying provider: ${providerName}`);
         
         // Add a timeout for the entire stream to prevent hanging
-        const streamPromise = provider.stream(messages, { complexity }, (chunk) => {
+        const streamPromise = provider.stream(messages, { 
+          complexity,
+          model: effectiveTaskType === 'voice_tutor' ? routingConfig.voice_tutor_model : undefined
+        }, (chunk) => {
           res.write(`data: ${JSON.stringify({ text: chunk })}\n\n`);
         });
 
@@ -5718,6 +5722,11 @@ async function startServer() {
             }
           } catch (routingErr) {
             console.error("Error fetching dynamic voice model config, falling back to default:", routingErr);
+          }
+
+          if (!voiceModel || !voiceModel.startsWith('gemini-')) {
+            console.log(`[VoiceTutor] Configured model ${voiceModel} is not a valid Gemini Live model. Defaulting to gemini-2.0-flash-exp`);
+            voiceModel = "gemini-2.0-flash-exp";
           }
 
           const apiKey = process.env.GEMINI_API_KEY;
