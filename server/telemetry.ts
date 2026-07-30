@@ -31,7 +31,8 @@ class TelemetryService {
       'mistral_direct', 
       'openrouter_free', 
       'cohere', 
-      'huggingface'
+      'huggingface',
+      'nvidia'
     ];
     providers.forEach(p => {
       this.metrics[p] = { requests: 0, tokens: 0, latencySum: 0, errors: 0 };

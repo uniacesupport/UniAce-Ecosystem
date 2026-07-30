@@ -1865,6 +1865,7 @@ app.get('/api/admin/ai-status', verifyAuth, async (req, res) => {
       status, 
       metrics, 
       chartData,
+      pingResults: lastPingResults,
       stats: {
         totalQuestions,
         popularCourse
@@ -1873,6 +1874,101 @@ app.get('/api/admin/ai-status', verifyAuth, async (req, res) => {
   } catch (error) {
     console.error('AI Status Error:', error);
     res.status(500).json({ error: 'Failed to check AI status' });
+  }
+});
+
+// Global memory cache for provider ping benchmarks
+let lastPingResults: Record<string, any> = {};
+
+// 1.7.5 Ping AI Providers Endpoint
+app.post('/api/admin/ping-providers', verifyAuth, async (req, res) => {
+  try {
+    const uid = (req as any).user.uid;
+    const app = getAdminApp();
+    if (!app) return res.status(503).json({ error: 'Service unavailable' });
+
+    const userDoc = await app.firestore().collection('users').doc(uid).get();
+    if (userDoc.data()?.role !== 'admin') {
+      return res.status(403).json({ error: 'Unauthorized: Admin access required' });
+    }
+
+    const requestedProvider = req.body?.provider;
+    const providersToPing = requestedProvider ? [requestedProvider] : [
+      'nvidia',
+      'gemini_direct',
+      'groq',
+      'mistral_direct',
+      'openrouter_free',
+      'cohere',
+      'huggingface'
+    ];
+
+    const providerInstances: Record<string, any> = {
+      nvidia: globalNvidiaBreaker || globalNvidiaProvider,
+      gemini_direct: globalGeminiDirectBreaker || globalGeminiDirectProvider,
+      groq: globalGroqBreaker || globalGroqProvider,
+      mistral_direct: globalMistralDirectBreaker || globalMistralDirectProvider,
+      openrouter_free: globalOpenRouterFreeBreaker || globalOpenRouterFreeProvider,
+      cohere: globalCohereBreaker || globalCohereProvider,
+      huggingface: globalHuggingFaceBreaker || globalHuggingFaceProvider
+    };
+
+    await Promise.all(providersToPing.map(async (pName) => {
+      const p = providerInstances[pName];
+      if (!p) {
+        lastPingResults[pName] = {
+          provider: pName,
+          status: 'offline',
+          latencyMs: null,
+          latencyFormatted: 'N/A',
+          error: 'Provider instance not initialized or API key missing',
+          timestamp: Date.now()
+        };
+        return;
+      }
+
+      const testMsg = [{ role: 'user', content: 'Say OK.' }];
+      const start = Date.now();
+      try {
+        const resp = await p.generate(testMsg, { complexity: 'standard' });
+        const latencyMs = Date.now() - start;
+        telemetry.record(pName, resp.usage?.totalTokens || 0, latencyMs, false);
+
+        let status = 'online';
+        if (latencyMs > 2500) status = 'degraded';
+
+        lastPingResults[pName] = {
+          provider: pName,
+          status,
+          latencyMs,
+          latencyFormatted: `${latencyMs}ms`,
+          model: resp.model || pName,
+          textSample: (resp.text || '').trim().slice(0, 40),
+          timestamp: Date.now()
+        };
+      } catch (err: any) {
+        const latencyMs = Date.now() - start;
+        telemetry.record(pName, 0, latencyMs, true);
+
+        lastPingResults[pName] = {
+          provider: pName,
+          status: 'offline',
+          latencyMs,
+          latencyFormatted: `${latencyMs}ms`,
+          error: err.message || 'Ping failed',
+          timestamp: Date.now()
+        };
+      }
+    }));
+
+    res.json({
+      success: true,
+      timestamp: Date.now(),
+      results: lastPingResults
+    });
+  } catch (error: any) {
+    console.error('Ping providers error:', error);
+    res.status(500).json({ error: error.message || 'Failed to ping providers' });
   }
 });
 

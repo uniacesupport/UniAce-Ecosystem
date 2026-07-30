@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, FileText, Plus, CheckCircle, Loader2, BookOpen, AlertCircle, Settings, Trash2, Users, Activity, Database, Search, Zap, Trophy, Star, Bot, Shield, BarChart3, Globe, Edit2, RefreshCw, Clock, FileQuestion, MessageSquare, ArrowLeft, HeartPulse, X, ArrowRight, Layers, Key, Cpu, Share2, Download, Filter, Send, ChevronLeft, ChevronRight, Mic, Book, Terminal } from 'lucide-react';
+import { Upload, FileText, Plus, CheckCircle, Loader2, BookOpen, AlertCircle, Settings, Trash2, Users, Activity, Database, Search, Zap, Trophy, Star, Bot, Shield, BarChart3, Globe, Edit2, RefreshCw, Clock, FileQuestion, MessageSquare, ArrowLeft, HeartPulse, X, ArrowRight, Layers, Key, Cpu, Share2, Download, Filter, Send, ChevronLeft, ChevronRight, Mic, Book, Terminal, Sparkles, TrendingUp } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -126,7 +126,7 @@ export default function AdminDashboard() {
   const [isIngesting, setIsIngesting] = useState(false);
   const [ingestionStatus, setIngestionStatus] = useState('');
   const [kbStats, setKbStats] = useState({ totalChunks: 0 });
-  const [activeTab, setActiveTab] = useState<'overview' | 'courses' | 'users' | 'rag' | 'communications' | 'settings' | 'logs' | 'question-bank' | 'curriculum-health' | 'curriculum-manager' | 'curriculum-requests' | 'api-debugger' | 'affiliates' | 'analytics'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'courses' | 'users' | 'rag' | 'communications' | 'settings' | 'logs' | 'question-bank' | 'curriculum-health' | 'curriculum-manager' | 'curriculum-requests' | 'api-debugger' | 'affiliates' | 'analytics' | 'api-status'>('overview');
 
   useEffect(() => {
     // Redirect if current tab is not allowed for the role
@@ -184,6 +184,19 @@ export default function AdminDashboard() {
   });
   const [aiMetrics, setAiMetrics] = useState<any>({});
   const [aiChartData, setAiChartData] = useState<any[]>([]);
+  const [pingResults, setPingResults] = useState<Record<string, {
+    provider: string;
+    status: 'online' | 'degraded' | 'offline';
+    latencyMs: number | null;
+    latencyFormatted: string;
+    model?: string;
+    textSample?: string;
+    error?: string;
+    timestamp?: number;
+  }>>({});
+  const [isPingingAll, setIsPingingAll] = useState(false);
+  const [pingingProvider, setPingingProvider] = useState<string | null>(null);
+  const [autoPingEnabled, setAutoPingEnabled] = useState(false);
   const [routingConfig, setRoutingConfig] = useState({
     chat: 'groq',
     quiz: 'groq',
@@ -729,6 +742,9 @@ export default function AdminDashboard() {
         if (data.chartData) {
           setAiChartData(data.chartData);
         }
+        if (data.pingResults) {
+          setPingResults(prev => ({ ...prev, ...data.pingResults }));
+        }
         if (data.stats) {
           setSystemStats(prev => ({
             ...prev,
@@ -744,6 +760,52 @@ export default function AdminDashboard() {
       console.error("Error checking AI status:", error);
     } finally {
       setIsCheckingAI(false);
+    }
+  };
+
+  const pingAllProviders = async (singleProvider?: string) => {
+    if (singleProvider) {
+      setPingingProvider(singleProvider);
+    } else {
+      setIsPingingAll(true);
+    }
+
+    try {
+      const idToken = await auth.currentUser?.getIdToken();
+      if (!idToken) return;
+
+      const res = await fetch('/api/admin/ping-providers', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
+        body: JSON.stringify(singleProvider ? { provider: singleProvider } : {})
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.results) {
+          setPingResults(prev => ({
+            ...prev,
+            ...data.results
+          }));
+        }
+        showToast(
+          singleProvider 
+            ? `Pinged ${singleProvider} endpoint successfully` 
+            : 'Pinging all AI model endpoints complete!', 
+          'success'
+        );
+      } else {
+        showToast('Failed to ping AI endpoints', 'error');
+      }
+    } catch (err) {
+      console.error("Error pinging providers:", err);
+      showToast('Error connecting to ping endpoint', 'error');
+    } finally {
+      setIsPingingAll(false);
+      setPingingProvider(null);
     }
   };
 
@@ -2596,6 +2658,7 @@ export default function AdminDashboard() {
         <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-hide">
           {[
             { id: 'overview', label: 'Overview', icon: Activity, show: true },
+            { id: 'api-status', label: 'API Status', icon: Activity, show: permissions.canManageSystem },
             { id: 'analytics', label: 'Platform Analytics', icon: BarChart3, show: true },
             { id: 'courses', label: 'Courses & AI', icon: BookOpen, show: permissions.canManageCourses },
             { id: 'question-bank', label: 'Question Bank', icon: FileQuestion, show: permissions.canManageCourses },
@@ -6753,6 +6816,379 @@ export default function AdminDashboard() {
               >
                 Confirm
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* API Status & Latency Benchmark Tab */}
+      {activeTab === 'api-status' && (
+        <div className="space-y-8 animate-fade-in">
+          {/* Header Card */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 bg-white dark:bg-slate-800 p-8 rounded-[2.5rem] border border-slate-200 dark:border-slate-700 shadow-sm">
+            <div>
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-indigo-100 dark:bg-indigo-950/60 rounded-2xl text-indigo-600 dark:text-indigo-400">
+                  <Activity size={30} />
+                </div>
+                <div>
+                  <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">
+                    API Status & Model Benchmarks
+                  </h2>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                    Real-time ping testing, latency benchmarks, and active health monitoring for configured AI model endpoints.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 flex-wrap">
+              {/* Auto Ping Toggle */}
+              <button
+                onClick={() => setAutoPingEnabled(!autoPingEnabled)}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all border ${
+                  autoPingEnabled
+                    ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-800 shadow-sm'
+                    : 'bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800'
+                }`}
+              >
+                <div className={`w-2.5 h-2.5 rounded-full ${autoPingEnabled ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
+                {autoPingEnabled ? 'Auto-Ping ON (30s)' : 'Auto-Ping OFF'}
+              </button>
+
+              {/* Ping All Endpoints Button */}
+              <button
+                onClick={() => pingAllProviders()}
+                disabled={isPingingAll}
+                className="px-6 py-3 rounded-2xl font-bold bg-indigo-600 hover:bg-indigo-700 text-white text-sm transition-all flex items-center gap-2 shadow-lg shadow-indigo-600/20 active:scale-95 disabled:opacity-50"
+              >
+                <RefreshCw size={18} className={isPingingAll ? 'animate-spin' : ''} />
+                {isPingingAll ? 'Pinging All Endpoints...' : 'Ping All Endpoints'}
+              </button>
+            </div>
+          </div>
+
+          {/* Top Overview KPI Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {/* KPI 1: Monitored Endpoints */}
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Monitored Endpoints</span>
+                <div className="p-2 rounded-xl bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">
+                  <Bot size={20} />
+                </div>
+              </div>
+              <div className="text-3xl font-black text-slate-900 dark:text-white mt-3">7 Providers</div>
+              <div className="text-xs text-slate-500 mt-2 flex items-center gap-1.5">
+                <span className="inline-block w-2 h-2 rounded-full bg-blue-500"></span>
+                NVIDIA, Gemini, Groq, Mistral, etc.
+              </div>
+            </div>
+
+            {/* KPI 2: Online Endpoints Count */}
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Online Status</span>
+                <div className="p-2 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400">
+                  <CheckCircle size={20} />
+                </div>
+              </div>
+              <div className="text-3xl font-black text-slate-900 dark:text-white mt-3">
+                {
+                  Object.values(pingResults).filter(r => r.status === 'online').length > 0
+                    ? `${Object.values(pingResults).filter(r => r.status === 'online').length} / ${Object.keys(pingResults).length || 7} Online`
+                    : `${Object.values(aiProviderStatus).filter(p => p.active).length} / 7 Ready`
+                }
+              </div>
+              <div className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold mt-2 flex items-center gap-1">
+                <div className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                Active circuit breakers
+              </div>
+            </div>
+
+            {/* KPI 3: Average Latency */}
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Average Latency</span>
+                <div className="p-2 rounded-xl bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400">
+                  <Zap size={20} />
+                </div>
+              </div>
+              <div className="text-3xl font-black text-slate-900 dark:text-white mt-3">
+                {(() => {
+                  const onlinePings = Object.values(pingResults).filter(r => r.latencyMs !== null && r.latencyMs !== undefined);
+                  if (onlinePings.length === 0) return 'N/A';
+                  const avg = Math.round(onlinePings.reduce((acc, curr) => acc + (curr.latencyMs || 0), 0) / onlinePings.length);
+                  return `${avg}ms`;
+                })()}
+              </div>
+              <div className="text-xs text-slate-500 mt-2">
+                Real-time API response speed
+              </div>
+            </div>
+
+            {/* KPI 4: Fastest Endpoint */}
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Fastest Endpoint</span>
+                <div className="p-2 rounded-xl bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400">
+                  <TrendingUp size={20} />
+                </div>
+              </div>
+              <div className="text-xl font-black text-slate-900 dark:text-white mt-3 truncate">
+                {(() => {
+                  const sortedPings = Object.values(pingResults)
+                    .filter(r => r.status === 'online' && r.latencyMs)
+                    .sort((a, b) => (a.latencyMs || 9999) - (b.latencyMs || 9999));
+                  if (sortedPings.length === 0) return 'Groq / NVIDIA';
+                  const fastest = sortedPings[0];
+                  const names: Record<string, string> = {
+                    nvidia: 'NVIDIA NIM',
+                    gemini_direct: 'Gemini',
+                    groq: 'Groq Llama 3',
+                    mistral_direct: 'Mistral AI',
+                    openrouter_free: 'OpenRouter',
+                    cohere: 'Cohere',
+                    huggingface: 'Hugging Face'
+                  };
+                  return `${names[fastest.provider] || fastest.provider} (${fastest.latencyMs}ms)`;
+                })()}
+              </div>
+              <div className="text-xs text-purple-600 dark:text-purple-400 font-semibold mt-2">
+                Optimal for streaming
+              </div>
+            </div>
+          </div>
+
+          {/* Provider Ping Endpoint Cards Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {[
+              { id: 'nvidia', name: 'NVIDIA NIM Inference', model: 'Nemotron Voicechat / Nemotron-3 120B', icon: Cpu, accent: 'border-emerald-500/30 bg-emerald-50/20 dark:bg-emerald-500/5', badgeColor: 'bg-emerald-500' },
+              { id: 'gemini_direct', name: 'Google Gemini Direct', model: 'Gemini 2.0 Flash / Pro & Multimodal', icon: Shield, accent: 'border-blue-500/30 bg-blue-50/20 dark:bg-blue-500/5', badgeColor: 'bg-blue-500' },
+              { id: 'groq', name: 'Groq Llama 3', model: 'Ultra-Fast Llama 3.1 70B & 8B', icon: Zap, accent: 'border-orange-500/30 bg-orange-50/20 dark:bg-orange-500/5', badgeColor: 'bg-orange-500' },
+              { id: 'mistral_direct', name: 'Mistral AI Direct', model: 'Mistral Small, Large & Codestral', icon: Star, accent: 'border-purple-500/30 bg-purple-50/20 dark:bg-purple-500/5', badgeColor: 'bg-purple-500' },
+              { id: 'openrouter_free', name: 'OpenRouter Gateway', model: 'Free Tier Multi-Model Router', icon: Globe, accent: 'border-indigo-500/30 bg-indigo-50/20 dark:bg-indigo-500/5', badgeColor: 'bg-indigo-500' },
+              { id: 'cohere', name: 'Cohere Command', model: 'Cohere Command R+ & RAG Embedding', icon: Cpu, accent: 'border-cyan-500/30 bg-cyan-50/20 dark:bg-cyan-500/5', badgeColor: 'bg-cyan-500' },
+              { id: 'huggingface', name: 'Hugging Face Inference', model: 'Open-Source Models & Flashcards', icon: Sparkles, accent: 'border-yellow-500/30 bg-yellow-50/20 dark:bg-yellow-500/5', badgeColor: 'bg-yellow-500' }
+            ].map((p) => {
+              const pingInfo = pingResults[p.id];
+              const provStatus = aiProviderStatus[p.id] || { active: false, totalKeys: 0, exhaustedKeys: 0, usingEnv: false, usingDb: false };
+              const isPingingThis = pingingProvider === p.id;
+              
+              const isOnline = pingInfo ? pingInfo.status === 'online' : provStatus.active;
+              const isDegraded = pingInfo?.status === 'degraded';
+              const latency = pingInfo?.latencyMs;
+
+              return (
+                <div key={p.id} className={`p-6 rounded-[2rem] border-2 transition-all flex flex-col justify-between ${p.accent}`}>
+                  <div>
+                    {/* Header Row */}
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-3">
+                        <div className="p-3 rounded-2xl bg-white dark:bg-slate-800 shadow-sm border border-slate-200/60 dark:border-slate-700">
+                          <p.icon size={22} className="text-slate-800 dark:text-slate-200" />
+                        </div>
+                        <div>
+                          <h3 className="font-bold text-slate-900 dark:text-white text-base">{p.name}</h3>
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium truncate max-w-[180px]">{p.model}</p>
+                        </div>
+                      </div>
+
+                      {/* Status Pill */}
+                      <div className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 ${
+                        isOnline
+                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/80 dark:text-emerald-400 border border-emerald-300/50'
+                          : isDegraded
+                          ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/80 dark:text-amber-400 border border-amber-300/50'
+                          : 'bg-red-100 text-red-700 dark:bg-red-950/80 dark:text-red-400 border border-red-300/50'
+                      }`}>
+                        <div className={`w-2 h-2 rounded-full ${
+                          isOnline ? 'bg-emerald-500 animate-pulse' : isDegraded ? 'bg-amber-500' : 'bg-red-500'
+                        }`} />
+                        {isOnline ? 'Online' : isDegraded ? 'Degraded' : 'Offline'}
+                      </div>
+                    </div>
+
+                    {/* Latency Meter Bar */}
+                    <div className="my-4 bg-white dark:bg-slate-800/80 p-4 rounded-2xl border border-slate-200/60 dark:border-slate-700/60 space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Latency</span>
+                        <span className={`text-xs font-black font-mono ${
+                          !latency ? 'text-slate-400' : latency < 500 ? 'text-emerald-600 dark:text-emerald-400' : latency < 1500 ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400'
+                        }`}>
+                          {latency ? `${latency}ms` : (aiMetrics[p.id]?.latency || 'Not Pinged')}
+                        </span>
+                      </div>
+
+                      {/* Visual Bar */}
+                      <div className="w-full h-2 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full transition-all duration-500 rounded-full ${
+                            !latency ? 'w-0' : latency < 500 ? 'bg-emerald-500' : latency < 1500 ? 'bg-amber-500' : 'bg-red-500'
+                          }`}
+                          style={{ width: `${Math.min(100, Math.max(8, ((latency || 500) / 2500) * 100))}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Key Info & Details */}
+                    <div className="space-y-2 text-xs font-medium text-slate-600 dark:text-slate-300">
+                      <div className="flex justify-between items-center py-1 border-b border-slate-200/40 dark:border-slate-700/40">
+                        <span className="text-slate-400">Keys Configured:</span>
+                        <span className="font-bold text-slate-900 dark:text-white">
+                          {provStatus.totalKeys} ({provStatus.exhaustedKeys} exhausted)
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center py-1 border-b border-slate-200/40 dark:border-slate-700/40">
+                        <span className="text-slate-400">Key Source:</span>
+                        <span className="font-bold text-slate-900 dark:text-white">
+                          {provStatus.usingEnv && provStatus.usingDb ? 'ENV + DB' : provStatus.usingEnv ? 'ENV' : provStatus.usingDb ? 'Firestore DB' : 'None'}
+                        </span>
+                      </div>
+
+                      {/* Ping Result Note or Error */}
+                      {pingInfo && (
+                        <div className="mt-2 text-[11px]">
+                          {pingInfo.error ? (
+                            <p className="text-red-600 dark:text-red-400 font-semibold bg-red-50 dark:bg-red-950/40 p-2 rounded-xl border border-red-200 dark:border-red-800">
+                              ⚠️ {pingInfo.error}
+                            </p>
+                          ) : (
+                            <p className="text-slate-500 dark:text-slate-400 italic">
+                              Sample: "{pingInfo.textSample || 'OK'}"
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Individual Ping Action Button */}
+                  <div className="mt-6 flex gap-2">
+                    <button
+                      onClick={() => pingAllProviders(p.id)}
+                      disabled={isPingingThis || isPingingAll}
+                      className="w-full py-2.5 px-4 rounded-xl font-bold text-xs bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 shadow-xs transition-all flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50"
+                    >
+                      <RefreshCw size={14} className={isPingingThis ? 'animate-spin text-indigo-500' : ''} />
+                      {isPingingThis ? 'Pinging...' : 'Ping Endpoint'}
+                    </button>
+                    <button
+                      onClick={() => setSelectedProviderForKeyManager(p.id as any)}
+                      className="py-2.5 px-3 rounded-xl font-bold text-xs bg-slate-100 dark:bg-slate-900 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-all flex items-center justify-center"
+                      title="Manage Keys"
+                    >
+                      <Key size={14} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Latency Comparison Benchmark & Task Routing Table */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* Latency Benchmark Visual Chart */}
+            <div className="bg-white dark:bg-slate-800 rounded-[2.5rem] p-8 border border-slate-200 dark:border-slate-700 shadow-sm space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-xl font-black text-slate-900 dark:text-white flex items-center gap-2">
+                    <BarChart3 className="text-indigo-500" size={24} />
+                    Latency Benchmarks (Fastest to Slowest)
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                    Comparative response times measured during live ping tests.
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                {[
+                  { id: 'nvidia', name: 'NVIDIA NIM' },
+                  { id: 'gemini_direct', name: 'Google Gemini' },
+                  { id: 'groq', name: 'Groq Llama 3' },
+                  { id: 'mistral_direct', name: 'Mistral AI' },
+                  { id: 'openrouter_free', name: 'OpenRouter' },
+                  { id: 'cohere', name: 'Cohere Command' },
+                  { id: 'huggingface', name: 'Hugging Face' }
+                ]
+                  .map(p => ({
+                    ...p,
+                    latency: pingResults[p.id]?.latencyMs || null
+                  }))
+                  .sort((a, b) => (a.latency || 9999) - (b.latency || 9999))
+                  .map((item, index) => {
+                    const isMeasured = item.latency !== null;
+                    const latencyVal = item.latency || 0;
+                    const percentage = isMeasured ? Math.min(100, Math.max(12, (latencyVal / 2000) * 100)) : 0;
+
+                    return (
+                      <div key={item.id} className="space-y-1.5">
+                        <div className="flex justify-between items-center text-xs font-bold">
+                          <span className="text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                            <span className="w-5 h-5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-500 flex items-center justify-center text-[10px]">
+                              {index + 1}
+                            </span>
+                            {item.name}
+                          </span>
+                          <span className={isMeasured ? 'text-indigo-600 dark:text-indigo-400 font-mono' : 'text-slate-400 font-mono'}>
+                            {isMeasured ? `${latencyVal}ms` : 'Not Measured'}
+                          </span>
+                        </div>
+                        <div className="w-full h-3 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all duration-700 ${
+                              !isMeasured
+                                ? 'bg-slate-300 dark:bg-slate-600'
+                                : latencyVal < 400
+                                ? 'bg-emerald-500'
+                                : latencyVal < 1200
+                                ? 'bg-indigo-500'
+                                : 'bg-amber-500'
+                            }`}
+                            style={{ width: `${percentage}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+
+            {/* System Task Routing Matrix */}
+            <div className="bg-white dark:bg-slate-800 rounded-[2.5rem] p-8 border border-slate-200 dark:border-slate-700 shadow-sm space-y-6">
+              <div>
+                <h3 className="text-xl font-black text-slate-900 dark:text-white flex items-center gap-2">
+                  <Layers className="text-indigo-500" size={24} />
+                  Active Task Routing Matrix
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  AI providers currently mapped to execute specific platform workloads.
+                </p>
+              </div>
+
+              <div className="divide-y divide-slate-100 dark:divide-slate-700/60">
+                {[
+                  { task: 'Voice Tutor Engine', provider: routingConfig.voice_tutor || 'nvidia', desc: 'Real-time interactive study audio & chat', recommended: 'NVIDIA NIM' },
+                  { task: 'Deep STEM & Proofs', provider: 'nvidia', desc: 'Calculus, Physics proofs & step-by-step logic', recommended: 'NVIDIA NIM' },
+                  { task: 'Interactive Q&A Chat', provider: routingConfig.chat || 'groq', desc: 'Ultra-fast conversational tutor responses', recommended: 'Groq Llama 3' },
+                  { task: 'Lesson Brainstorming', provider: routingConfig.lesson || 'nvidia', desc: 'Curriculum development and topic outlines', recommended: 'NVIDIA NIM' },
+                  { task: 'Vision & Image OCR', provider: routingConfig.vision || 'gemini_direct', desc: 'Extracting text and diagram analytics', recommended: 'Google Gemini' },
+                  { task: 'Knowledge Base (RAG)', provider: routingConfig.rag || 'openrouter_free', desc: 'Retrieving and summarizing uploaded PDFs', recommended: 'OpenRouter' }
+                ].map((item, idx) => (
+                  <div key={idx} className="py-3 flex items-center justify-between gap-4">
+                    <div>
+                      <div className="font-bold text-sm text-slate-900 dark:text-white">{item.task}</div>
+                      <div className="text-[11px] text-slate-500">{item.desc}</div>
+                    </div>
+                    <div className="text-right">
+                      <span className="px-3 py-1 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-bold text-xs uppercase border border-indigo-200 dark:border-indigo-800/60">
+                        {item.provider}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>
