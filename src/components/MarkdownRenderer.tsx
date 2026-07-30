@@ -400,6 +400,24 @@ export default function MarkdownRenderer({ content = '', className = '' }: Markd
             td: ({ node, ...props }) => (
               <td className="px-5 py-3.5 text-slate-600 dark:text-zinc-400 font-medium" {...props} />
             ),
+            pre: ({ node, ...props }) => (
+              <pre className="my-4 overflow-x-auto rounded-2xl bg-slate-900 dark:bg-zinc-900/90 p-4 border border-slate-800 text-slate-100 font-mono text-xs sm:text-sm leading-relaxed shadow-sm" {...props} />
+            ),
+            code: ({ node, inline, className, children, ...props }: any) => {
+              const isInline = inline || (!className && !String(children).includes('\n'));
+              if (isInline) {
+                return (
+                  <code className="bg-slate-100 dark:bg-zinc-800/80 text-slate-800 dark:text-zinc-200 px-1.5 py-0.5 rounded-md text-xs sm:text-sm font-mono border border-slate-200/60 dark:border-zinc-700/60 font-normal" {...props}>
+                    {children}
+                  </code>
+                );
+              }
+              return (
+                <code className={`bg-transparent dark:bg-transparent text-slate-100 p-0 border-none font-mono text-xs sm:text-sm ${className || ''}`} {...props}>
+                  {children}
+                </code>
+              );
+            },
           }}
         />
       </MathErrorBoundary>

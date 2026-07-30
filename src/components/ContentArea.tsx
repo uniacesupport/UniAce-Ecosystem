@@ -154,6 +154,84 @@ export default function ContentArea({
     loadContent();
   }, [activeSubTopic.id, courseId, module.id, isAdmin]);
 
+  // On-Demand Auto-Upgrade for placeholder images
+  useEffect(() => {
+    if (!fetchedLesson || isGenerating || isFetchingContent) return;
+    
+    let isMounted = true;
+    
+    const upgradePlaceholders = async () => {
+      const content = fetchedLesson.content;
+      // Match ![alt](...placeholder...) OR ![alt](...unsplash...) OR [Complex Image: alt...]
+      const placeholderRegex = /!\[([^\]]*)\]\(([^)]*(?:placeholder|unsplash|fakeimg)[^)]*)\)|\[Complex Image:?([^\]]+)\]/gi;
+      let match;
+      let hasUpdates = false;
+      let newContent = content;
+      
+      const matches: { original: string, alt: string, index: number }[] = [];
+      while ((match = placeholderRegex.exec(content)) !== null) {
+        // match[1] is markdown alt, match[3] is complex image alt
+        matches.push({ original: match[0], alt: match[1] || match[3] || 'Educational diagram', index: match.index });
+      }
+      
+      if (matches.length > 0) {
+        console.log(`[Auto-Upgrade] Found ${matches.length} placeholder images. Upgrading with FLUX...`);
+        
+        for (const m of matches) {
+           try {
+             const token = await user?.getIdToken();
+             const response = await fetch('/api/ai/generate-image', {
+               method: 'POST',
+               headers: {
+                 'Content-Type': 'application/json',
+                 'Authorization': `Bearer ${token}`
+               },
+               body: JSON.stringify({ 
+                 prompt: m.alt.trim(),
+                 complexity: 'high'
+               })
+             });
+             
+             if (response.ok) {
+                const data = await response.json();
+                if (data.image) {
+                   newContent = newContent.replace(m.original, `![${m.alt.trim()}](${data.image})`);
+                   hasUpdates = true;
+                }
+             } else {
+               console.warn(`[Auto-Upgrade] Failed to generate image for "${m.alt}"`, await response.text());
+             }
+           } catch (e) {
+             console.error("[Auto-Upgrade] Error during image generation:", e);
+           }
+        }
+        
+        if (hasUpdates && isMounted) {
+           setFetchedLesson({ ...fetchedLesson, content: newContent });
+           onLessonContentChange?.(newContent);
+           
+           // Update Firestore
+           try {
+              let lessonPath = `courses/${courseId}/modules/${module.id}/lessons/${activeSubTopic.id}`;
+              await setDoc(doc(db, lessonPath), {
+                content: newContent,
+                metadata: fetchedLesson.metadata || {}
+              }, { merge: true });
+              console.log("[Auto-Upgrade] Successfully updated Firestore with real FLUX images!");
+           } catch (e) {
+             console.error("[Auto-Upgrade] Failed to save upgraded content to Firestore:", e);
+           }
+        }
+      }
+    };
+    
+    upgradePlaceholders();
+    
+    return () => {
+      isMounted = false;
+    };
+  }, [fetchedLesson?.content, isGenerating, isFetchingContent, courseId, module.id, activeSubTopic.id, user]);
+
   useEffect(() => {
     if (!fetchedLesson || isGenerating || isFetchingContent) return;
     if (hasCheckedInRef.current.has(activeSubTopic.id)) return;

@@ -198,6 +198,7 @@ export default function AdminDashboard() {
   const [pingingProvider, setPingingProvider] = useState<string | null>(null);
   const [autoPingEnabled, setAutoPingEnabled] = useState(false);
   const [routingConfig, setRoutingConfig] = useState({
+    global_provider: '',
     chat: 'groq',
     quiz: 'groq',
     lesson: 'openrouter_free',
@@ -5272,6 +5273,40 @@ export default function AdminDashboard() {
                 >
                   View Full Audit Trail
                 </button>
+              </div>
+            </div>
+
+            
+            {/* Global AI Provider */}
+            <div className="lg:col-span-2 bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700">
+              <div className="flex items-center justify-between mb-8">
+                <div>
+                  <h2 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <Globe className="text-blue-500" size={28} />
+                    Global Ecosystem AI Provider
+                  </h2>
+                  <p className="text-slate-500 mt-1">Force all services (Voice Tutor, Course Gen, etc) to use one master provider.</p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-700">
+                <div className="flex flex-col gap-1">
+                   <span className="font-bold text-slate-700 dark:text-slate-300">Master AI Mode</span>
+                   <span className="text-xs text-slate-500">Overrides individual task routing below. Select a single key to rule them all.</span>
+                </div>
+                <select
+                  value={(routingConfig as any).global_provider || ''}
+                  onChange={(e) => updateRoutingConfig('global_provider', e.target.value)}
+                  className="bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl px-4 py-2 text-sm font-bold text-slate-700 dark:text-slate-300 outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                >
+                  <option value="">Off (Use Task Matrix)</option>
+                  <option value="nvidia">NVIDIA API</option>
+                  <option value="gemini_direct">Gemini API</option>
+                  <option value="openrouter_free">OpenRouter API</option>
+                  <option value="groq">Groq API</option>
+                  <option value="mistral_direct">Mistral API</option>
+                  <option value="cohere">Cohere API</option>
+                </select>
               </div>
             </div>
 

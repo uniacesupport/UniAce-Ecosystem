@@ -2735,35 +2735,72 @@ app.post('/api/ai/test-generate', verifyAuth, async (req, res) => {
 // 1.5.5 AI Image Generate Endpoint
 app.post('/api/ai/generate-image', verifyAuth, async (req, res) => {
   try {
-    const { prompt, aspectRatio } = req.body;
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) throw new Error('API key not configured on server');
-
-    const ai = new GoogleGenAI({ apiKey });
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-image',
-      contents: {
-        parts: [
-          {
-            text: `Generate a high-quality, educational diagram or illustration for the following concept: ${prompt}. 
-            The image should be clear, labeled where appropriate, and suitable for a university-level student. 
-            Focus on accuracy and clarity.`,
-          },
-        ],
-      },
-      config: {
-        imageConfig: {
-          aspectRatio: aspectRatio || '1:1',
-        },
-      },
-    });
-
-    for (const part of response.candidates?.[0]?.content?.parts || []) {
-      if (part.inlineData) {
-        const base64EncodeString = part.inlineData.data;
-        return res.json({ image: `data:image/png;base64,${base64EncodeString}` });
+    const { prompt, aspectRatio, complexity } = req.body;
+    
+    let apiKey = '';
+    try {
+      if (globalNvidiaProvider) {
+        apiKey = await (globalNvidiaProvider as any).rotator.getNextKey();
       }
+    } catch(e) {
+      console.warn("Failed to get dynamic key, falling back to env var", e);
     }
+    
+    if (!apiKey) {
+      apiKey = process.env.NVIDIA_API_KEY || '';
+    }
+    
+    if (!apiKey) throw new Error('NVIDIA API key not configured on server');
+
+    const isComplex = complexity === 'high' || prompt.length > 100;
+    const primaryModel = isComplex ? 'black-forest-labs/flux.1-dev' : 'black-forest-labs/flux.1-schnell';
+    const fallbackModel = isComplex ? 'black-forest-labs/flux.1-schnell' : 'black-forest-labs/flux.1-dev';
+    
+    let response = await fetch(`https://ai.api.nvidia.com/v1/genai/${primaryModel}`, {
+      method: "POST",
+      headers: {
+        "Authorization": "Bearer " + apiKey,
+        "Accept": "application/json",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        text_prompts: [{ text: `Generate a high-quality, educational diagram or illustration for the following concept: ${prompt}. Focus on accuracy and clarity.` }],
+        seed: Math.floor(Math.random() * 1000000),
+        temperature: 1,
+        top_p: 1,
+        top_k: 0
+      })
+    });
+    
+    if (!response.ok) {
+       console.log(`[ImageGen] ${primaryModel} failed with ${response.status}. Falling back to ${fallbackModel}...`);
+       response = await fetch(`https://ai.api.nvidia.com/v1/genai/${fallbackModel}`, {
+         method: "POST",
+         headers: {
+           "Authorization": "Bearer " + apiKey,
+           "Accept": "application/json",
+           "Content-Type": "application/json"
+         },
+         body: JSON.stringify({
+           text_prompts: [{ text: `Generate a high-quality, educational diagram or illustration for the following concept: ${prompt}. Focus on accuracy and clarity.` }],
+           seed: Math.floor(Math.random() * 1000000),
+           temperature: 1,
+           top_p: 1,
+           top_k: 0
+         })
+       });
+       
+       if (!response.ok) {
+          throw new Error(`Failed on both FLUX models. Last error: ${response.statusText}`);
+       }
+    }
+    
+    const data = await response.json();
+    if (data.artifacts && data.artifacts.length > 0) {
+      const base64EncodeString = data.artifacts[0].base64;
+      return res.json({ image: `data:image/jpeg;base64,${base64EncodeString}` });
+    }
+    
     throw new Error('No image generated');
   } catch (error: any) {
     console.error('Image Gen Error:', error);
@@ -2892,7 +2929,8 @@ app.post('/api/ai/generate', verifyAuth, async (req, res) => {
     };
 
     const routeConfig = TASK_ROUTING_TABLE[effectiveTaskType] || TASK_ROUTING_TABLE['default'];
-    const primaryProviderName = req.body.preferredProvider || routingConfig[effectiveTaskType] || routeConfig.primary;
+    const centralProvider = routingConfig.global_provider || process.env.ACTIVE_AI_PROVIDER;
+    const primaryProviderName = req.body.preferredProvider || centralProvider || routingConfig[effectiveTaskType] || routeConfig.primary;
     
     const providerMap: Record<string, { breaker: any, name: string }> = {
       gemini_direct: { breaker: globalGeminiDirectBreaker, name: 'gemini_direct' },
@@ -3089,7 +3127,7 @@ app.post('/api/ai/stream', verifyAuth, async (req, res) => {
     const aiModeDoc = await appAdmin.firestore().collection('system_config').doc('ai_mode').get();
     const globalAiMode = aiModeDoc.exists ? aiModeDoc.data()?.mode : 'normal';
     
-    let preferredProviderName = req.body.preferredProvider || routingConfig[effectiveTaskType] || 'groq';
+    let preferredProviderName = req.body.preferredProvider || routingConfig.global_provider || process.env.ACTIVE_AI_PROVIDER || routingConfig[effectiveTaskType] || 'groq';
     
     // If Global Fast Mode is enabled, force Groq for all students
     if (globalAiMode === 'fast') {
@@ -5546,7 +5584,7 @@ async function startServer() {
           console.warn("Failed to fetch routing config for WebSocket chat:", err);
         }
 
-        const preferredProviderName = routingConfig.chat || 'groq';
+        const preferredProviderName = routingConfig.global_provider || process.env.ACTIVE_AI_PROVIDER || routingConfig.chat || 'groq';
         const providers = [];
 
         const providerMap: Record<string, any> = {
