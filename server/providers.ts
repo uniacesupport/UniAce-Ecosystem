@@ -191,7 +191,7 @@ export class DynamicKeyRotator {
     await this.fetchKeys();
     let model = (this.configuredModel || '').trim();
     if (!model) return '';
-    if (model.toLowerCase().includes('gemini 3.6 flash') || model.toLowerCase().includes('gemini-3.6-flash')) return 'gemini-3.6-flash';
+    if (model.toLowerCase().includes('gemini 3.6 flash') || model.toLowerCase().includes('gemini-3.6-flash') || model.toLowerCase().includes('gemini 1.5 flash') || model.toLowerCase().includes('gemini-1.5-flash')) return 'gemini-2.5-flash';
     model = model.toLowerCase().replace(/[^a-z0-9.\-\/]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
     return model;
   }
@@ -200,7 +200,7 @@ export class DynamicKeyRotator {
     await this.fetchKeys();
     let model = (this.configuredFallbackModel || '').trim();
     if (!model) return '';
-    if (model.toLowerCase().includes('gemini 3.6 flash') || model.toLowerCase().includes('gemini-3.6-flash')) return 'gemini-3.6-flash';
+    if (model.toLowerCase().includes('gemini 3.6 flash') || model.toLowerCase().includes('gemini-3.6-flash') || model.toLowerCase().includes('gemini 1.5 flash') || model.toLowerCase().includes('gemini-1.5-flash')) return 'gemini-2.5-flash';
     model = model.toLowerCase().replace(/[^a-z0-9.\-\/]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
     return model;
   }
@@ -357,7 +357,7 @@ export class GeminiDirectProvider implements ModelProvider {
 
       try {
         const model = ai.models.generateContent({
-          model: (await this.rotator.getModel()).trim() || 'gemini-3.6-flash',
+          model: (await this.rotator.getModel()).trim() || 'gemini-2.5-flash',
           contents,
           config: {
             systemInstruction,
@@ -397,7 +397,7 @@ export class GeminiDirectProvider implements ModelProvider {
 
       try {
         const result = await ai.models.generateContentStream({
-          model: (await this.rotator.getModel()).trim() || 'gemini-3.6-flash',
+          model: (await this.rotator.getModel()).trim() || 'gemini-2.5-flash',
           contents,
           config: {
             systemInstruction,
@@ -1131,7 +1131,10 @@ export class NvidiaProvider implements ModelProvider {
       const apiKey = await this.rotator.getNextKey();
       let model = (options?.model || await this.rotator.getModel() || '').trim();
       if (!model || model === 'nemotron-voicechat') {
-        model = 'nvidia/llama-3.1-nemotron-70b-instruct';
+        model = 'nvidia/nemotron-3-super-120b-a12b';
+      }
+      if (model && !model.startsWith('nvidia/')) {
+        model = `nvidia/${model}`;
       }
       
       const openai = new OpenAI({
@@ -1162,8 +1165,8 @@ export class NvidiaProvider implements ModelProvider {
           finishReason: response.choices[0]?.finish_reason || 'stop'
         };
       } catch (error: any) {
-        if (error.status === 404 && model === 'nvidia/llama-3.1-nemotron-70b-instruct') {
-          console.log('[Nvidia] 404 received on 70B model. Falling back to nvidia/nemotron-mini-4b-instruct...');
+        if (error.status === 404) {
+          console.log(`[Nvidia] 404 received on model ${model}. Falling back to nvidia/nemotron-mini-4b-instruct...`);
           try {
             const response = await openai.chat.completions.create({
               model: 'nvidia/nemotron-mini-4b-instruct',
@@ -1200,7 +1203,10 @@ export class NvidiaProvider implements ModelProvider {
       const apiKey = await this.rotator.getNextKey();
       let model = (options?.model || await this.rotator.getModel() || '').trim();
       if (!model || model === 'nemotron-voicechat') {
-        model = 'nvidia/llama-3.1-nemotron-70b-instruct';
+        model = 'nvidia/nemotron-3-super-120b-a12b';
+      }
+      if (model && !model.startsWith('nvidia/')) {
+        model = `nvidia/${model}`;
       }
 
       const openai = new OpenAI({
@@ -1219,7 +1225,14 @@ export class NvidiaProvider implements ModelProvider {
 
         let fullText = '';
         for await (const chunk of stream) {
-          const content = chunk.choices[0]?.delta?.content || '';
+          const delta = chunk.choices[0]?.delta;
+          const reasoning = (delta as any)?.reasoning_content || '';
+          const content = delta?.content || '';
+          
+          if (reasoning) {
+            fullText += reasoning;
+            onChunk(reasoning);
+          }
           if (content) {
             fullText += content;
             onChunk(content);
@@ -1232,8 +1245,8 @@ export class NvidiaProvider implements ModelProvider {
           finishReason: 'stop'
         };
       } catch (error: any) {
-        if (error.status === 404 && model === 'nvidia/llama-3.1-nemotron-70b-instruct') {
-          console.log('[Nvidia Stream] 404 received on 70B model. Falling back to nvidia/nemotron-mini-4b-instruct...');
+        if (error.status === 404) {
+          console.log(`[Nvidia Stream] 404 received on model ${model}. Falling back to nvidia/nemotron-mini-4b-instruct...`);
           try {
             const stream = await openai.chat.completions.create({
               model: 'nvidia/nemotron-mini-4b-instruct',
@@ -1293,7 +1306,7 @@ export class CircuitBreaker {
       this.onSuccess();
       return response;
     } catch (error) {
-      this.onFailure();
+      this.onFailure(error);
       throw error;
     }
   }
@@ -1308,7 +1321,7 @@ export class CircuitBreaker {
       this.onSuccess();
       return response;
     } catch (error) {
-      this.onFailure();
+      this.onFailure(error);
       throw error;
     }
   }
@@ -1330,7 +1343,14 @@ export class CircuitBreaker {
     this.failures = 0;
   }
 
-  private onFailure() {
+  private onFailure(error?: any) {
+    if (error) {
+      const status = error.status || error.statusCode;
+      if (status === 400 || status === 404) {
+        console.log(`[CircuitBreaker] Ignoring status ${status} error from provider ${this.provider.name} (not a general service failure)`);
+        return;
+      }
+    }
     this.failures++;
     this.lastFailureTime = Date.now();
   }

@@ -161,7 +161,7 @@ function classifyTaskIntent(promptInput: any, requestedTaskType?: string): { tas
 function getRolePersonaDirective(providerName: string, taskType: string): string {
   switch (providerName) {
     case 'nvidia':
-      return `\n\n[NVIDIA NEMOTRON ROLE DIRECTIVE]: You are operating as UniAce's Deep Academic & Reasoning Core (NVIDIA Nemotron-3 Super / Qwen-80B). You specialize in multi-step logical deduction, rigorous academic proofs, software algorithms, and university curriculum synthesis. Maintain absolute mathematical accuracy and high academic rigor.`;
+      return `\n\n[NVIDIA NEMOTRON ROLE DIRECTIVE]: You are operating as UniAce's Deep Academic & Reasoning Core (NVIDIA Nemotron-3 Super 120B). You specialize in multi-step logical deduction, rigorous academic proofs, software algorithms, and university curriculum synthesis. Maintain absolute mathematical accuracy and high academic rigor.`;
     case 'groq':
       return `\n\n[GROQ RAPID CORE ROLE DIRECTIVE]: You are operating as UniAce's Instant Speed Academic Tutor (Groq Llama-3). You specialize in rapid response, engaging student conversation, and immediate Q&A feedback. Be concise, punchy, and clear.`;
     case 'gemini_direct':
@@ -178,7 +178,7 @@ function getRolePersonaDirective(providerName: string, taskType: string): string
 }
 
 const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
-  nvidia: 'NVIDIA NIM (Nemotron-3 / Qwen-80B)',
+  nvidia: 'NVIDIA NIM (Nemotron-3 Super 120B)',
   groq: 'Groq (Llama-3 70B Fast)',
   gemini_direct: 'Gemini 2.0 Flash Direct',
   cohere: 'Cohere Command R+',
