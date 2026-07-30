@@ -1162,6 +1162,31 @@ export class NvidiaProvider implements ModelProvider {
           finishReason: response.choices[0]?.finish_reason || 'stop'
         };
       } catch (error: any) {
+        if (error.status === 404 && model === 'nvidia/llama-3.1-nemotron-70b-instruct') {
+          console.log('[Nvidia] 404 received on 70B model. Falling back to nvidia/nemotron-mini-4b-instruct...');
+          try {
+            const response = await openai.chat.completions.create({
+              model: 'nvidia/nemotron-mini-4b-instruct',
+              messages: messages,
+              max_tokens: 8192,
+              temperature: 0.5,
+              response_format: options.jsonMode ? { type: "json_object" } : undefined
+            });
+
+            return {
+              text: response.choices[0]?.message?.content || '',
+              usage: {
+                promptTokens: response.usage?.prompt_tokens || 0,
+                completionTokens: response.usage?.completion_tokens || 0,
+                totalTokens: response.usage?.total_tokens || 0
+              },
+              finishReason: response.choices[0]?.finish_reason || 'stop',
+              model: 'nvidia/nemotron-mini-4b-instruct (auto-fallback)'
+            };
+          } catch (fallbackError) {
+            console.error('[Nvidia] Fallback model also failed:', fallbackError);
+          }
+        }
         if (error.status === 401 || error.status === 403) {
           this.rotator.markKeyExhausted(apiKey);
         }
@@ -1207,6 +1232,36 @@ export class NvidiaProvider implements ModelProvider {
           finishReason: 'stop'
         };
       } catch (error: any) {
+        if (error.status === 404 && model === 'nvidia/llama-3.1-nemotron-70b-instruct') {
+          console.log('[Nvidia Stream] 404 received on 70B model. Falling back to nvidia/nemotron-mini-4b-instruct...');
+          try {
+            const stream = await openai.chat.completions.create({
+              model: 'nvidia/nemotron-mini-4b-instruct',
+              messages: messages,
+              max_tokens: 8192,
+              temperature: 0.5,
+              stream: true
+            });
+
+            let fullText = '';
+            for await (const chunk of stream) {
+              const content = chunk.choices[0]?.delta?.content || '';
+              if (content) {
+                fullText += content;
+                onChunk(content);
+              }
+            }
+
+            return {
+              text: fullText,
+              usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+              finishReason: 'stop',
+              model: 'nvidia/nemotron-mini-4b-instruct (auto-fallback)'
+            };
+          } catch (fallbackError) {
+            console.error('[Nvidia Stream] Fallback model also failed:', fallbackError);
+          }
+        }
         if (error.status === 401 || error.status === 403) {
           this.rotator.markKeyExhausted(apiKey);
         }
