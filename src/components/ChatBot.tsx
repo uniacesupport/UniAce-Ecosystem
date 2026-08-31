@@ -12,6 +12,23 @@ import PricingModal from './PricingModal';
 import { db } from '../firebase';
 import { doc, getDoc } from 'firebase/firestore';
 
+const stripThinkTags = (text: string) => {
+  if (!text) return '';
+  let clean = text;
+  if (clean.includes('</think>')) {
+    clean = clean.replace(/^[\s\S]*?<\/think>\s*/i, '');
+  } else if (clean.includes('<think>')) {
+    clean = clean.replace(/<think>[\s\S]*$/i, '');
+  }
+  clean = clean.replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '');
+  clean = clean.replace(/<\/?think>/gi, '');
+  clean = clean.replace(/\[SYSTEM DIRECTIVE:[\s\S]*?\]/gi, '');
+  clean = clean.replace(/\[SYSTEM REMINDER:[\s\S]*?\]/gi, '');
+  // Strip untagged meta-reasoning and planning preambles
+  clean = clean.replace(/^(?:Okay,?\s+(?:the\s+user|looking|let['’]s|let\s+me|I\s+need)|Let\s+me\s+(?:check|craft|analyze|review|respond|draft)|First,?\s+looking\s+at|According\s+to\s+my\s+guidelines|Thinking\s+Process:?|Drafting:?)[\s\S]*?(?:This\s+seems\s+perfect!?\s*(?:Time\s+to\s+respond\.?)?|Time\s+to\s+respond\.?|Okay,?\s+drafting:?|Here(?:['’]s|\s+is)\s+(?:the\s+|my\s+)?response:?|---\s*|\n\n(?=[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*!))\s*/i, '');
+  return clean.trim();
+};
+
 interface ChatBotProps {
   isFullPage?: boolean;
   onToggleFullPage?: () => void;
@@ -52,6 +69,7 @@ export default function ChatBot({
   const [isOpen, setIsOpen] = useState(false);
   const [input, setInput] = useState(() => localStorage.getItem('chat_input_backup') || "");
   const [isLoading, setIsLoading] = useState(false);
+  const [isAiThinking, setIsAiThinking] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -233,10 +251,12 @@ export default function ChatBot({
     if (!text) return;
     setIsSpeaking(true);
     
+    const cleanText = stripThinkTags(text);
+    
     // Try Browser TTS first for speed (and cost saving), fallback to API if needed or preferred
     // For this implementation, we'll prioritize Browser TTS for immediate feedback
     if ('speechSynthesis' in window) {
-      const utterance = new SpeechSynthesisUtterance(text);
+      const utterance = new SpeechSynthesisUtterance(cleanText);
       // Select a good voice if available
       const voices = window.speechSynthesis.getVoices();
       const preferredVoice = voices.find(v => v.name.includes('Google US English') || v.name.includes('Samantha'));
@@ -375,6 +395,7 @@ export default function ChatBot({
         });
       }, () => {
         setIsLoading(false);
+        setIsAiThinking(false);
         setMessages(prev => {
           const finalMsg = prev[msgIndex];
           if (autoSpeak) speakText(finalMsg.text);
@@ -383,6 +404,7 @@ export default function ChatBot({
       }, (err) => {
         console.error("WS Chat error:", err);
         setIsLoading(false);
+        setIsAiThinking(false);
         setMessages(prev => {
           const newMsgs = [...prev];
           newMsgs[msgIndex].text = "Error: Failed to connect to AI tutor via WebSocket.";
@@ -391,6 +413,11 @@ export default function ChatBot({
       }, (meta) => {
         if (meta.sparksRemaining !== undefined) {
           setSparksRemaining(meta.sparksRemaining);
+        }
+        if (meta.status === 'thinking') {
+          setIsAiThinking(true);
+        } else if (meta.status === 'answering') {
+          setIsAiThinking(false);
         }
       });
       return;
@@ -618,7 +645,7 @@ export default function ChatBot({
                       <img src={msg.image} alt="User upload" className="rounded-xl mb-3 max-w-full h-auto border border-white/10 shadow-sm" />
                     )}
                     <div className="text-inherit max-w-none">
-                      <MarkdownRenderer content={sanitizeLatex(msg.text)} />
+                      <MarkdownRenderer content={sanitizeLatex(stripThinkTags(msg.text))} />
                     </div>
                     
                     {msg.sources && msg.sources.length > 0 && (
@@ -674,12 +701,23 @@ export default function ChatBot({
             ))}
             {isLoading && (
               <div className="flex justify-start">
-                <div className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 p-4 rounded-2xl rounded-tl-none shadow-sm">
-                  <div className="flex gap-1.5">
-                    <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-bounce" />
-                    <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-bounce [animation-delay:0.2s]" />
-                    <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-bounce [animation-delay:0.4s]" />
-                  </div>
+                <div className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 p-4 rounded-2xl rounded-tl-none shadow-sm flex items-center gap-3">
+                  {isAiThinking ? (
+                    <>
+                      <div className="flex gap-1.5">
+                        <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-pulse" />
+                        <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-pulse [animation-delay:0.2s]" />
+                        <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-pulse [animation-delay:0.4s]" />
+                      </div>
+                      <span className="text-[10px] font-bold text-indigo-500/80 uppercase tracking-widest animate-pulse">UniAce is thinking...</span>
+                    </>
+                  ) : (
+                    <div className="flex gap-1.5">
+                      <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-bounce" />
+                      <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-bounce [animation-delay:0.2s]" />
+                      <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-bounce [animation-delay:0.4s]" />
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -1028,7 +1066,7 @@ export default function ChatBot({
                         <img src={msg.image} alt="User upload" className="rounded-2xl mb-4 max-w-full h-auto border border-white/20 shadow-md" />
                       )}
                       <div className="prose prose-sm prose-slate dark:prose-invert max-w-none">
-                        <MarkdownRenderer content={sanitizeLatex(msg.text)} />
+                        <MarkdownRenderer content={sanitizeLatex(stripThinkTags(msg.text))} />
                       </div>
                       {msg.role === "model" && (
                         <div className="mt-5 flex gap-2">
@@ -1053,12 +1091,23 @@ export default function ChatBot({
                 ))}
                 {isLoading && (
                   <div className="flex justify-start">
-                    <div className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 p-5 rounded-3xl rounded-tl-none shadow-sm">
-                      <div className="flex gap-1.5">
-                        <div className="w-2 h-2 bg-emerald-500 rounded-full animate-bounce" />
-                        <div className="w-2 h-2 bg-emerald-500 rounded-full animate-bounce [animation-delay:0.2s]" />
-                        <div className="w-2 h-2 bg-emerald-500 rounded-full animate-bounce [animation-delay:0.4s]" />
-                      </div>
+                    <div className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 p-5 rounded-3xl rounded-tl-none shadow-sm flex items-center gap-3">
+                      {isAiThinking ? (
+                        <>
+                          <div className="flex gap-1.5">
+                            <div className="w-2 h-2 bg-indigo-500 rounded-full animate-pulse" />
+                            <div className="w-2 h-2 bg-indigo-500 rounded-full animate-pulse [animation-delay:0.2s]" />
+                            <div className="w-2 h-2 bg-indigo-500 rounded-full animate-pulse [animation-delay:0.4s]" />
+                          </div>
+                          <span className="text-xs font-bold text-indigo-500/80 uppercase tracking-widest animate-pulse">UniAce is thinking...</span>
+                        </>
+                      ) : (
+                        <div className="flex gap-1.5">
+                          <div className="w-2 h-2 bg-emerald-500 rounded-full animate-bounce" />
+                          <div className="w-2 h-2 bg-emerald-500 rounded-full animate-bounce [animation-delay:0.2s]" />
+                          <div className="w-2 h-2 bg-emerald-500 rounded-full animate-bounce [animation-delay:0.4s]" />
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}

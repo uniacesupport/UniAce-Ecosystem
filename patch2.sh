@@ -1,2 +1,0 @@
-#!/bin/bash
-sed -i 's/const dynamicFallbacks = Object.keys(providerMap).filter(p => p !== primaryProviderName && p !== preferredProviderName);/const fallbackExclusion = typeof primaryProviderName !== "undefined" ? primaryProviderName : (typeof preferredProviderName !== "undefined" ? preferredProviderName : "");\n    const dynamicFallbacks = Object.keys(providerMap).filter(p => p !== fallbackExclusion);/g' server.ts

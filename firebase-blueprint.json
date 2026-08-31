@@ -217,9 +217,45 @@
         "metadata": { "type": "object" }
       },
       "required": ["id", "userId", "userEmail", "action", "sparksDeducted", "timestamp"]
+    },
+    "Challenge": {
+      "title": "Challenge",
+      "description": "Daily quest or arena challenge",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "desc": { "type": "string" },
+        "reward": { "type": "string" },
+        "xpReward": { "type": "number" },
+        "sparksReward": { "type": "number" },
+        "category": { "type": "string" },
+        "target": { "type": "number" },
+        "type": { "type": "string" },
+        "active": { "type": "boolean" }
+      },
+      "required": ["id", "title", "desc", "reward"]
+    },
+    "SystemConfig": {
+      "title": "SystemConfig",
+      "description": "Dynamic configuration for pricing, support, and gamification",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id"]
     }
   },
   "firestore": {
+    "/system_config/{configId}": {
+      "schema": "SystemConfig",
+      "description": "System-wide pricing, support, and gamification config"
+    },
+    "/challenges/{challengeId}": {
+      "schema": "Challenge",
+      "description": "Active daily challenges and quests"
+    },
     "/curriculums/{curriculumId}": {
       "schema": "Curriculum",
       "description": "Canonical curriculum mappings"

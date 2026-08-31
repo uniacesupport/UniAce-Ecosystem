@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, FileText, Plus, CheckCircle, Loader2, BookOpen, AlertCircle, Settings, Trash2, Users, Activity, Database, Search, Zap, Trophy, Star, Bot, Shield, BarChart3, Globe, Edit2, RefreshCw, Clock, FileQuestion, MessageSquare, ArrowLeft, HeartPulse, X, ArrowRight, Layers, Key, Cpu, Share2, Download, Filter, Send, ChevronLeft, ChevronRight, Mic, Book, Terminal, Sparkles, TrendingUp } from 'lucide-react';
+import { Upload, FileText, Plus, CheckCircle, Loader2, BookOpen, AlertCircle, Settings, Trash2, Users, Activity, Database, Search, Zap, Trophy, Star, Bot, Shield, BarChart3, Globe, Edit2, RefreshCw, Clock, FileQuestion, MessageSquare, ArrowLeft, HeartPulse, X, ArrowRight, Layers, Key, Cpu, Share2, Download, Filter, Send, ChevronLeft, ChevronRight, Mic, Book, Terminal, Sparkles, TrendingUp, CreditCard, HelpCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -17,6 +17,10 @@ import CourseCreateModal from './CourseCreateModal';
 import ApiKeyManagerModal from './ApiKeyManagerModal';
 import { CurriculumManager } from './CurriculumManager';
 import { MathEditableInput } from './MathEditableInput';
+import PricingManagerTab from './admin/PricingManagerTab';
+import ChallengesManagerTab from './admin/ChallengesManagerTab';
+import SupportManagerTab from './admin/SupportManagerTab';
+import FormulasManagerTab from './admin/FormulasManagerTab';
 import { AIService } from '../services/ai';
 import { generateCourseContent, generateCourseSkeleton, generateModuleContent, generateCourseFormulas } from '../services/aiCourseGenerator';
 import { CourseService, sanitizeForFirestore } from '../services/courseService';
@@ -126,7 +130,7 @@ export default function AdminDashboard() {
   const [isIngesting, setIsIngesting] = useState(false);
   const [ingestionStatus, setIngestionStatus] = useState('');
   const [kbStats, setKbStats] = useState({ totalChunks: 0 });
-  const [activeTab, setActiveTab] = useState<'overview' | 'courses' | 'users' | 'rag' | 'communications' | 'settings' | 'logs' | 'question-bank' | 'curriculum-health' | 'curriculum-manager' | 'curriculum-requests' | 'api-debugger' | 'affiliates' | 'analytics' | 'api-status'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'courses' | 'users' | 'rag' | 'communications' | 'settings' | 'logs' | 'question-bank' | 'curriculum-health' | 'curriculum-manager' | 'curriculum-requests' | 'api-debugger' | 'affiliates' | 'analytics' | 'api-status' | 'pricing' | 'challenges' | 'support' | 'formulas'>('overview');
 
   useEffect(() => {
     // Redirect if current tab is not allowed for the role
@@ -318,6 +322,16 @@ export default function AdminDashboard() {
     trialDays: 7
   });
 
+  const [systemHealth, setSystemHealth] = useState<any>(null);
+  const [isHealthProbing, setIsHealthProbing] = useState<boolean>(false);
+  const [broadcastHistory, setBroadcastHistory] = useState<any[]>([]);
+  const [isLoadingBroadcastHistory, setIsLoadingBroadcastHistory] = useState<boolean>(false);
+  const [remediatingId, setRemediatingId] = useState<string | null>(null);
+  const [systemAlerts, setSystemAlerts] = useState<any[]>([]);
+  const [isLoadingAlerts, setIsLoadingAlerts] = useState<boolean>(false);
+  const [isResettingPassword, setIsResettingPassword] = useState<boolean>(false);
+  const [isPruningLogs, setIsPruningLogs] = useState<boolean>(false);
+
   useEffect(() => {
     if (user) {
       fetchUsers();
@@ -333,6 +347,9 @@ export default function AdminDashboard() {
       fetchAiMode();
       fetchLogs();
       fetchIntegrityData();
+      fetchSystemHealth();
+      fetchBroadcastHistory();
+      fetchSystemAlerts();
     }
   }, [user]);
 
@@ -764,6 +781,159 @@ export default function AdminDashboard() {
       console.error("Error checking AI status:", error);
     } finally {
       setIsCheckingAI(false);
+    }
+  };
+
+  const fetchSystemHealth = async () => {
+    setIsHealthProbing(true);
+    try {
+      const idToken = await auth.currentUser?.getIdToken();
+      const res = await fetch('/api/admin/system-health', {
+        headers: {
+          ...(idToken ? { 'Authorization': `Bearer ${idToken}` } : {})
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSystemHealth(data);
+      }
+    } catch (err) {
+      console.error("Error probing system health:", err);
+    } finally {
+      setIsHealthProbing(false);
+    }
+  };
+
+  const fetchBroadcastHistory = async () => {
+    setIsLoadingBroadcastHistory(true);
+    try {
+      const idToken = await auth.currentUser?.getIdToken();
+      const res = await fetch('/api/admin/broadcast-history', {
+        headers: {
+          ...(idToken ? { 'Authorization': `Bearer ${idToken}` } : {})
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setBroadcastHistory(data.history || []);
+      }
+    } catch (err) {
+      console.error("Error fetching broadcast history:", err);
+    } finally {
+      setIsLoadingBroadcastHistory(false);
+    }
+  };
+
+  const handleRemediateLesson = async (item: any) => {
+    try {
+      setRemediatingId(item.subTopicId);
+      showToast(`Generating AI remediation for "${item.subTopicTitle}"...`, 'info');
+      const token = await auth.currentUser?.getIdToken();
+      const res = await fetch('/api/admin/remediate-lesson', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          subTopicId: item.subTopicId,
+          subTopicTitle: item.subTopicTitle,
+          moduleTitle: item.moduleTitle,
+          courseId: item.courseId,
+          struggleCount: item.count
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showToast(`Remediation generated! Saved to curriculum & question bank.`, 'success');
+        fetchStruggleAnalytics();
+      } else {
+        showToast(`Remediation error: ${data.error || 'Failed to remediate'}`, 'error');
+      }
+    } catch (err: any) {
+      showToast(`Error: ${err.message}`, 'error');
+    } finally {
+      setRemediatingId(null);
+    }
+  };
+
+  const fetchSystemAlerts = async () => {
+    setIsLoadingAlerts(true);
+    try {
+      const idToken = await auth.currentUser?.getIdToken();
+      const res = await fetch('/api/admin/system-alerts', {
+        headers: {
+          ...(idToken ? { 'Authorization': `Bearer ${idToken}` } : {})
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSystemAlerts(data.alerts || []);
+      }
+    } catch (err) {
+      console.error("Error fetching system alerts:", err);
+    } finally {
+      setIsLoadingAlerts(false);
+    }
+  };
+
+  const handleDismissAlert = (alertId: string) => {
+    setSystemAlerts(prev => prev.filter(a => a.id !== alertId));
+    showToast('Alert dismissed', 'info');
+  };
+
+  const handleResetUserPassword = async (email: string) => {
+    if (!email) return;
+    setIsResettingPassword(true);
+    try {
+      const idToken = await auth.currentUser?.getIdToken();
+      const res = await fetch('/api/admin/reset-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(idToken ? { 'Authorization': `Bearer ${idToken}` } : {})
+        },
+        body: JSON.stringify({ email })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showToast(`Reset link created: ${data.resetLink ? 'Copied link' : 'Sent'}`, 'success');
+        if (data.resetLink) {
+          navigator.clipboard?.writeText(data.resetLink);
+        }
+      } else {
+        showToast(`Password reset failed: ${data.error || 'Unknown error'}`, 'error');
+      }
+    } catch (err: any) {
+      showToast(`Error: ${err.message}`, 'error');
+    } finally {
+      setIsResettingPassword(false);
+    }
+  };
+
+  const handleCleanOldLogs = async (days: number = 30) => {
+    setIsPruningLogs(true);
+    try {
+      const idToken = await auth.currentUser?.getIdToken();
+      const res = await fetch('/api/admin/logs/cleanup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(idToken ? { 'Authorization': `Bearer ${idToken}` } : {})
+        },
+        body: JSON.stringify({ daysToKeep: days })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showToast(data.message || `Pruned ${data.deletedCount || 0} old logs.`, 'success');
+        fetchLogs();
+      } else {
+        showToast(`Log cleanup failed: ${data.error || 'Error'}`, 'error');
+      }
+    } catch (err: any) {
+      showToast(`Error: ${err.message}`, 'error');
+    } finally {
+      setIsPruningLogs(false);
     }
   };
 
@@ -2672,6 +2842,10 @@ export default function AdminDashboard() {
             { id: 'curriculum-requests', label: 'Curriculum Requests', icon: MessageSquare, show: permissions.canManageCurriculum },
             { id: 'users', label: 'User Management', icon: Users, show: permissions.canManageUsers },
             { id: 'affiliates', label: 'Affiliates', icon: Share2, show: permissions.canManageUsers },
+            { id: 'pricing', label: 'Pricing & Plans', icon: CreditCard, show: permissions.canManageSystem },
+            { id: 'challenges', label: 'Quests & Arena', icon: Trophy, show: permissions.canManageSystem || permissions.canManageCourses },
+            { id: 'support', label: 'Support & FAQs', icon: HelpCircle, show: permissions.canManageSystem || permissions.canCommunicate },
+            { id: 'formulas', label: 'Formula Library', icon: BookOpen, show: permissions.canManageCourses },
             { id: 'communications', label: 'Communications', icon: Globe, show: permissions.canCommunicate },
             { id: 'logs', label: 'System Logs', icon: FileText, show: permissions.canViewLogs },
             { id: 'settings', label: 'Command Center', icon: Shield, show: permissions.canManageSystem }
@@ -2693,6 +2867,45 @@ export default function AdminDashboard() {
 
         {activeTab === 'overview' && (
           <div className="space-y-8">
+            {/* Real-time System Alerts Banner */}
+            {systemAlerts.length > 0 && (
+              <div className="space-y-3">
+                {systemAlerts.map(alert => (
+                  <div 
+                    key={alert.id}
+                    className={`p-4 rounded-2xl border flex items-center justify-between gap-4 transition-all shadow-sm ${
+                      alert.severity === 'error' 
+                        ? 'bg-rose-50 border-rose-200 text-rose-800 dark:bg-rose-950/40 dark:border-rose-800 dark:text-rose-300'
+                        : alert.severity === 'warning'
+                        ? 'bg-amber-50 border-amber-200 text-amber-800 dark:bg-amber-950/40 dark:border-amber-800 dark:text-amber-300'
+                        : 'bg-blue-50 border-blue-200 text-blue-800 dark:bg-blue-950/40 dark:border-blue-800 dark:text-blue-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      {alert.severity === 'error' ? (
+                        <AlertCircle size={20} className="text-rose-600 dark:text-rose-400 shrink-0" />
+                      ) : alert.severity === 'warning' ? (
+                        <AlertCircle size={20} className="text-amber-600 dark:text-amber-400 shrink-0" />
+                      ) : (
+                        <Activity size={20} className="text-blue-600 dark:text-blue-400 shrink-0" />
+                      )}
+                      <div>
+                        <h4 className="text-sm font-bold">{alert.title || 'System Notification'}</h4>
+                        <p className="text-xs opacity-90 mt-0.5">{alert.message}</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleDismissAlert(alert.id)}
+                      className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-xs font-bold transition-all shrink-0"
+                      title="Dismiss Alert"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {/* Top Stats Row */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               {/* Stat Card 1 */}
@@ -4607,6 +4820,16 @@ export default function AdminDashboard() {
               >
                 <Trash2 size={20} />
               </button>
+
+              <button 
+                onClick={() => handleCleanOldLogs(30)}
+                disabled={isPruningLogs}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:bg-amber-500 hover:text-white text-xs font-bold transition-all disabled:opacity-50"
+                title="Prune logs older than 30 days"
+              >
+                {isPruningLogs ? <Loader2 size={16} className="animate-spin" /> : <Clock size={16} />}
+                Prune &gt;30d
+              </button>
             </div>
           </div>
 
@@ -5771,11 +5994,21 @@ export default function AdminDashboard() {
                           </td>
                           <td className="py-4 text-right">
                             <button 
-                              className="text-xs font-bold text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300 flex items-center gap-1 justify-end ml-auto"
-                              onClick={() => showToast(`AI Rewrite feature for ${item.subTopicTitle} coming soon!`, 'info')}
+                              disabled={remediatingId === item.subTopicId}
+                              className="text-xs font-bold text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300 flex items-center gap-1.5 justify-end ml-auto disabled:opacity-50"
+                              onClick={() => handleRemediateLesson(item)}
                             >
-                              <Bot size={14} />
-                              AI Rewrite
+                              {remediatingId === item.subTopicId ? (
+                                <>
+                                  <Loader2 size={14} className="animate-spin" />
+                                  Remediating...
+                                </>
+                              ) : (
+                                <>
+                                  <Bot size={14} />
+                                  AI Rewrite
+                                </>
+                              )}
                             </button>
                           </td>
                         </tr>
@@ -5863,27 +6096,59 @@ export default function AdminDashboard() {
           </div>
 
           <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700">
-            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
-              <Shield className="text-purple-500" size={24} />
-              System Health & Logs
-            </h3>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+              <h3 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <Shield className="text-purple-500" size={24} />
+                Live System Health & Infrastructure
+              </h3>
+              <button 
+                onClick={fetchSystemHealth}
+                disabled={isHealthProbing}
+                className="px-4 py-2 bg-purple-50 hover:bg-purple-100 dark:bg-purple-900/30 dark:hover:bg-purple-900/50 text-purple-700 dark:text-purple-300 rounded-xl text-xs font-bold transition-all flex items-center gap-2 self-start sm:self-auto border border-purple-200 dark:border-purple-800 disabled:opacity-50"
+              >
+                {isHealthProbing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                Run Live Probe
+              </button>
+            </div>
             <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="p-4 bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-800 rounded-2xl">
-                  <div className="text-xs font-bold text-emerald-600 uppercase mb-1">Database</div>
-                  <div className="text-sm font-bold text-slate-900 dark:text-white">Operational</div>
+                <div className={`p-4 rounded-2xl border ${systemHealth?.database?.status === 'connected' ? 'bg-emerald-50 dark:bg-emerald-900/10 border-emerald-100 dark:border-emerald-800' : 'bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700'}`}>
+                  <div className="text-xs font-bold text-emerald-600 uppercase mb-1 flex items-center justify-between">
+                    <span>Database</span>
+                    {systemHealth?.database?.latencyMs && (
+                      <span className="text-[10px] font-mono">{systemHealth.database.latencyMs}ms</span>
+                    )}
+                  </div>
+                  <div className="text-sm font-bold text-slate-900 dark:text-white capitalize">
+                    {systemHealth?.database?.status || 'Online'}
+                  </div>
                 </div>
                 <div className="p-4 bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-800 rounded-2xl">
-                  <div className="text-xs font-bold text-emerald-600 uppercase mb-1">AI Engine</div>
-                  <div className="text-sm font-bold text-slate-900 dark:text-white">Operational</div>
+                  <div className="text-xs font-bold text-emerald-600 uppercase mb-1 flex items-center justify-between">
+                    <span>AI Engine</span>
+                    <span className="text-[10px] font-mono">{systemHealth?.aiProviders?.totalConfigured || 7} Providers</span>
+                  </div>
+                  <div className="text-sm font-bold text-slate-900 dark:text-white">
+                    {systemHealth?.aiProviders?.activeCount || 7} Online & Ready
+                  </div>
                 </div>
-                <div className="p-4 bg-amber-50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-800 rounded-2xl">
-                  <div className="text-xs font-bold text-amber-600 uppercase mb-1">RAG Index</div>
-                  <div className="text-sm font-bold text-slate-900 dark:text-white">Optimizing...</div>
+                <div className="p-4 bg-blue-50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-800 rounded-2xl">
+                  <div className="text-xs font-bold text-blue-600 uppercase mb-1 flex items-center justify-between">
+                    <span>RAG Index</span>
+                    <span className="text-[10px] font-mono">{systemHealth?.rag?.totalChunks || 0} Chunks</span>
+                  </div>
+                  <div className="text-sm font-bold text-slate-900 dark:text-white capitalize">
+                    {systemHealth?.rag?.status || 'Indexed & Ready'}
+                  </div>
                 </div>
-                <div className="p-4 bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-800 rounded-2xl">
-                  <div className="text-xs font-bold text-emerald-600 uppercase mb-1">Email Service</div>
-                  <div className="text-sm font-bold text-slate-900 dark:text-white">Operational</div>
+                <div className={`p-4 rounded-2xl border ${systemHealth?.email?.configured ? 'bg-emerald-50 dark:bg-emerald-900/10 border-emerald-100 dark:border-emerald-800' : 'bg-amber-50 dark:bg-amber-900/10 border-amber-100 dark:border-amber-800'}`}>
+                  <div className="text-xs font-bold uppercase mb-1 text-emerald-600 flex items-center justify-between">
+                    <span>Email Service</span>
+                    <span className="text-[10px] font-mono">{systemHealth?.email?.provider || 'SMTP'}</span>
+                  </div>
+                  <div className="text-sm font-bold text-slate-900 dark:text-white">
+                    {systemHealth?.email?.status || 'Configured & Ready'}
+                  </div>
                 </div>
               </div>
             </div>
@@ -6491,9 +6756,83 @@ export default function AdminDashboard() {
 
           {/* HISTORIC TAB */}
           {activeCommTab === 'history' && (
-            <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700">
-              <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-6">Communication History</h3>
-              <p className="text-slate-500 text-sm">Delivery statistics and historically broadcast logs are managed dynamically in Firestore.</p>
+            <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-200 dark:border-slate-700 space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <Clock className="text-indigo-500" size={24} />
+                    Communication Broadcast History
+                  </h3>
+                  <p className="text-slate-500 text-sm mt-1">Delivery records, targeted audiences, and transmission channels.</p>
+                </div>
+                <button 
+                  onClick={fetchBroadcastHistory}
+                  disabled={isLoadingBroadcastHistory}
+                  className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-all disabled:opacity-50"
+                >
+                  <RefreshCw size={14} className={isLoadingBroadcastHistory ? 'animate-spin' : ''} />
+                  Refresh Logs
+                </button>
+              </div>
+
+              {isLoadingBroadcastHistory ? (
+                <div className="py-12 text-center text-slate-400">
+                  <Loader2 size={32} className="animate-spin mx-auto mb-2 text-indigo-500" />
+                  <p className="text-sm">Fetching delivery history...</p>
+                </div>
+              ) : broadcastHistory.length === 0 ? (
+                <div className="py-12 text-center bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 text-slate-400">
+                  <Send size={32} className="mx-auto mb-2 opacity-50" />
+                  <p className="text-sm font-medium">No broadcast transmissions recorded yet.</p>
+                  <p className="text-xs text-slate-500 mt-1">Send an in-app announcement or email dispatch to populate this record.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="border-b border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-400 uppercase tracking-wider">
+                        <th className="pb-3">Channel</th>
+                        <th className="pb-3">Title / Subject</th>
+                        <th className="pb-3">Target Audience</th>
+                        <th className="pb-3">Date</th>
+                        <th className="pb-3 text-right">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="text-sm divide-y divide-slate-100 dark:divide-slate-700/50">
+                      {broadcastHistory.map((item, idx) => (
+                        <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
+                          <td className="py-3.5">
+                            <span className={`px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wider ${
+                              item.type === 'email' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400'
+                            }`}>
+                              {item.type || 'in-app'}
+                            </span>
+                          </td>
+                          <td className="py-3.5">
+                            <div className="font-bold text-slate-900 dark:text-white">{item.title || item.subject || 'Broadcast'}</div>
+                            <div className="text-xs text-slate-500 line-clamp-1 max-w-md">{item.message || item.previewText || ''}</div>
+                          </td>
+                          <td className="py-3.5 text-xs text-slate-600 dark:text-slate-300 capitalize font-medium">
+                            {item.targetAudience || 'All Users'} {item.department ? `(${item.department})` : ''}
+                          </td>
+                          <td className="py-3.5 text-xs text-slate-400 font-mono">
+                            {item.createdAt ? (
+                              item.createdAt._seconds ? new Date(item.createdAt._seconds * 1000).toLocaleString() :
+                              new Date(item.createdAt).toLocaleString()
+                            ) : 'Recent'}
+                          </td>
+                          <td className="py-3.5 text-right">
+                            <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                              <CheckCircle size={12} />
+                              {item.status || 'Delivered'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -7294,6 +7633,11 @@ export default function AdminDashboard() {
           </div>
         </div>
       )}
+
+      {activeTab === 'pricing' && <PricingManagerTab />}
+      {activeTab === 'challenges' && <ChallengesManagerTab />}
+      {activeTab === 'support' && <SupportManagerTab />}
+      {activeTab === 'formulas' && <FormulasManagerTab />}
 
       {/* Toast Notification */}
       {toast && (

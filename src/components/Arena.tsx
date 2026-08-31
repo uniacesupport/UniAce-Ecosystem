@@ -8,6 +8,7 @@ import { collection, addDoc, query, where, getDocs, onSnapshot, doc, updateDoc, 
 import { Battle, BattlePlayer, QuizQuestion, CourseId } from '../types';
 import { AIService } from '../services/ai';
 import Leaderboard from './Leaderboard';
+import { ChallengesService, ArenaChallenge, DEFAULT_CHALLENGES } from '../services/challengesConfig';
 
 interface ArenaProps {
   activeCourseId: CourseId | null;
@@ -16,16 +17,11 @@ interface ArenaProps {
 const MAX_HEALTH = 100;
 const DAMAGE_PER_HIT = 20;
 
-const DAILY_CHALLENGES = [
-  { id: 'win_1', title: 'First Blood', description: 'Win 1 Arena Battle', reward: 50, icon: Swords },
-  { id: 'win_3', title: 'Gladiator', description: 'Win 3 Arena Battles', reward: 200, icon: Trophy },
-  { id: 'streak_2', title: 'On Fire', description: 'Achieve a 2-win streak', reward: 150, icon: Flame },
-];
-
 export default function Arena({ activeCourseId }: ArenaProps) {
   const { user, profile } = useAuth();
   const { courses } = useCourses();
 
+  const [challenges, setChallenges] = useState<ArenaChallenge[]>(DEFAULT_CHALLENGES);
   const [view, setView] = useState<'lobby' | 'matching' | 'battle' | 'result'>('lobby');
   const [battleId, setBattleId] = useState<string | null>(null);
   const [battleData, setBattleData] = useState<Battle | null>(null);
@@ -37,6 +33,28 @@ export default function Arena({ activeCourseId }: ArenaProps) {
   // Audio refs
   const hitSound = useRef<HTMLAudioElement | null>(null);
   const winSound = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    const unsubscribe = ChallengesService.subscribeChallenges((data) => {
+      if (data && data.length > 0) {
+        setChallenges(data.filter(c => c.active !== false));
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const getChallengeIcon = (iconName?: string) => {
+    const lower = (iconName || '').toLowerCase();
+    switch (lower) {
+      case 'trophy': return Trophy;
+      case 'flame': return Flame;
+      case 'zap': return Zap;
+      case 'target': return Target;
+      case 'star': return Star;
+      case 'swords':
+      default: return Swords;
+    }
+  };
 
   // 1. Matchmaking Logic
   const findMatch = async () => {
@@ -347,22 +365,25 @@ export default function Arena({ activeCourseId }: ArenaProps) {
                   <Target size={16} className="text-slate-500" />
                 </div>
                 <div className="space-y-4">
-                  {DAILY_CHALLENGES.map((challenge) => (
-                    <div key={challenge.id} className="flex items-center justify-between p-4 bg-slate-950 rounded-2xl border border-slate-800 group hover:border-purple-500/50 transition-colors">
-                      <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 bg-slate-900 rounded-xl flex items-center justify-center text-slate-400 group-hover:text-purple-400 transition-colors">
-                          <challenge.icon size={20} />
+                  {challenges.map((challenge) => {
+                    const IconComponent = getChallengeIcon(challenge.iconType);
+                    return (
+                      <div key={challenge.id} className="flex items-center justify-between p-4 bg-slate-950 rounded-2xl border border-slate-800 group hover:border-purple-500/50 transition-colors">
+                        <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 bg-slate-900 rounded-xl flex items-center justify-center text-slate-400 group-hover:text-purple-400 transition-colors">
+                            <IconComponent size={20} />
+                          </div>
+                          <div>
+                            <h4 className="text-sm font-bold text-white">{challenge.title}</h4>
+                            <p className="text-[10px] text-slate-500">{challenge.description}</p>
+                          </div>
                         </div>
-                        <div>
-                          <h4 className="text-sm font-bold text-white">{challenge.title}</h4>
-                          <p className="text-[10px] text-slate-500">{challenge.description}</p>
+                        <div className="text-right">
+                          <div className="text-xs font-black text-emerald-400">+{challenge.reward} XP</div>
                         </div>
                       </div>
-                      <div className="text-right">
-                        <div className="text-xs font-black text-emerald-400">+{challenge.reward} XP</div>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             </div>

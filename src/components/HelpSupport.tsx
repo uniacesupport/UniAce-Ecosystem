@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { db, auth } from '../firebase';
 import { collection, addDoc, serverTimestamp, query, where, onSnapshot, orderBy, doc, setDoc } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
+import { SupportService, FaqItem, TutorialItem, DEFAULT_FAQS, DEFAULT_TUTORIALS } from '../services/supportConfig';
 
 interface HelpSupportProps {
   onBack: () => void;
@@ -17,58 +18,6 @@ interface ChatMessage {
   timestamp: any;
 }
 
-const FAQS = [
-  {
-    question: "How do I earn Sparks?",
-    answer: "Sparks are the currency of UniAce. You can earn them by completing daily challenges, achieving high scores in quizzes, or by purchasing them through the 'Top Up' section in the sidebar."
-  },
-  {
-    question: "Can I use UniAce offline?",
-    answer: "Yes! UniAce supports basic offline mode. Your progress, XP, and bookmarks are saved locally on your device and will automatically sync with our servers once you're back online."
-  },
-  {
-    question: "How does the AI Math Tutor work?",
-    answer: "Our AI Tutor uses advanced Gemini models to help you solve complex math problems. It can explain concepts, provide step-by-step solutions, and even analyze images of your handwritten work."
-  },
-  {
-    question: "What is 'Mastery Percentage'?",
-    answer: "Mastery is calculated based on your quiz performance and study consistency for each topic. Achieving 100% mastery means you've demonstrated a deep understanding of the subject matter."
-  }
-];
-
-const TUTORIALS = [
-  {
-    title: "Getting Started with UniAce",
-    duration: "2:30",
-    thumbnail: "https://picsum.photos/seed/tutorial1/400/225",
-    description: "Learn the basics of navigating the hub and setting up your first course."
-  },
-  {
-    title: "Mastering the AI Tutor",
-    duration: "4:15",
-    thumbnail: "https://picsum.photos/seed/tutorial2/400/225",
-    description: "Tips and tricks for getting the most accurate help from our AI assistant."
-  },
-  {
-    title: "Understanding Performance Analytics",
-    duration: "3:45",
-    thumbnail: "https://picsum.photos/seed/tutorial3/400/225",
-    description: "A deep dive into how we track your progress and identify knowledge gaps."
-  },
-  {
-    title: "Advanced Study Techniques",
-    duration: "5:20",
-    thumbnail: "https://picsum.photos/seed/tutorial4/400/225",
-    description: "Discover scientifically proven methods to retain information longer and study more effectively."
-  },
-  {
-    title: "Preparing for Final Exams",
-    duration: "6:10",
-    thumbnail: "https://picsum.photos/seed/tutorial5/400/225",
-    description: "A comprehensive guide to structuring your revision weeks before your final examinations."
-  }
-];
-
 enum OperationType {
   GET = 'get',
   LIST = 'list',
@@ -77,12 +26,26 @@ enum OperationType {
 
 export default function HelpSupport({ onBack }: HelpSupportProps) {
   const { user } = useAuth();
+  const [faqs, setFaqs] = useState<FaqItem[]>(DEFAULT_FAQS);
+  const [tutorials, setTutorials] = useState<TutorialItem[]>(DEFAULT_TUTORIALS);
   const [searchQuery, setSearchQuery] = useState('');
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [formStatus, setFormStatus] = useState<'idle' | 'sending' | 'success'>('idle');
   const [formData, setFormData] = useState({ name: user?.displayName || '', email: user?.email || '', subject: '', message: '' });
 
-  const filteredFaqs = FAQS.filter(faq => 
+  useEffect(() => {
+    const unsubscribe = SupportService.subscribeSupportConfig((config) => {
+      if (config.faqs && config.faqs.length > 0) {
+        setFaqs(config.faqs);
+      }
+      if (config.tutorials && config.tutorials.length > 0) {
+        setTutorials(config.tutorials);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const filteredFaqs = faqs.filter(faq => 
     faq.question.toLowerCase().includes(searchQuery.toLowerCase()) ||
     faq.answer.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -240,8 +203,8 @@ export default function HelpSupport({ onBack }: HelpSupportProps) {
         {/* Quick Links */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {[
-            { icon: HelpCircle, label: "FAQs", color: "bg-blue-500", count: FAQS.length },
-            { icon: Play, label: "Tutorials", color: "bg-purple-500", count: TUTORIALS.length },
+            { icon: HelpCircle, label: "FAQs", color: "bg-blue-500", count: faqs.length },
+            { icon: Play, label: "Tutorials", color: "bg-purple-500", count: tutorials.length },
             { icon: MessageSquare, label: "Live Chat", color: "bg-emerald-500", count: "24/7", onClick: () => setIsChatOpen(true) }
           ].map((link, i) => (
             <button 
@@ -323,7 +286,7 @@ export default function HelpSupport({ onBack }: HelpSupportProps) {
             className="flex gap-6 overflow-x-auto snap-x snap-mandatory pb-6 -mb-6 no-scrollbar"
             style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
           >
-            {TUTORIALS.map((tutorial, i) => (
+            {tutorials.map((tutorial, i) => (
               <div 
                 key={i} 
                 className="min-w-[280px] md:min-w-[320px] max-w-[320px] flex-shrink-0 snap-start bg-white dark:bg-slate-800 rounded-[2rem] overflow-hidden border border-slate-100 dark:border-slate-700 shadow-sm group cursor-pointer"

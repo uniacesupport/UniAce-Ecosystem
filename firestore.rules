@@ -282,6 +282,16 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    match /challenges/{challengeId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /formulas/{formulaId} {
+      allow read: if isAuthenticated();
+      allow write: if isEditor();
+    }
+
     match /system_logs/{logId} {
       allow read: if isAdmin();
       allow create, update, delete: if false;

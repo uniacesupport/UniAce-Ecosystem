@@ -6,6 +6,10 @@ import { AIPersonality } from '../types';
 import { db } from '../firebase';
 import { doc, getDoc } from 'firebase/firestore';
 
+const stripThinkTags = (text: string) => {
+  return text.replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '').trim();
+};
+
 interface VoiceTutorProps {
   isOpen: boolean;
   onClose: () => void;
@@ -148,8 +152,9 @@ export default function VoiceTutor({ isOpen, onClose, pdfContent, systemInstruct
          aiText = "Sorry, I had trouble processing that.";
       }
 
-      setStatusText(`Tutor: "${aiText}"`);
-      speakText(aiText);
+      const cleanAiText = stripThinkTags(aiText);
+      setStatusText(`Tutor: "${cleanAiText}"`);
+      speakText(cleanAiText);
 
     } catch (error) {
       console.error('Error processing voice:', error);
@@ -161,10 +166,12 @@ export default function VoiceTutor({ isOpen, onClose, pdfContent, systemInstruct
   const speakText = (text: string) => {
     if (!synthesisRef.current) return;
     
+    const cleanText = stripThinkTags(text);
+    
     // Stop any ongoing speech
     synthesisRef.current.cancel();
 
-    const utterance = new SpeechSynthesisUtterance(text);
+    const utterance = new SpeechSynthesisUtterance(cleanText);
     
     // Try to find a good English voice
     const voices = synthesisRef.current.getVoices();

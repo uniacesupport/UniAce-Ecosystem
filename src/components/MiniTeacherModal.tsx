@@ -7,6 +7,10 @@ import MarkdownRenderer from './MarkdownRenderer';
 import { sanitizeLatex } from '../services/aiCourseGenerator';
 import { useAuth } from '../context/AuthContext';
 
+const stripThinkTags = (text: string) => {
+  return text.replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '').trim();
+};
+
 interface MiniTeacherModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -163,7 +167,7 @@ export default function MiniTeacherModal({ isOpen, onClose, onAction, module, su
                 </div>
               ) : content ? (
                 <div className="max-w-none">
-                  <MarkdownRenderer content={sanitizeLatex(content)} />
+                  <MarkdownRenderer content={sanitizeLatex(stripThinkTags(content))} />
                   
                   {activeMode === 'proactive' && !isGenerating && (
                     <motion.div 

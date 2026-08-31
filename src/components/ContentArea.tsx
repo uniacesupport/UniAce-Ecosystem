@@ -18,6 +18,10 @@ import { useAuth } from '../context/AuthContext';
 import { usePremiumStatus } from '../hooks/usePremiumStatus';
 import { PipelineMetadata } from '../types';
 
+const stripThinkTags = (text: string) => {
+  return text.replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '').trim();
+};
+
 interface ContentAreaProps {
   courseId: string | null;
   courseTitle: string;
@@ -103,7 +107,7 @@ export default function ContentArea({
       
       // If it already has content (legacy courses), use it
       if (activeSubTopic.content) {
-        setFetchedLesson({ content: sanitizeLatex(activeSubTopic.content), metadata: {} });
+        setFetchedLesson({ content: sanitizeLatex(stripThinkTags(activeSubTopic.content)), metadata: {} });
         return;
       }
 
@@ -126,7 +130,7 @@ export default function ContentArea({
         if (lessonDoc.exists() && lessonDoc.data().content) {
           const data = lessonDoc.data();
           console.log(`[ContentArea] Lesson found! Content length: ${data.content.length}`);
-          const sanitizedContent = sanitizeLatex(data.content);
+          const sanitizedContent = sanitizeLatex(stripThinkTags(data.content));
           setFetchedLesson({ content: sanitizedContent, metadata: data.metadata || {} });
           onLessonContentChange?.(sanitizedContent);
         } else {

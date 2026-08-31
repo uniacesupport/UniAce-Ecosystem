@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Sparkles, Check, Zap, Shield, Rocket, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 // @ts-ignore
 import PaystackPop from '@paystack/inline-js';
+import { PricingService, PricingPlan, DEFAULT_PRICING_PLANS } from '../services/pricingConfig';
 
 export default function PricingPage() {
   const { user, profile } = useAuth();
@@ -11,36 +12,16 @@ export default function PricingPage() {
   const [selectedPlan, setSelectedPlan] = useState<any>(null);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [transactionRef, setTransactionRef] = useState('');
+  const [plans, setPlans] = useState<PricingPlan[]>(DEFAULT_PRICING_PLANS);
 
-  const plans = [
-    {
-      id: 'emergency_topup',
-      name: 'Emergency Top-Up',
-      price: 500,
-      sparks: '500',
-      duration: 'One-Time',
-      features: ['500 AI Sparks', 'Exam Readiness Prediction', 'Standard Support', 'Enhanced Precision Logic', 'Distraction-Free Focus Mode'],
-      popular: false
-    },
-    {
-      id: 'scholar',
-      name: 'Scholar',
-      price: 1500,
-      sparks: '2,000',
-      duration: '30 Days',
-      features: ['2,000 AI Sparks', 'Advanced Learning Analytics', 'Exam Readiness Prediction', '30 Days Access', 'Priority Support', 'Enhanced Precision Logic', 'Distraction-Free Focus Mode'],
-      popular: true
-    },
-    {
-      id: 'semester',
-      name: 'Semester Bundle',
-      price: 4500,
-      sparks: '6,000',
-      duration: '120 Days',
-      features: ['6,000 AI Sparks', 'Advanced Learning Analytics', 'Exam Readiness Prediction', '120 Days Access', 'VIP Priority Support', 'Enhanced Precision Logic', 'Distraction-Free Focus Mode'],
-      popular: false
-    }
-  ];
+  useEffect(() => {
+    const unsubscribe = PricingService.subscribePricingConfig((config) => {
+      if (config.plans && config.plans.length > 0) {
+        setPlans(config.plans.filter(p => p.enabled !== false));
+      }
+    });
+    return () => unsubscribe();
+  }, []);
 
   const handlePayment = async (plan: any) => {
     if (!user) {

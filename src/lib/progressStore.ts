@@ -21,11 +21,7 @@ const INITIAL_PROGRESS: UserProgress = {
   topicLastStudied: {},
   bookmarks: [],
   enrolledCourses: [],
-  assignments: [
-    { id: 'a1', courseId: 'MTH103', title: 'Vector Calculus Problem Set', dueDate: new Date(Date.now() + 86400000 * 3).toISOString(), status: 'pending' },
-    { id: 'a2', courseId: 'MTH103', title: 'Coordinate Geometry Quiz', dueDate: new Date(Date.now() + 86400000 * 5).toISOString(), status: 'pending' },
-    { id: 'a3', courseId: 'STA112', title: 'Probability Distributions', dueDate: new Date(Date.now() - 86400000 * 2).toISOString(), status: 'graded', grade: 85 },
-  ],
+  assignments: [],
 };
 
 function getInitialProgress(): UserProgress {
