@@ -1,7 +1,7 @@
 import Markdown from 'react-markdown';
 import remarkMath from 'remark-math';
 import remarkGfm from 'remark-gfm';
-import rehypeMathjax from 'rehype-mathjax';
+import rehypeKatex from 'rehype-katex';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
 import { Component, ErrorInfo, ReactNode } from 'react';
@@ -379,7 +379,7 @@ export default function MarkdownRenderer({ content = '', className = '' }: Markd
           children={preprocessedContent}
           remarkPlugins={[[remarkMath, { singleDollarTextMath: true }], remarkGfm]} 
           rehypePlugins={[
-            [rehypeMathjax],
+            [rehypeKatex, { throwOnError: false }],
             [rehypeHighlight, { ignoreMissing: true }]
           ]}
           components={{
