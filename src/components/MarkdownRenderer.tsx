@@ -1,11 +1,13 @@
 import Markdown from 'react-markdown';
 import remarkMath from 'remark-math';
 import remarkGfm from 'remark-gfm';
-import rehypeKatex from 'rehype-katex';
+import rehypeMathjax from 'rehype-mathjax';
 import rehypeHighlight from 'rehype-highlight';
-import 'katex/dist/katex.min.css';
 import 'highlight.js/styles/github-dark.css';
 import { Component, ErrorInfo, ReactNode } from 'react';
+import MermaidViewer from './renderers/MermaidViewer';
+import FunctionPlotViewer from './renderers/FunctionPlotViewer';
+import VennDiagramViewer from './renderers/VennDiagramViewer';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -207,6 +209,12 @@ function preprocessMarkdownContent(text: string): string {
     .replace(/\\\[([\s\S]+?)\\\]/g, (_m, p1) => `\n\n$$\n${p1.trim()}\n$$\n\n`)
     .replace(/\\\(([\s\S]+?)\\\)/g, (_m, p1) => `$${p1.trim()}$`);
 
+  // Wrap standalone \begin{aligned|matrix|cases|...} blocks in $$ if not already wrapped
+  processedText = processedText.replace(
+    /(?<!\$|`)\\begin\{(aligned|cases|matrix|pmatrix|bmatrix|vmatrix|Vmatrix|array)\}([\s\S]*?)\\end\{\1\}(?!\$|`)/g,
+    '\n\n$$\n\\begin{$1}$2\\end{$1}\n$$\n\n'
+  );
+
   // 1. Temporarily extract and protect math blocks from regex operations that strip backslashes
   const mathBlocks: string[] = [];
   let protectedText = processedText;
@@ -369,14 +377,9 @@ export default function MarkdownRenderer({ content = '', className = '' }: Markd
       <MathErrorBoundary fallback={<div className="whitespace-pre-wrap font-mono text-sm opacity-80">{content}</div>}>
         <Markdown 
           children={preprocessedContent}
-          remarkPlugins={[remarkMath, remarkGfm]} 
+          remarkPlugins={[[remarkMath, { singleDollarTextMath: true }], remarkGfm]} 
           rehypePlugins={[
-            [rehypeKatex, { 
-              strict: false, 
-              trust: true,
-              throwOnError: false,
-              errorColor: '#ef4444' // Tailwind red-500
-            }],
+            [rehypeMathjax],
             [rehypeHighlight, { ignoreMissing: true }]
           ]}
           components={{
@@ -400,11 +403,27 @@ export default function MarkdownRenderer({ content = '', className = '' }: Markd
             td: ({ node, ...props }) => (
               <td className="px-5 py-3.5 text-slate-600 dark:text-zinc-400 font-medium" {...props} />
             ),
-            pre: ({ node, ...props }) => (
-              <pre className="my-4 overflow-x-auto rounded-2xl bg-slate-900 dark:bg-zinc-900/90 p-4 border border-slate-800 text-slate-100 font-mono text-xs sm:text-sm leading-relaxed shadow-sm" {...props} />
-            ),
+            pre: ({ node, children, className }: any) => {
+              return <div className={`not-prose my-4 ${className || ''}`}>{children}</div>;
+            },
             code: ({ node, inline, className, children, ...props }: any) => {
               const isInline = inline || (!className && !String(children).includes('\n'));
+              const match = /language-(\w+)/.exec(className || '');
+              const lang = match ? match[1].toLowerCase() : '';
+              const codeString = String(children).replace(/\n$/, '');
+
+              if (!isInline && lang === 'mermaid') {
+                return <MermaidViewer chart={codeString} />;
+              }
+
+              if (!isInline && (lang === 'function-plot' || lang === 'math-plot' || lang === 'graph')) {
+                return <FunctionPlotViewer code={codeString} />;
+              }
+
+              if (!isInline && (lang === 'venn' || lang === 'venn-diagram' || lang === 'set-diagram' || lang === 'venndiagram')) {
+                return <VennDiagramViewer code={codeString} />;
+              }
+
               if (isInline) {
                 return (
                   <code className="bg-slate-100 dark:bg-zinc-800/80 text-slate-800 dark:text-zinc-200 px-1.5 py-0.5 rounded-md text-xs sm:text-sm font-mono border border-slate-200/60 dark:border-zinc-700/60 font-normal" {...props}>
@@ -412,10 +431,13 @@ export default function MarkdownRenderer({ content = '', className = '' }: Markd
                   </code>
                 );
               }
+
               return (
-                <code className={`bg-transparent dark:bg-transparent text-slate-100 p-0 border-none font-mono text-xs sm:text-sm ${className || ''}`} {...props}>
-                  {children}
-                </code>
+                <div className="relative my-4 overflow-x-auto rounded-2xl bg-slate-900 dark:bg-zinc-900/90 p-4 border border-slate-800 text-slate-100 font-mono text-xs sm:text-sm leading-relaxed shadow-sm">
+                  <code className={`bg-transparent text-slate-100 p-0 border-none font-mono text-xs sm:text-sm ${className || ''}`} {...props}>
+                    {children}
+                  </code>
+                </div>
               );
             },
           }}

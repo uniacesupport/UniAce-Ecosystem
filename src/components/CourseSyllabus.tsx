@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Book, Layers, Activity, ArrowRight, GraduationCap, ArrowLeft, Wand2, Lock } from 'lucide-react';
+import { ArrowRight, GraduationCap, ArrowLeft, Wand2, Lock, Book, Activity } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Module, CourseId } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { usePremiumStatus } from '../hooks/usePremiumStatus';
 import { LogService } from '../services/logService';
+import { getModuleIcon, getCleanModuleTitle } from '../utils/moduleIcons';
 
 interface CourseSyllabusProps {
   onModuleSelect: (moduleId: string) => void;
@@ -20,12 +21,6 @@ interface CourseSyllabusProps {
   regenerationProgress?: number;
   regenerationStatus?: string;
 }
-
-const MODULE_ICONS: Record<string, any> = {
-  vectors: Book,
-  geometry: Layers,
-  motion: Activity,
-};
 
 export default function CourseSyllabus({ 
   onModuleSelect, 
@@ -139,7 +134,7 @@ export default function CourseSyllabus({
         <section className="space-y-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
             {syllabus.map((module, i) => {
-              const Icon = MODULE_ICONS[module.id] || Book;
+              const Icon = getModuleIcon(module.id, module.title, i);
               const isLockedModule = false; // Modules are no longer locked, only subtopics are locked
               return (
                 <motion.button

@@ -1,21 +1,16 @@
-import { Brain, ArrowRight, Book, Layers, Activity } from 'lucide-react';
+import { Brain, ArrowRight } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useState } from 'react';
 import QuizGenerator from './QuizGenerator';
 import { Module } from '../types';
 import { useAuth } from '../context/AuthContext';
+import { getModuleIcon } from '../utils/moduleIcons';
 
 interface QuizHubProps {
   courseId?: string;
   onQuizComplete: (topicId: string, score: number) => void;
   syllabus: Module[];
 }
-
-const MODULE_ICONS: Record<string, any> = {
-  vectors: Book,
-  geometry: Layers,
-  motion: Activity,
-};
 
 export default function QuizHub({ courseId, onQuizComplete, syllabus }: QuizHubProps) {
   const { user } = useAuth();
@@ -39,7 +34,7 @@ export default function QuizHub({ courseId, onQuizComplete, syllabus }: QuizHubP
 
         <div className="grid grid-cols-1 gap-6">
           {syllabus.map((module, i) => {
-            const Icon = MODULE_ICONS[module.id] || Book;
+            const Icon = getModuleIcon(module.id, module.title, i);
             return (
               <motion.button
                 key={module.id}

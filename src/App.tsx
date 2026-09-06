@@ -52,8 +52,6 @@ import { View, ChatMessage, CourseId, Department, Semester } from './types';
 import { generateModuleContent, generateCourseSkeleton } from './services/aiCourseGenerator';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useAppStore } from './lib/store';
-
 import { InstitutionProvider } from './context/InstitutionContext';
 
 const queryClient = new QueryClient();
@@ -76,16 +74,7 @@ export default function App() {
 
 function AppContent() {
   const { isConfigured, user, profile, loading, signInWithGoogle } = useAuth();
-  const { theme } = useAppStore();
   const [isPending, startTransition] = useTransition();
-  
-  useEffect(() => {
-    if (theme === 'dark') {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }, [theme]);
   const { courses, refreshCourses } = useCourses();
   const { progress, addXp, updateMastery, recordQuizScore, recordStudyTime, addBookmark, removeBookmark, enrollCourse, unenrollCourse, updateAIPersonality, isOnline, checkAndUpdateStreak } = useUserProgress();
   

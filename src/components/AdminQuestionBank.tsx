@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, FileText, Plus, CheckCircle, Loader2, AlertCircle, Save, Trash2, Edit2, Search, List, FileUp, Bot, Shield, Zap, Star, Cpu } from 'lucide-react';
+import { Upload, FileText, Plus, CheckCircle, Loader2, AlertCircle, Save, Trash2, Edit2, Search, List, FileUp, Bot, Shield, Zap, Star, Cpu, Download } from 'lucide-react';
 import { db, auth } from '../firebase';
 import { collection, getDocs, getDoc, doc, deleteDoc, updateDoc } from 'firebase/firestore';
 import { jsonrepair } from 'jsonrepair';
 import Papa from 'papaparse';
+import { exportJsonToExcel } from '../utils/exportUtils';
 
 type TabType = 'view' | 'add' | 'bulk';
 
@@ -128,6 +129,31 @@ export default function AdminQuestionBank() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleExportAllQuestionsToExcel = () => {
+    const flatData: any[] = [];
+    papers.forEach(paper => {
+      (paper.questions || []).forEach((q: any, qIdx: number) => {
+        flatData.push({
+          'Course Code': paper.courseCode,
+          'Title': paper.title,
+          'Semester': paper.semester,
+          'Academic Year': paper.year,
+          'Question #': qIdx + 1,
+          'Question': q.question,
+          'Option A': q.options?.[0] || '',
+          'Option B': q.options?.[1] || '',
+          'Option C': q.options?.[2] || '',
+          'Option D': q.options?.[3] || '',
+          'Correct Answer': q.correctAnswer,
+          'Explanation': q.explanation || '',
+          'Hint': q.hint || ''
+        });
+      });
+    });
+
+    exportJsonToExcel(flatData, 'Question Bank', `uniace-question-bank-${Date.now()}.xlsx`);
   };
 
   const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -357,25 +383,38 @@ export default function AdminQuestionBank() {
           <p className="text-slate-500 dark:text-slate-400">Manage past questions and AI knowledge base embeddings.</p>
         </div>
         
-        <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
-          <button
-            onClick={() => setActiveTab('view')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-colors ${activeTab === 'view' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
-          >
-            <List size={16} /> View All
-          </button>
-          <button
-            onClick={() => setActiveTab('add')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-colors ${activeTab === 'add' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
-          >
-            <Plus size={16} /> Add Single
-          </button>
-          <button
-            onClick={() => setActiveTab('bulk')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-colors ${activeTab === 'bulk' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
-          >
-            <FileUp size={16} /> Bulk Upload
-          </button>
+        <div className="flex items-center gap-3">
+          {activeTab === 'view' && papers.length > 0 && (
+            <button
+              onClick={handleExportAllQuestionsToExcel}
+              className="flex items-center gap-2 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold shadow-sm transition-colors"
+              title="Export all questions to Excel (.xlsx)"
+            >
+              <Download size={15} />
+              Export Excel
+            </button>
+          )}
+
+          <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+            <button
+              onClick={() => setActiveTab('view')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-colors ${activeTab === 'view' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
+            >
+              <List size={16} /> View All
+            </button>
+            <button
+              onClick={() => setActiveTab('add')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-colors ${activeTab === 'add' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
+            >
+              <Plus size={16} /> Add Single
+            </button>
+            <button
+              onClick={() => setActiveTab('bulk')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-colors ${activeTab === 'bulk' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
+            >
+              <FileUp size={16} /> Bulk Upload
+            </button>
+          </div>
         </div>
       </div>
 

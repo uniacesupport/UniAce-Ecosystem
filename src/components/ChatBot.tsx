@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Send, User, Bot, X, MessageSquare, Mic, MicOff, Image as ImageIcon, Volume2, VolumeX, Maximize2, Minimize2, Copy, Check, Zap, Lightbulb, Sparkles, Settings, ArrowRight, FileText, Calculator, Plus, Activity } from "lucide-react";
+import { Send, User, Bot, X, MessageSquare, Mic, MicOff, Image as ImageIcon, Volume2, VolumeX, Maximize2, Minimize2, Copy, Check, Zap, Lightbulb, Sparkles, Settings, ArrowRight, FileText, Calculator, Plus, Activity, RotateCcw } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { ChatMessage, CourseId, UserProgress, AIPersonality } from "../types";
 import { jsonrepair } from 'jsonrepair';
@@ -294,6 +294,32 @@ export default function ChatBot({
     }
   };
 
+  const [isResettingMemory, setIsResettingMemory] = useState(false);
+  const [resetSuccess, setResetSuccess] = useState(false);
+
+  const handleResetMemory = async () => {
+    if (!user || isResettingMemory) return;
+    setIsResettingMemory(true);
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch('/api/user/learning-profile/reset', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        }
+      });
+      if (res.ok) {
+        setResetSuccess(true);
+        setTimeout(() => setResetSuccess(false), 3000);
+      }
+    } catch (e) {
+      console.error('Failed to reset memory:', e);
+    } finally {
+      setIsResettingMemory(false);
+    }
+  };
+
   const [suggestedActions, setSuggestedActions] = useState<string[]>([]);
 
   useEffect(() => {
@@ -407,7 +433,7 @@ export default function ChatBot({
         setIsAiThinking(false);
         setMessages(prev => {
           const newMsgs = [...prev];
-          newMsgs[msgIndex].text = "Error: Failed to connect to AI tutor via WebSocket.";
+          newMsgs[msgIndex].text = err ? `⚠️ ${err}` : "Error: Failed to connect to AI tutor via WebSocket.";
           return newMsgs;
         });
       }, (meta) => {
@@ -415,7 +441,9 @@ export default function ChatBot({
           setSparksRemaining(meta.sparksRemaining);
         }
         if (meta.status === 'thinking') {
-          setIsAiThinking(true);
+          if (isProMode) {
+            setIsAiThinking(true);
+          }
         } else if (meta.status === 'answering') {
           setIsAiThinking(false);
         }
@@ -577,6 +605,25 @@ export default function ChatBot({
                     </button>
                   ))}
                 </div>
+
+                <div className="mt-5 pt-4 border-t border-slate-200 dark:border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-700 dark:text-zinc-200 flex items-center gap-1.5">
+                      <span>AI Study Memory Calibration</span>
+                    </h4>
+                    <p className="text-[11px] text-slate-500 dark:text-zinc-400">
+                      Reset past recorded study weaknesses to give UniAce a clean slate.
+                    </p>
+                  </div>
+                  <button
+                    onClick={handleResetMemory}
+                    disabled={isResettingMemory}
+                    className="flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl bg-slate-200 dark:bg-zinc-800 text-slate-700 dark:text-zinc-200 hover:bg-slate-300 dark:hover:bg-zinc-700 transition-colors disabled:opacity-50"
+                  >
+                    <RotateCcw size={13} className={isResettingMemory ? "animate-spin" : ""} />
+                    <span>{resetSuccess ? "Memory Reset!" : isResettingMemory ? "Resetting..." : "Reset Study Memory"}</span>
+                  </button>
+                </div>
               </div>
             </motion.div>
           )}
@@ -702,7 +749,7 @@ export default function ChatBot({
             {isLoading && (
               <div className="flex justify-start">
                 <div className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 p-4 rounded-2xl rounded-tl-none shadow-sm flex items-center gap-3">
-                  {isAiThinking ? (
+                  {isAiThinking && isProMode ? (
                     <>
                       <div className="flex gap-1.5">
                         <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-pulse" />
@@ -1012,6 +1059,17 @@ export default function ChatBot({
                         </button>
                       ))}
                     </div>
+                    <div className="px-4 pb-3 pt-1 border-t border-slate-700/60 flex items-center justify-between">
+                      <span className="text-[11px] text-slate-400">AI Study Memory</span>
+                      <button
+                        onClick={handleResetMemory}
+                        disabled={isResettingMemory}
+                        className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium rounded-lg bg-slate-700 text-slate-200 hover:bg-slate-600 transition-colors disabled:opacity-50"
+                      >
+                        <RotateCcw size={11} className={isResettingMemory ? "animate-spin" : ""} />
+                        <span>{resetSuccess ? "Cleared!" : isResettingMemory ? "Clearing..." : "Clear Memory"}</span>
+                      </button>
+                    </div>
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -1092,7 +1150,7 @@ export default function ChatBot({
                 {isLoading && (
                   <div className="flex justify-start">
                     <div className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 p-5 rounded-3xl rounded-tl-none shadow-sm flex items-center gap-3">
-                      {isAiThinking ? (
+                      {isAiThinking && isProMode ? (
                         <>
                           <div className="flex gap-1.5">
                             <div className="w-2 h-2 bg-indigo-500 rounded-full animate-pulse" />

@@ -155,7 +155,7 @@ export function useUserProgress() {
   // Persist changes to LocalStorage and Firestore
   useEffect(() => {
     try {
-      localStorage.setItem('mat103_progress', JSON.stringify(progress));
+      localStorage.setItem('uniace_user_progress', JSON.stringify(progress));
     } catch (e) {
       console.warn('localStorage access denied, cannot save progress locally');
     }

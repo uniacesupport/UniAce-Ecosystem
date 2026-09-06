@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Calendar, BookOpen, CheckCircle2, Clock, Target, Sparkles, Loader2, ChevronRight, AlertCircle, Download, Share2, Lock, Cpu } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -10,6 +10,7 @@ import { Module, UserProgress } from '../types';
 import { db } from '../firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import CalendarExportModal from './CalendarExportModal';
+import { exportElementToPdf } from '../utils/exportUtils';
 
 
 interface StudyPlanData {
@@ -38,6 +39,12 @@ export default function StudyPlan({ progress, syllabus }: StudyPlanProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const planContainerRef = useRef<HTMLDivElement>(null);
+
+  const handleExportPdf = async () => {
+    if (!planContainerRef.current || !plan) return;
+    await exportElementToPdf(planContainerRef.current, `uniace-study-plan-${Date.now()}.pdf`, plan.title);
+  };
 
 
   // Load existing plan on mount
@@ -129,6 +136,7 @@ export default function StudyPlan({ progress, syllabus }: StudyPlanProps) {
 
         {plan && (
           <motion.div
+            ref={planContainerRef}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             className="space-y-8"
@@ -211,7 +219,10 @@ export default function StudyPlan({ progress, syllabus }: StudyPlanProps) {
                 <Calendar size={18} />
                 Export to Calendar
               </button>
-              <button className="flex items-center gap-2 px-6 py-3 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 rounded-xl font-bold text-sm hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors">
+              <button 
+                onClick={handleExportPdf}
+                className="flex items-center gap-2 px-6 py-3 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 rounded-xl font-bold text-sm hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors shadow-sm"
+              >
                 <Download size={18} />
                 Export PDF
               </button>

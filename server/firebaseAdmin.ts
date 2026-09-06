@@ -8,7 +8,7 @@ import fs from 'fs';
 
 dotenv.config();
 
-const currentFilename = typeof __filename !== 'undefined' ? __filename : fileURLToPath(import.meta.url);
+const currentFilename = typeof __filename !== 'undefined' ? __filename : path.join(process.cwd(), 'server', 'firebaseAdmin.ts');
 const currentDirname = typeof __dirname !== 'undefined' ? __dirname : path.dirname(currentFilename);
 
 let adminApp: admin.app.App | null = null;

@@ -119,16 +119,11 @@ export default defineConfig(({mode}) => {
       },
     },
     server: {
-      // HMR is disabled in AI Studio via DISABLE_HMR env var.
-      // If enabled, configure it to run gracefully in restricted proxy environments with no full-screen overlays.
-      hmr: process.env.DISABLE_HMR === 'true' ? false : {
-        overlay: false,
-        clientPort: 443,
-        timeout: 5000,
-      },
+      hmr: false,
     },
     build: {
       outDir: 'dist',
+      chunkSizeWarningLimit: 1200,
       rollupOptions: {
         output: {
           manualChunks(id) {
@@ -136,14 +131,8 @@ export default defineConfig(({mode}) => {
               if (id.includes('firebase')) {
                 return 'firebase-vendor';
               }
-              if (id.includes('katex')) {
-                return 'katex-vendor';
-              }
               if (id.includes('pdfjs-dist')) {
                 return 'pdfjs-vendor';
-              }
-              if (id.includes('recharts') || id.includes('d3')) {
-                return 'charts-vendor';
               }
               if (id.includes('lucide-react')) {
                 return 'icons-vendor';

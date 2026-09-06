@@ -1,39 +1,55 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sparkles, Brain, Trophy, Rocket, CheckCircle2, ArrowRight, Play, X, Mail, Lock, Loader2, AlertCircle } from 'lucide-react';
+import { Sparkles, Brain, Trophy, Rocket, CheckCircle2, ArrowRight, Play, X, Mail, Lock, Loader2, AlertCircle, User } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 
 export default function LandingPage() {
-  const { signInWithGoogle, signInWithEmail } = useAuth();
+  const { signInWithGoogle, signInWithEmail, signUpWithEmail } = useAuth();
   
   // Login Modal State
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
-  const handleEmailLogin = async (e: React.FormEvent) => {
+  const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) {
-      setErrorMessage('Please fill in all fields.');
+      setErrorMessage('Please fill in all required fields.');
       return;
     }
+    if (isSignUp && password.length < 6) {
+      setErrorMessage('Password must be at least 6 characters long.');
+      return;
+    }
+
     setErrorMessage('');
     setIsSubmitting(true);
     try {
-      await signInWithEmail(email, password);
-      toast.success('Successfully logged in!');
+      if (isSignUp) {
+        await signUpWithEmail(email, password, displayName.trim() || undefined);
+        toast.success('Account created successfully! Welcome to UniAce.');
+      } else {
+        await signInWithEmail(email, password);
+        toast.success('Successfully logged in!');
+      }
       setIsLoginModalOpen(false);
     } catch (err: any) {
-      console.error(err);
+      console.error('Email auth error:', err);
       if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
-        setErrorMessage('Invalid email or password. Please try again.');
+        setErrorMessage('Invalid email or password. If you don\'t have an account yet, switch to "Create Account".');
+      } else if (err.code === 'auth/email-already-in-use') {
+        setErrorMessage('An account with this email already exists. Please switch to "Sign In".');
+      } else if (err.code === 'auth/weak-password') {
+        setErrorMessage('Password is too weak. Please use at least 6 characters.');
       } else if (err.code === 'auth/invalid-email') {
         setErrorMessage('Please enter a valid email address.');
       } else {
-        setErrorMessage(err.message || 'An error occurred during sign-in.');
+        setErrorMessage(err.message || 'An error occurred during authentication.');
       }
     } finally {
       setIsSubmitting(false);
@@ -41,11 +57,16 @@ export default function LandingPage() {
   };
 
   const handleGoogleLogin = async () => {
+    setErrorMessage('');
+    setIsSubmitting(true);
     try {
       await signInWithGoogle();
       setIsLoginModalOpen(false);
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      console.error('Google login error:', err);
+      setErrorMessage(err.message || 'Google sign-in could not be completed.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -290,31 +311,80 @@ export default function LandingPage() {
                 <X size={20} />
               </button>
 
-              <div className="text-center mb-8">
-                <div className="w-12 h-12 bg-emerald-500 rounded-2xl flex items-center justify-center text-2xl mx-auto mb-4">
+              <div className="text-center mb-6">
+                <div className="w-12 h-12 bg-emerald-500 rounded-2xl flex items-center justify-center text-2xl mx-auto mb-4 shadow-lg shadow-emerald-500/20">
                   🎓
                 </div>
                 <h3 className="text-2xl font-bold text-slate-900 dark:text-white">Welcome to UniAce</h3>
-                <p className="text-slate-500 text-xs mt-2">Log in with Google or use credentials provided by an administrator.</p>
+                <p className="text-slate-500 text-xs mt-1">Access your personalized university AI tutoring hub.</p>
               </div>
 
               {/* Social Login */}
               <button
                 onClick={handleGoogleLogin}
-                className="w-full bg-slate-50 hover:bg-slate-100 dark:bg-zinc-800 dark:hover:bg-zinc-700/80 border border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-zinc-200 font-semibold py-3.5 rounded-2xl transition-all flex items-center justify-center gap-3 text-sm"
+                disabled={isSubmitting}
+                className="w-full bg-slate-50 hover:bg-slate-100 dark:bg-zinc-800 dark:hover:bg-zinc-700/80 border border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-zinc-200 font-semibold py-3.5 rounded-2xl transition-all flex items-center justify-center gap-3 text-sm disabled:opacity-60 shadow-sm"
               >
                 <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-5 h-5" />
-                Continue with Google
+                <span>Continue with Google</span>
               </button>
 
               <div className="relative flex py-5 items-center">
                 <div className="flex-grow border-t border-slate-200 dark:border-zinc-800"></div>
-                <span className="flex-shrink mx-4 text-slate-400 text-xs font-bold uppercase tracking-widest">or</span>
+                <span className="flex-shrink mx-4 text-slate-400 text-[10px] font-bold uppercase tracking-widest">or email</span>
                 <div className="flex-grow border-t border-slate-200 dark:border-zinc-800"></div>
               </div>
 
+              {/* Mode Switcher Tabs */}
+              <div className="grid grid-cols-2 p-1 mb-4 bg-slate-100 dark:bg-zinc-800 rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsSignUp(false);
+                    setErrorMessage('');
+                  }}
+                  className={`py-1.5 text-xs font-bold rounded-lg transition-all ${
+                    !isSignUp 
+                      ? 'bg-white dark:bg-zinc-900 text-slate-900 dark:text-white shadow-sm' 
+                      : 'text-slate-500 dark:text-zinc-400 hover:text-slate-900'
+                  }`}
+                >
+                  Sign In
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsSignUp(true);
+                    setErrorMessage('');
+                  }}
+                  className={`py-1.5 text-xs font-bold rounded-lg transition-all ${
+                    isSignUp 
+                      ? 'bg-white dark:bg-zinc-900 text-slate-900 dark:text-white shadow-sm' 
+                      : 'text-slate-500 dark:text-zinc-400 hover:text-slate-900'
+                  }`}
+                >
+                  Create Account
+                </button>
+              </div>
+
               {/* Email & Password Form */}
-              <form onSubmit={handleEmailLogin} className="space-y-4">
+              <form onSubmit={handleEmailAuth} className="space-y-3.5">
+                {isSignUp && (
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-widest mb-1.5">Full Name</label>
+                    <div className="relative">
+                      <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                      <input 
+                        type="text" 
+                        value={displayName}
+                        onChange={(e) => setDisplayName(e.target.value)}
+                        placeholder="e.g. Alex Johnson"
+                        className="w-full pl-11 pr-4 py-2.5 bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-900 dark:text-white"
+                      />
+                    </div>
+                  </div>
+                )}
+
                 <div>
                   <label className="block text-[10px] font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-widest mb-1.5">Email Address</label>
                   <div className="relative">
@@ -324,7 +394,7 @@ export default function LandingPage() {
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       placeholder="e.g. name@university.edu"
-                      className="w-full pl-11 pr-4 py-3 bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-900 dark:text-white"
+                      className="w-full pl-11 pr-4 py-2.5 bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-900 dark:text-white"
                       required
                     />
                   </div>
@@ -338,32 +408,32 @@ export default function LandingPage() {
                       type="password" 
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Enter secure password"
-                      className="w-full pl-11 pr-4 py-3 bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-900 dark:text-white font-mono"
+                      placeholder={isSignUp ? "At least 6 characters" : "Enter password"}
+                      className="w-full pl-11 pr-4 py-2.5 bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-900 dark:text-white font-mono"
                       required
                     />
                   </div>
                 </div>
 
                 {errorMessage && (
-                  <div className="flex items-start gap-2 text-red-500 text-xs font-semibold bg-red-50 dark:bg-red-950/20 p-3 rounded-xl border border-red-100 dark:border-red-900/30">
+                  <div className="flex items-start gap-2 text-red-600 dark:text-red-400 text-xs font-semibold bg-red-50 dark:bg-red-950/30 p-3 rounded-xl border border-red-200 dark:border-red-900/40">
                     <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
-                    <span>{errorMessage}</span>
+                    <span className="leading-snug">{errorMessage}</span>
                   </div>
                 )}
 
                 <button 
                   type="submit"
                   disabled={isSubmitting}
-                  className="w-full py-3.5 bg-emerald-500 hover:bg-emerald-600 disabled:bg-emerald-500/50 text-white font-bold text-sm rounded-2xl shadow-lg shadow-emerald-500/20 transition-all flex items-center justify-center gap-2"
+                  className="w-full py-3 bg-emerald-500 hover:bg-emerald-600 disabled:bg-emerald-500/50 text-white font-bold text-sm rounded-2xl shadow-lg shadow-emerald-500/20 transition-all flex items-center justify-center gap-2 mt-2"
                 >
                   {isSubmitting ? (
                     <>
                       <Loader2 size={16} className="animate-spin" />
-                      Signing In...
+                      <span>{isSignUp ? 'Creating Account...' : 'Signing In...'}</span>
                     </>
                   ) : (
-                    'Sign In with Email'
+                    <span>{isSignUp ? 'Create Scholar Account' : 'Sign In with Email'}</span>
                   )}
                 </button>
               </form>

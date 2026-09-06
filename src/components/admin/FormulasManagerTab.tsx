@@ -3,43 +3,43 @@ import { motion } from 'motion/react';
 import { BookOpen, Plus, Trash2, Edit3, Save, CheckCircle, AlertCircle, RefreshCw, Copy, Check } from 'lucide-react';
 import { Formula, CourseId } from '../../types';
 import { CourseService } from '../../services/courseService';
-import { MAT103_FORMULAS, CHM101_FORMULAS, PHY101_FORMULAS } from '../../constants';
+import { useCourses } from '../../context/CourseContext';
 import MarkdownRenderer from '../MarkdownRenderer';
 
 export default function FormulasManagerTab() {
-  const [selectedCourse, setSelectedCourse] = useState<CourseId>('MAT103');
+  const { courses } = useCourses();
+  const courseList = Object.values(courses);
+  const [selectedCourse, setSelectedCourse] = useState<string>('');
   const [formulas, setFormulas] = useState<Formula[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [editingFormula, setEditingFormula] = useState<Formula | null>(null);
 
-  const loadFormulas = async (courseId: CourseId) => {
+  useEffect(() => {
+    if (!selectedCourse && courseList.length > 0) {
+      setSelectedCourse(courseList[0].id);
+    }
+  }, [courseList, selectedCourse]);
+
+  const loadFormulas = async (courseId: string) => {
+    if (!courseId) return;
     setLoading(true);
     try {
       const live = await CourseService.getFormulas(courseId);
-      if (live && live.length > 0) {
-        setFormulas(live);
-      } else {
-        // Fallback to initial seeds
-        if (courseId === 'MAT103') setFormulas(MAT103_FORMULAS);
-        else if (courseId === 'CHM101') setFormulas(CHM101_FORMULAS);
-        else if (courseId === 'PHY101') setFormulas(PHY101_FORMULAS);
-        else setFormulas([]);
-      }
+      setFormulas(live || []);
     } catch (e) {
       console.warn('Error loading formulas from Firestore:', e);
-      if (courseId === 'MAT103') setFormulas(MAT103_FORMULAS);
-      else if (courseId === 'CHM101') setFormulas(CHM101_FORMULAS);
-      else if (courseId === 'PHY101') setFormulas(PHY101_FORMULAS);
-      else setFormulas([]);
+      setFormulas([]);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadFormulas(selectedCourse);
+    if (selectedCourse) {
+      loadFormulas(selectedCourse);
+    }
   }, [selectedCourse]);
 
   const handleSaveToFirestore = async () => {
@@ -118,18 +118,18 @@ export default function FormulasManagerTab() {
       </div>
 
       {/* Course selector */}
-      <div className="flex items-center gap-2">
-        {(['MAT103', 'CHM101', 'PHY101', 'GST111', 'COS101'] as CourseId[]).map((cId) => (
+      <div className="flex flex-wrap items-center gap-2">
+        {courseList.map((course) => (
           <button
-            key={cId}
-            onClick={() => setSelectedCourse(cId)}
+            key={course.id}
+            onClick={() => setSelectedCourse(course.id)}
             className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-              selectedCourse === cId
+              selectedCourse === course.id
                 ? 'bg-indigo-600 text-white shadow-sm'
                 : 'bg-white dark:bg-zinc-800 text-slate-600 dark:text-zinc-400 border border-slate-200 dark:border-zinc-700 hover:bg-slate-50 dark:hover:bg-zinc-700'
             }`}
           >
-            {cId}
+            {course.id}: {course.title}
           </button>
         ))}
       </div>

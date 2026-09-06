@@ -564,12 +564,34 @@ export class OpenRouterFreeProvider implements ModelProvider {
         });
 
         let fullText = '';
+        let hasStartedThinking = false;
+        let hasFinishedThinking = false;
+
         for await (const chunk of stream) {
-          const content = chunk.choices[0]?.delta?.content || '';
+          const delta = chunk.choices[0]?.delta as any;
+          const reasoning = delta?.reasoning_content || delta?.reasoning || '';
+          const content = delta?.content || '';
+
+          if (options?.complexity === 'high' && reasoning) {
+            if (!hasStartedThinking) {
+              onChunk('<think>');
+              hasStartedThinking = true;
+            }
+            onChunk(reasoning);
+          }
           if (content) {
+            if (hasStartedThinking && !hasFinishedThinking) {
+              onChunk('</think>');
+              hasFinishedThinking = true;
+            }
             fullText += content;
             onChunk(content);
           }
+        }
+
+        if (hasStartedThinking && !hasFinishedThinking) {
+          onChunk('</think>');
+          hasFinishedThinking = true;
         }
 
         return {
@@ -592,12 +614,34 @@ export class OpenRouterFreeProvider implements ModelProvider {
             });
 
             let fullText = '';
+            let hasStartedThinking = false;
+            let hasFinishedThinking = false;
+
             for await (const chunk of paidStream) {
-              const content = chunk.choices[0]?.delta?.content || '';
+              const delta = chunk.choices[0]?.delta as any;
+              const reasoning = delta?.reasoning_content || delta?.reasoning || '';
+              const content = delta?.content || '';
+
+              if (options?.complexity === 'high' && reasoning) {
+                if (!hasStartedThinking) {
+                  onChunk('<think>');
+                  hasStartedThinking = true;
+                }
+                onChunk(reasoning);
+              }
               if (content) {
+                if (hasStartedThinking && !hasFinishedThinking) {
+                  onChunk('</think>');
+                  hasFinishedThinking = true;
+                }
                 fullText += content;
                 onChunk(content);
               }
+            }
+
+            if (hasStartedThinking && !hasFinishedThinking) {
+              onChunk('</think>');
+              hasFinishedThinking = true;
             }
 
             return {
@@ -809,12 +853,34 @@ export class GroqProvider implements ModelProvider {
         });
 
         let fullText = '';
+        let hasStartedThinking = false;
+        let hasFinishedThinking = false;
+
         for await (const chunk of stream) {
-          const content = chunk.choices[0]?.delta?.content || '';
+          const delta = chunk.choices[0]?.delta as any;
+          const reasoning = delta?.reasoning_content || delta?.reasoning || '';
+          const content = delta?.content || '';
+
+          if (options?.complexity === 'high' && reasoning) {
+            if (!hasStartedThinking) {
+              onChunk('<think>');
+              hasStartedThinking = true;
+            }
+            onChunk(reasoning);
+          }
           if (content) {
+            if (hasStartedThinking && !hasFinishedThinking) {
+              onChunk('</think>');
+              hasFinishedThinking = true;
+            }
             fullText += content;
             onChunk(content);
           }
+        }
+
+        if (hasStartedThinking && !hasFinishedThinking) {
+          onChunk('</think>');
+          hasFinishedThinking = true;
         }
 
         return {
@@ -1224,19 +1290,34 @@ export class NvidiaProvider implements ModelProvider {
         });
 
         let fullText = '';
+        let hasStartedThinking = false;
+        let hasFinishedThinking = false;
+
         for await (const chunk of stream) {
-          const delta = chunk.choices[0]?.delta;
-          const reasoning = (delta as any)?.reasoning_content || '';
+          const delta = chunk.choices[0]?.delta as any;
+          const reasoning = delta?.reasoning_content || delta?.reasoning || '';
           const content = delta?.content || '';
           
-          if (reasoning) {
-            fullText += reasoning;
+          if (options?.complexity === 'high' && reasoning) {
+            if (!hasStartedThinking) {
+              onChunk('<think>');
+              hasStartedThinking = true;
+            }
             onChunk(reasoning);
           }
           if (content) {
+            if (hasStartedThinking && !hasFinishedThinking) {
+              onChunk('</think>');
+              hasFinishedThinking = true;
+            }
             fullText += content;
             onChunk(content);
           }
+        }
+
+        if (hasStartedThinking && !hasFinishedThinking) {
+          onChunk('</think>');
+          hasFinishedThinking = true;
         }
 
         return {
@@ -1257,12 +1338,34 @@ export class NvidiaProvider implements ModelProvider {
             });
 
             let fullText = '';
+            let hasStartedThinking = false;
+            let hasFinishedThinking = false;
+
             for await (const chunk of stream) {
-              const content = chunk.choices[0]?.delta?.content || '';
+              const delta = chunk.choices[0]?.delta as any;
+              const reasoning = delta?.reasoning_content || delta?.reasoning || '';
+              const content = delta?.content || '';
+
+              if (options?.complexity === 'high' && reasoning) {
+                if (!hasStartedThinking) {
+                  onChunk('<think>');
+                  hasStartedThinking = true;
+                }
+                onChunk(reasoning);
+              }
               if (content) {
+                if (hasStartedThinking && !hasFinishedThinking) {
+                  onChunk('</think>');
+                  hasFinishedThinking = true;
+                }
                 fullText += content;
                 onChunk(content);
               }
+            }
+
+            if (hasStartedThinking && !hasFinishedThinking) {
+              onChunk('</think>');
+              hasFinishedThinking = true;
             }
 
             return {

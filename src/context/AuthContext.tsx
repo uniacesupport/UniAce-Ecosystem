@@ -1,5 +1,14 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { User, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut, browserPopupRedirectResolver, signInWithEmailAndPassword } from "firebase/auth";
+import { 
+  User, 
+  onAuthStateChanged, 
+  GoogleAuthProvider, 
+  signInWithPopup, 
+  signOut, 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword,
+  updateProfile 
+} from "firebase/auth";
 import { doc, getDoc, setDoc, serverTimestamp, onSnapshot } from "firebase/firestore";
 import { getToken } from "firebase/messaging";
 import toast from "react-hot-toast";
@@ -51,6 +60,7 @@ interface AuthContextType {
   isConfigured: boolean;
   signInWithGoogle: () => Promise<void>;
   signInWithEmail: (email: string, password: string) => Promise<void>;
+  signUpWithEmail: (email: string, password: string, displayName?: string) => Promise<void>;
   logout: () => Promise<void>;
   updateProfileData: (data: Partial<UserProfile>) => Promise<void>;
 }
@@ -383,8 +393,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signInWithGoogle = async () => {
     if (!auth) {
-      alert("Firebase is not configured. Please check your environment variables.");
-      return;
+      const err = "Firebase is not configured. Please check your configuration.";
+      toast.error(err);
+      throw new Error(err);
     }
     if (isSigningIn) return; // Prevent multiple clicks
 
@@ -396,28 +407,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     try {
       console.log("AuthContext: Starting signInWithPopup...");
-      await signInWithPopup(auth, provider, browserPopupRedirectResolver);
+      await signInWithPopup(auth, provider);
       console.log("AuthContext: signInWithPopup completed successfully.");
     } catch (error: any) {
       console.error("Error signing in with Google", error);
-      if (error.code === 'auth/popup-closed-by-user') {
-        // User closed the popup, ignore
-        console.log('User closed the sign-in popup.');
-      } else if (error.code === 'auth/cancelled-popup-request') {
-        // Another popup was opened, ignore
-        console.log('Popup request cancelled.');
-      } else if (error.code === 'auth/unauthorized-domain') {
-        const domain = window.location.hostname;
-        alert(
-          `Unauthorized Domain: ${domain}\n\n` +
-          `To fix this, you must add this domain to your Firebase project's "Authorized domains" list:\n\n` +
-          `1. Go to Firebase Console > Authentication > Settings > Authorized domains\n` +
-          `2. Add "${domain}" to the list.\n\n` +
-          `Also add the shared URL domain if you plan to share the app.`
-        );
-      } else {
-        alert(`Error signing in: ${error.message}`);
+      if (error.code === 'auth/popup-closed-by-user' || error.code === 'auth/cancelled-popup-request') {
+        console.log('User closed or cancelled the sign-in popup.');
+        return;
       }
+      
+      let friendlyMessage = error.message || 'Google sign-in failed.';
+      if (error.code === 'auth/unauthorized-domain') {
+        const domain = window.location.hostname;
+        friendlyMessage = `Unauthorized Domain: ${domain}. Please add "${domain}" to Firebase Console > Authentication > Settings > Authorized domains.`;
+      } else if (error.code === 'auth/network-request-failed') {
+        const isIframe = typeof window !== 'undefined' && window.self !== window.top;
+        if (isIframe) {
+          friendlyMessage = "Google popup was blocked by the embedded preview iframe. Please click 'Open in Direct Tab' or sign in/sign up with email.";
+        } else {
+          friendlyMessage = "Network request failed. If you are using Brave Browser, please turn Brave Shields OFF for this site, or use email login.";
+        }
+      } else if (error.code === 'auth/popup-blocked') {
+        friendlyMessage = "Popups are blocked by your browser. Please allow popups or open in a direct tab.";
+      }
+      
+      toast.error(friendlyMessage, { duration: 6000 });
+      throw new Error(friendlyMessage);
     } finally {
       setIsSigningIn(false);
     }
@@ -425,10 +440,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signInWithEmail = async (email: string, password: string) => {
     if (!auth) {
-      alert("Firebase is not configured. Please check your environment variables.");
-      return;
+      const err = "Firebase is not configured.";
+      toast.error(err);
+      throw new Error(err);
     }
-    await signInWithEmailAndPassword(auth, email, password);
+    await signInWithEmailAndPassword(auth, email.trim(), password);
+  };
+
+  const signUpWithEmail = async (email: string, password: string, displayName?: string) => {
+    if (!auth) {
+      const err = "Firebase is not configured.";
+      toast.error(err);
+      throw new Error(err);
+    }
+    const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
+    if (displayName && cred.user) {
+      await updateProfile(cred.user, { displayName });
+    }
   };
 
   const logout = async () => {
@@ -444,7 +472,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, isConfigured: !!auth, signInWithGoogle, signInWithEmail, logout, updateProfileData }}>
+    <AuthContext.Provider value={{ 
+      user, 
+      profile, 
+      loading, 
+      isConfigured: !!auth, 
+      signInWithGoogle, 
+      signInWithEmail, 
+      signUpWithEmail, 
+      logout, 
+      updateProfileData 
+    }}>
       {children}
     </AuthContext.Provider>
   );

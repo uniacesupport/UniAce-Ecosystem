@@ -10,6 +10,7 @@ import { useAuth } from '../context/AuthContext';
 import { usePremiumStatus } from '../hooks/usePremiumStatus';
 import PricingModal from './PricingModal';
 import { SRSService } from '../services/srsService';
+import { triggerMilestoneCelebration } from '../utils/celebration';
 import toast from 'react-hot-toast';
 
 interface QuizGeneratorProps {
@@ -337,6 +338,10 @@ export default function QuizGenerator({
     if (onComplete) onComplete(percentage);
     setStep('results');
 
+    if (percentage >= 70) {
+      triggerMilestoneCelebration();
+    }
+
     // Update Spaced Repetition System
     if (courseId && subTopic) {
       try {
@@ -444,10 +449,8 @@ export default function QuizGenerator({
     if (eliminatedOptions[currentQuestion.id]) return;
 
     const currentSparks = profile?.ai_sparks ?? 50;
-    const isFree = profile?.plan_type === 'free';
-    const isStudent = profile?.role === 'student' || !profile?.role;
 
-    if (isFree && isStudent && currentSparks < 1) {
+    if (!isPremium && currentSparks < 1) {
       toast.error("Insufficient sparks! Please upgrade or obtain more sparks.");
       setShowPricingModal(true);
       return;
@@ -470,9 +473,10 @@ export default function QuizGenerator({
         })
       });
 
+      const resData = await response.json().catch(() => ({}));
+
       if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.error || "Failed to deduct spark for hint");
+        throw new Error(resData.error || "Failed to deduct spark for hint");
       }
 
       const wrongOptions = currentQuestion.options?.filter(opt => opt !== currentQuestion.correctAnswer) || [];
@@ -489,11 +493,10 @@ export default function QuizGenerator({
         [currentQuestion.id]: toEliminate
       }));
 
-      const isSparkFree = profile?.role === 'admin' || profile?.plan_type === 'scholar';
-      if (isSparkFree) {
+      if (resData.sparksDeducted === 0 || isPremium) {
         toast.success("50/50 hint activated!");
       } else {
-        toast.success("50/50 hint activated! 1 Spark deducted.");
+        toast.success(`50/50 hint activated! ${resData.sparksDeducted ?? 1} Spark deducted.`);
       }
     } catch (error: any) {
       console.error("Error using 50/50 hint:", error);
@@ -857,7 +860,7 @@ export default function QuizGenerator({
                               <Lightbulb size={20} className="text-amber-700 dark:text-amber-400 shrink-0" />
                             )}
                             <span>
-                              Use 50/50 Hint <span className="text-xs font-normal opacity-75">({(profile?.role === 'admin' || profile?.plan_type === 'scholar') ? 'Free' : 'Costs 1 Spark'})</span>
+                              Use 50/50 Hint <span className="text-xs font-normal opacity-75">({isPremium ? 'Free' : 'Costs 1 Spark'})</span>
                             </span>
                           </button>
                         )}

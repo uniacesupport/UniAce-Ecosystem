@@ -27,7 +27,7 @@ const INITIAL_PROGRESS: UserProgress = {
 function getInitialProgress(): UserProgress {
   let parsed = INITIAL_PROGRESS;
   try {
-    const saved = localStorage.getItem('mat103_progress');
+    const saved = localStorage.getItem('uniace_user_progress') || localStorage.getItem('mat103_progress');
     if (saved) {
       parsed = JSON.parse(saved);
     }
@@ -58,7 +58,7 @@ export const useProgressStore = create<ProgressState>((set) => ({
   setProgress: (updater) => set((state) => {
     const nextProgress = typeof updater === 'function' ? updater(state.progress) : updater;
     try {
-      localStorage.setItem('mat103_progress', JSON.stringify(nextProgress));
+      localStorage.setItem('uniace_user_progress', JSON.stringify(nextProgress));
     } catch (e) {
       console.warn('localStorage access denied, cannot save progress locally');
     }

@@ -6,6 +6,7 @@ import { UserProgress } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { usePremiumStatus } from '../hooks/usePremiumStatus';
+import { getModuleIcon, getCleanModuleTitle } from '../utils/moduleIcons';
 import { useState, useEffect } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -23,12 +24,6 @@ interface SidebarProps {
   isOnline: boolean;
   onToggleCalculator?: () => void;
 }
-
-const MODULE_ICONS: Record<string, any> = {
-  vectors: Book,
-  geometry: Layers,
-  motion: Activity,
-};
 
 const THEME_COLORS: Record<string, { bg: string, text: string, bgHover: string, bgLight: string, shadow: string }> = {
   blue: { bg: 'bg-blue-500', text: 'text-blue-400', bgHover: 'hover:bg-blue-600', bgLight: 'bg-blue-500/20', shadow: 'shadow-blue-500/20' },
@@ -356,7 +351,8 @@ export default function Sidebar({
                   Modules
                 </div>
                 {syllabus.map((module, index) => {
-                  const Icon = MODULE_ICONS[module.id] || LayoutGrid;
+                  const Icon = getModuleIcon(module.id, module.title, index);
+                  const displayTitle = getCleanModuleTitle(module.title);
                   const isActive = activeView === 'study' && activeModuleId === module.id;
                   const isLockedModule = false; // Modules are no longer locked, only subtopics are locked
 
@@ -370,11 +366,11 @@ export default function Sidebar({
                           : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/50'
                       } ${isLockedModule ? 'opacity-60' : ''}`}
                     >
-                      <div className={`p-1.5 rounded-lg ${isActive ? 'bg-zinc-700' : 'bg-zinc-800'}`}>
-                        {isLockedModule ? <Lock size={14} className="text-amber-500" /> : <LayoutGrid size={14} />}
+                      <div className={`p-1.5 rounded-lg ${isActive ? 'bg-zinc-700 text-emerald-400' : 'bg-zinc-800 text-zinc-400'}`}>
+                        {isLockedModule ? <Lock size={14} className="text-amber-500" /> : <Icon size={14} />}
                       </div>
                       <span className="text-left leading-tight truncate">
-                        {module.title.split('. ')[1]}
+                        {displayTitle}
                       </span>
                       {isLockedModule && (
                         <div className="absolute right-3">
