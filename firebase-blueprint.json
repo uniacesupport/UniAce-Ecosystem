@@ -245,9 +245,28 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id"]
+    },
+    "PublicLeaderboardEntry": {
+      "title": "PublicLeaderboardEntry",
+      "description": "Sanitized gamification profile for public leaderboard rankings",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "xp": { "type": "number" },
+        "level": { "type": "number" },
+        "streak": { "type": "number" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "xp", "level", "streak"]
     }
   },
   "firestore": {
+    "/public_leaderboard/{userId}": {
+      "schema": "PublicLeaderboardEntry",
+      "description": "Sanitized public leaderboard entries with zero PII exposure"
+    },
     "/system_config/{configId}": {
       "schema": "SystemConfig",
       "description": "System-wide pricing, support, and gamification config"

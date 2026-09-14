@@ -133,6 +133,17 @@ service cloud.firestore {
              (data.timestamp is string || data.timestamp is timestamp);
     }
 
+    function isValidPublicLeaderboard(data) {
+      return data.keys().hasOnly(['userId', 'displayName', 'photoURL', 'xp', 'level', 'streak', 'updatedAt', 'rank']) &&
+             data.userId is string && data.userId.size() < 100 &&
+             (!('displayName' in data) || data.displayName == null || (data.displayName is string && data.displayName.size() < 100)) &&
+             (!('photoURL' in data) || data.photoURL == null || (data.photoURL is string && data.photoURL.size() < 2000)) &&
+             (!('xp' in data) || data.xp == null || (data.xp is number && data.xp >= 0)) &&
+             (!('level' in data) || data.level == null || (data.level is number && data.level >= 0)) &&
+             (!('streak' in data) || data.streak == null || (data.streak is number && data.streak >= 0)) &&
+             (!('rank' in data) || data.rank == null || (data.rank is number && data.rank >= 1));
+    }
+
     // ===============================================================
     // Collection Rules
     // ===============================================================
@@ -153,17 +164,27 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow read: if isAuthenticated();
+      // Students can ONLY read their own profile; Admins & Moderators can inspect
+      allow read: if isOwner(userId) || isAdmin() || isModerator();
       
       allow update: if (isAdmin() || isModerator()) && 
+                      request.resource != null &&
+                      resource != null &&
+                      request.resource.data.uid == resource.data.uid &&
                       isValidUser(request.resource.data) &&
                       (isAdmin() || !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'plan_type', 'subscription_expiry', 'subscription_status', 'subscription_start_date', 'last_spark_reset', 'last_payment_ref']));
       
       allow update: if isOwner(userId) && 
+                      request.resource != null &&
+                      resource != null &&
+                      request.resource.data.uid == resource.data.uid &&
+                      request.resource.data.uid == userId &&
                       isValidUser(request.resource.data) &&
-                      (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'plan_type', 'subscription_expiry', 'subscription_status', 'subscription_start_date', 'last_spark_reset', 'last_payment_ref', 'xp', 'level', 'ai_sparks', 'mastery', 'achievements', 'enrolledCourses']) || isAdmin());
+                      (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['uid', 'role', 'plan_type', 'subscription_expiry', 'subscription_status', 'subscription_start_date', 'last_spark_reset', 'last_payment_ref', 'xp', 'level', 'ai_sparks', 'mastery', 'achievements', 'enrolledCourses']) || isAdmin());
       
       allow create: if isOwner(userId) && 
+                      request.resource != null &&
+                      request.resource.data.uid == userId &&
                       isValidUser(request.resource.data) &&
                       hasRequiredFields(['uid', 'email', 'displayName', 'role', 'plan_type']) &&
                       (request.resource.data.role == 'student' || isAdmin()) &&
@@ -174,14 +195,14 @@ service cloud.firestore {
       match /flashcards/{cardId} {
         allow read: if isOwner(userId) || isAdmin();
         allow create: if isOwner(userId);
-        allow update: if isOwner(userId) && request.resource.data.userId == resource.data.userId;
+        allow update: if isOwner(userId) && request.resource != null && resource != null && request.resource.data.userId == resource.data.userId;
         allow delete: if isOwner(userId) || isAdmin();
       }
 
       match /spaced_repetition/{topicId} {
         allow read: if isOwner(userId) || isAdmin();
         allow create: if isOwner(userId) && isValidSpacedRepetition(request.resource.data);
-        allow update: if isOwner(userId) && isValidSpacedRepetition(request.resource.data) && request.resource.data.userId == resource.data.userId;
+        allow update: if isOwner(userId) && request.resource != null && resource != null && isValidSpacedRepetition(request.resource.data) && request.resource.data.userId == resource.data.userId;
         allow delete: if isAdmin();
       }
     }
@@ -307,10 +328,25 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    match /public_leaderboard/{userId} {
+      // Readable by authenticated students; zero access to private user documents or fields
+      allow read: if isAuthenticated();
+      // Only Admin / Backend SDK can write to public_leaderboard with strict sanitized schema
+      allow write: if isAdmin() && isValidPublicLeaderboard(request.resource.data);
+    }
+
     match /affiliates/{affiliateId} {
-      allow read: if isAdmin() || (isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid));
+      // Tutors can only read their own affiliate record; Admins can read all (no resource == null probing)
+      allow read: if isAdmin() || (isTutor() && resource != null && resource.data.userId == request.auth.uid);
       allow write: if isAdmin();
       allow update: if isAuthenticated() &&
+                    resource != null &&
+                    request.resource != null &&
+                    request.resource.data.userId == resource.data.userId &&
+                    (!('code' in resource.data) || request.resource.data.code == resource.data.code) &&
+                    (!('refCode' in resource.data) || request.resource.data.refCode == resource.data.refCode) &&
+                    (!('createdAt' in resource.data) || request.resource.data.createdAt == resource.data.createdAt) &&
+                    (!('commissionRate' in resource.data) || request.resource.data.commissionRate == resource.data.commissionRate) &&
                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['signups', 'paidConversions']) &&
                     (
                       (request.resource.data.signups == resource.data.signups + 1) ||
@@ -325,7 +361,8 @@ service cloud.firestore {
     }
     
     match /payout_requests/{requestId} {
-      allow read: if isAdmin() || (isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid));
+      // Strict ownership check without 'resource == null' probing
+      allow read: if isAdmin() || (isAuthenticated() && resource != null && resource.data.userId == request.auth.uid);
       allow create: if false; // Through backend
       allow update, delete: if isAdmin();
     }

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useRef } from 'react';
 import { Copy, Check, Download, Layers, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
 
 export interface VennSet {
@@ -38,6 +38,7 @@ const DEFAULT_COLORS = [
 ];
 
 export default function VennDiagramViewer({ code, data }: VennDiagramViewerProps) {
+  const chartRef = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [hoveredRegion, setHoveredRegion] = useState<string | null>(null);
@@ -295,7 +296,54 @@ export default function VennDiagramViewer({ code, data }: VennDiagramViewerProps
           style={{ transform: `scale(${zoom})`, transformOrigin: 'center center', transition: 'transform 0.15s ease-out' }}
           className="w-full max-w-[540px] flex justify-center"
         >
-          <div ref={chartRef} className="venn-diagram-container" />
+          <div ref={chartRef} className="venn-diagram-container w-full flex justify-center">
+            <svg
+              id={`venn-svg-${parsedData.title?.replace(/\s+/g, '-') || 'diagram'}`}
+              viewBox={`0 0 ${width} ${height}`}
+              className="w-full h-auto max-h-[420px] select-none"
+            >
+              {/* Overlapping Circles */}
+              {setGeometry.map((geom, idx) => {
+                const col = DEFAULT_COLORS[idx % DEFAULT_COLORS.length];
+                return (
+                  <circle
+                    key={geom.name}
+                    cx={geom.cx}
+                    cy={geom.cy}
+                    r={geom.r}
+                    fill={col.fill}
+                    stroke={col.stroke}
+                    strokeWidth="2.5"
+                    className="transition-all duration-200"
+                  />
+                );
+              })}
+
+              {/* Set Labels and Cardinality */}
+              {Object.entries(labelPositions).map(([key, pos]: [string, any]) => (
+                <g key={key} className="transition-all duration-150 pointer-events-none">
+                  <text
+                    x={pos.x}
+                    y={pos.y}
+                    textAnchor="middle"
+                    className="font-bold text-xs fill-slate-900 dark:fill-zinc-100"
+                  >
+                    {pos.label}
+                  </text>
+                  {pos.size !== undefined && (
+                    <text
+                      x={pos.x}
+                      y={pos.y + 16}
+                      textAnchor="middle"
+                      className="font-mono text-[11px] fill-slate-600 dark:fill-zinc-400"
+                    >
+                      ({pos.size})
+                    </text>
+                  )}
+                </g>
+              ))}
+            </svg>
+          </div>
         </div>
       </div>
 

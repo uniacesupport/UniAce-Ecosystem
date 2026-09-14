@@ -4789,6 +4789,108 @@ app.post('/api/user/deduct-sparks-hint', verifyAuth, async (req, res) => {
   }
 });
 
+// Helper to sync sanitized public leaderboard entry
+async function syncPublicLeaderboard(firestore: admin.firestore.Firestore, uid: string) {
+  try {
+    const userDoc = await firestore.collection('users').doc(uid).get();
+    if (!userDoc.exists) return;
+    const data = userDoc.data() || {};
+    await firestore.collection('public_leaderboard').doc(uid).set({
+      userId: uid,
+      displayName: data.displayName || 'Scholar',
+      photoURL: data.photoURL || '',
+      xp: typeof data.xp === 'number' ? data.xp : 0,
+      level: typeof data.level === 'number' ? data.level : 1,
+      streak: typeof data.streak === 'number' ? data.streak : 0,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+  } catch (err) {
+    console.error('Failed to sync public leaderboard for user:', uid, err);
+  }
+}
+
+// Background batch sweep to keep top public leaderboard rankings fresh
+async function sweepAndSyncPublicLeaderboard(firestore: admin.firestore.Firestore) {
+  try {
+    const usersSnap = await firestore.collection('users').orderBy('xp', 'desc').limit(50).get();
+    if (!usersSnap.empty) {
+      const batch = firestore.batch();
+      usersSnap.docs.forEach((doc, idx) => {
+        const u = doc.data() || {};
+        const ref = firestore.collection('public_leaderboard').doc(doc.id);
+        batch.set(ref, {
+          userId: doc.id,
+          displayName: u.displayName || 'Scholar',
+          photoURL: u.photoURL || '',
+          xp: typeof u.xp === 'number' ? u.xp : 0,
+          level: typeof u.level === 'number' ? u.level : 1,
+          streak: typeof u.streak === 'number' ? u.streak : 0,
+          rank: idx + 1,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+      });
+      await batch.commit();
+      console.log(`[PublicLeaderboard] Successfully synchronized top ${usersSnap.size} scholars to /public_leaderboard.`);
+    }
+  } catch (err) {
+    console.error('[PublicLeaderboard] Error during periodic sync:', err);
+  }
+}
+
+// Public Leaderboard Endpoint (Sanitized, zero PII)
+app.get('/api/leaderboard', async (req, res) => {
+  const app = getAdminApp();
+  if (!app) {
+    return res.status(503).json({ error: 'Service unavailable' });
+  }
+
+  try {
+    const db = app.firestore();
+    let snapshot = await db.collection('public_leaderboard').orderBy('xp', 'desc').limit(10).get();
+
+    // Auto-seed public_leaderboard from users if initially empty
+    if (snapshot.empty) {
+      const usersSnap = await db.collection('users').orderBy('xp', 'desc').limit(10).get();
+      if (!usersSnap.empty) {
+        const batch = db.batch();
+        usersSnap.docs.forEach((doc) => {
+          const u = doc.data();
+          const ref = db.collection('public_leaderboard').doc(doc.id);
+          batch.set(ref, {
+            userId: doc.id,
+            displayName: u.displayName || 'Scholar',
+            photoURL: u.photoURL || '',
+            xp: u.xp || 0,
+            level: u.level || 1,
+            streak: u.streak || 0,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+          }, { merge: true });
+        });
+        await batch.commit();
+        snapshot = await db.collection('public_leaderboard').orderBy('xp', 'desc').limit(10).get();
+      }
+    }
+
+    const leaders = snapshot.docs.map((doc, idx) => {
+      const data = doc.data();
+      return {
+        uid: doc.id,
+        displayName: data.displayName || 'Scholar',
+        photoURL: data.photoURL || '',
+        xp: data.xp || 0,
+        level: data.level || 1,
+        streak: data.streak || 0,
+        rank: idx + 1
+      };
+    });
+
+    res.json({ leaders });
+  } catch (error: any) {
+    console.error('Error fetching public leaderboard:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // 5. XP Reward Endpoint
 app.post('/api/user/reward-xp', verifyAuth, async (req, res) => {
   const { amount } = req.body;
@@ -4809,6 +4911,11 @@ app.post('/api/user/reward-xp', verifyAuth, async (req, res) => {
     await userRef.update({
       xp: admin.firestore.FieldValue.increment(numAmount)
     });
+
+    // Synchronize sanitized public leaderboard entry asynchronously
+    syncPublicLeaderboard(app.firestore(), uid).catch((err) =>
+      console.error('Async leaderboard sync error:', err)
+    );
 
     res.json({ success: true });
   } catch (error: any) {
@@ -5554,14 +5661,30 @@ async function startServer() {
   });
 
   console.log('Attempting to listen on port', PORT);
-  // 5. Initialize Vector Store for AI Tutor
+  // 5. Initialize Vector Store for AI Tutor & Leaderboard Background Sync
   try {
     // Initialize in background to not block server start
     initializeVectorStore().catch(err => {
       console.error('Failed to initialize vector store:', err);
     });
+
+    const adminApp = getAdminApp();
+    if (adminApp) {
+      sweepAndSyncPublicLeaderboard(adminApp.firestore()).catch(err => {
+        console.error('Failed initial leaderboard sweep:', err);
+      });
+      // Periodic sweep every 15 minutes
+      setInterval(() => {
+        const app = getAdminApp();
+        if (app) {
+          sweepAndSyncPublicLeaderboard(app.firestore()).catch(err => {
+            console.error('Periodic leaderboard sweep error:', err);
+          });
+        }
+      }, 15 * 60 * 1000);
+    }
   } catch (error) {
-    console.error('Error starting vector store initialization:', error);
+    console.error('Error starting background services:', error);
   }
 
   const server = app.listen(PORT, '0.0.0.0', () => {

@@ -22,23 +22,47 @@ export default function Leaderboard() {
     const fetchLeaders = async () => {
       try {
         const q = query(
-          collection(db, 'users'),
+          collection(db, 'public_leaderboard'),
           orderBy('xp', 'desc'),
           limit(10)
         );
         const snapshot = await getDocs(q);
-        const data = snapshot.docs.map((doc, index) => ({
-          uid: doc.id,
-          displayName: doc.data().displayName || 'Anonymous',
-          photoURL: doc.data().photoURL || '',
-          xp: doc.data().xp || 0,
-          level: doc.data().level || 1,
-          streak: doc.data().streak || 0,
-          rank: index + 1
-        }));
-        setLeaders(data);
+        if (!snapshot.empty) {
+          const data = snapshot.docs.map((doc, index) => ({
+            uid: doc.id,
+            displayName: doc.data().displayName || 'Scholar',
+            photoURL: doc.data().photoURL || '',
+            xp: doc.data().xp || 0,
+            level: doc.data().level || 1,
+            streak: doc.data().streak || 0,
+            rank: index + 1
+          }));
+          setLeaders(data);
+          return;
+        }
+
+        // Fallback to server endpoint if collection is being populated
+        const res = await fetch('/api/leaderboard');
+        if (res.ok) {
+          const json = await res.json();
+          if (json.leaders && json.leaders.length > 0) {
+            setLeaders(json.leaders);
+            return;
+          }
+        }
       } catch (error) {
-        console.error('Error fetching leaderboard:', error);
+        console.error('Error fetching leaderboard from public_leaderboard, trying API fallback:', error);
+        try {
+          const res = await fetch('/api/leaderboard');
+          if (res.ok) {
+            const json = await res.json();
+            if (json.leaders) {
+              setLeaders(json.leaders);
+            }
+          }
+        } catch (apiErr) {
+          console.error('Fallback leaderboard API error:', apiErr);
+        }
       } finally {
         setIsLoading(false);
       }
