@@ -256,6 +256,58 @@ export default function TutorDashboard({ onBack }: TutorDashboardProps) {
             </div>
           </div>
 
+          {/* Payout Threshold Progress Visualizer & Commission Structure */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Threshold Visualizer */}
+            <div className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-3xl p-6 shadow-sm flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="font-bold text-slate-900 dark:text-white text-base">Payout Threshold Progress</h4>
+                  <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300">
+                    ₦{(affiliateData?.pendingBalance || 0).toLocaleString()} / ₦5,000
+                  </span>
+                </div>
+                {/* Progress bar */}
+                <div className="w-full bg-slate-100 dark:bg-zinc-800 h-3 rounded-full overflow-hidden mb-3">
+                  <div 
+                    className="bg-emerald-500 h-full rounded-full transition-all duration-500"
+                    style={{ width: `${Math.min(100, Math.max(0, ((affiliateData?.pendingBalance || 0) / 5000) * 100))}%` }}
+                  />
+                </div>
+                <p className="text-xs text-slate-500 dark:text-zinc-400 leading-relaxed">
+                  {(affiliateData?.pendingBalance || 0) >= 5000 ? (
+                    <span className="text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
+                      <CheckCircle2 size={14} /> Threshold unlocked! You can request your ₦{(affiliateData?.pendingBalance || 0).toLocaleString()} payout below.
+                    </span>
+                  ) : (
+                    <span>
+                      You need <strong className="text-slate-900 dark:text-white">₦{(5000 - (affiliateData?.pendingBalance || 0)).toLocaleString()}</strong> more in earnings to request a bank transfer.
+                    </span>
+                  )}
+                </p>
+              </div>
+            </div>
+
+            {/* 30% Flat Commission Breakdown */}
+            <div className="bg-slate-50 dark:bg-zinc-900/60 border border-slate-200 dark:border-zinc-800 rounded-3xl p-6 shadow-sm">
+              <h4 className="font-bold text-slate-900 dark:text-white text-base mb-3 flex items-center gap-2">
+                <span>💰</span> 30% Commission Earnings Model
+              </h4>
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div className="bg-white dark:bg-zinc-800/80 p-3 rounded-2xl border border-slate-100 dark:border-zinc-700/50">
+                  <div className="text-slate-500 font-medium">Monthly Scholar Plan</div>
+                  <div className="text-slate-900 dark:text-white font-bold text-sm mt-0.5">Student pays ₦1,500</div>
+                  <div className="text-emerald-600 dark:text-emerald-400 font-black mt-1">Tutor gets ₦450 (30%)</div>
+                </div>
+                <div className="bg-white dark:bg-zinc-800/80 p-3 rounded-2xl border border-slate-100 dark:border-zinc-700/50">
+                  <div className="text-slate-500 font-medium">Semester Bundle</div>
+                  <div className="text-slate-900 dark:text-white font-bold text-sm mt-0.5">Student pays ₦4,500</div>
+                  <div className="text-emerald-600 dark:text-emerald-400 font-black mt-1">Tutor gets ₦1,350 (30%)</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Payment Details */}
             <div className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-3xl p-8 shadow-sm">

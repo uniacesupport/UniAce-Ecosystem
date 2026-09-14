@@ -605,17 +605,26 @@ app.post('/api/paystack-webhook', async (req: any, res) => {
 
     // 2. Handle successful charge
     if (event.event === 'charge.success') {
-      const { reference, amount, customer, metadata } = event.data;
+      const { reference, amount, customer, metadata, paid_at, created_at } = event.data || {};
       const uid = metadata?.userId;
       
+      // Timestamp replay check (warn if event is older than 30 minutes)
+      const eventTime = paid_at || created_at;
+      if (eventTime) {
+        const eventTs = new Date(eventTime).getTime();
+        if (!isNaN(eventTs) && eventTs < Date.now() - 30 * 60 * 1000) {
+          console.warn(`Paystack Webhook: Received event ${reference} with timestamp ${eventTime} older than 30 mins.`);
+        }
+      }
+
       if (!uid) {
         console.error('Paystack Webhook: Missing userId in metadata', reference);
         return res.status(200).send('Missing userId'); // Still send 200 to acknowledge receipt
       }
 
-      // Process the success logic
+      // Process the success logic with metadata pass-through
       const targetPlan = metadata?.planType || metadata?.plan_type || 'scholar';
-      await processPaymentSuccess(uid, reference, amount / 100, targetPlan);
+      await processPaymentSuccess(uid, reference, amount / 100, targetPlan, metadata);
     }
 
     res.status(200).send('Webhook processed');
@@ -683,10 +692,38 @@ function parsePlanDuration(durationStr: string, planId: string): { durationDays:
 }
 
 /**
+ * In-Memory TTL Cache for dynamic commission rates (5-minute TTL)
+ */
+let commissionRateCache: { rate: number; expiry: number } | null = null;
+
+async function getDynamicCommissionRate(db: FirebaseFirestore.Firestore): Promise<number> {
+  const now = Date.now();
+  if (commissionRateCache && commissionRateCache.expiry > now) {
+    return commissionRateCache.rate;
+  }
+  let rate = 0.30; // 30% default
+  try {
+    const settingsDoc = await db.collection('settings').doc('commissions').get();
+    if (settingsDoc.exists) {
+      const data = settingsDoc.data();
+      if (typeof data?.rate === 'number' && data.rate > 0 && data.rate <= 1) {
+        rate = data.rate;
+      } else if (typeof data?.rate === 'number' && data.rate > 1) {
+        rate = data.rate / 100; // normalize percentage e.g. 30 -> 0.30
+      }
+    }
+  } catch (err) {
+    console.error('Error fetching commission rate settings, using 30% default:', err);
+  }
+  commissionRateCache = { rate, expiry: now + 5 * 60 * 1000 }; // 5 min TTL
+  return rate;
+}
+
+/**
  * Reusable logic to process a successful payment
  * Handles: Dynamic plan resolution, idempotency, user subscription, affiliate commission, and audit logs.
  */
-async function processPaymentSuccess(uid: string, reference: string, amount: number, planType: string) {
+async function processPaymentSuccess(uid: string, reference: string, amount: number, planType: string, metadata?: any) {
   const app = getAdminApp();
   if (!app) throw new Error('Firebase Admin app not initialized');
 
@@ -764,21 +801,47 @@ async function processPaymentSuccess(uid: string, reference: string, amount: num
     }
   }
 
-  // 2b. Fetch Dynamic Commission Rate from Settings
-  let commissionRate = 0.30; // Global Default
-  try {
-    const settingsDoc = await db.collection('settings').doc('commissions').get();
-    if (settingsDoc.exists) {
-      const data = settingsDoc.data();
-      if (typeof data?.rate === 'number') {
-        commissionRate = data.rate;
-      }
+  // 2b. Dual-Source & Email Fallback Referral Attribution
+  let refCode: string | null = null;
+  
+  // Source 1: User Profile
+  if (userData?.referredBy && typeof userData.referredBy === 'string' && userData.referredBy.trim()) {
+    refCode = userData.referredBy.trim().toUpperCase();
+  }
+  
+  // Source 2: Metadata passed from Paystack
+  if (!refCode && metadata) {
+    const metaRef = metadata.referredBy || metadata.refCode || metadata.referred_by || metadata.ref_code;
+    if (metaRef && typeof metaRef === 'string' && metaRef.trim()) {
+      refCode = metaRef.trim().toUpperCase();
     }
-  } catch (err) {
-    console.error('Error fetching commission rate settings, using default 30%');
   }
 
-  const commissionAmount = amount * commissionRate;
+  // Source 3: Email matching fallback
+  if (!refCode && (userData?.email || userData?.secondary_email)) {
+    try {
+      const userEmail = (userData.email || userData.secondary_email).toLowerCase().trim();
+      const affByEmailSnap = await db.collection('affiliates').where('email', '==', userEmail).limit(1).get();
+      if (!affByEmailSnap.empty) {
+        refCode = affByEmailSnap.docs[0].id.toUpperCase();
+      }
+    } catch (e) {
+      console.warn('Affiliate email matching fallback failed:', e);
+    }
+  }
+
+  // Ensure user profile has referredBy populated if refCode was found via fallback
+  if (refCode && !userData?.referredBy) {
+    try {
+      await userRef.update({ referredBy: refCode });
+    } catch (e) {
+      console.warn('Could not update user referredBy field:', e);
+    }
+  }
+
+  // Fetch Dynamic Commission Rate from Settings (TTL Cached)
+  const commissionRate = await getDynamicCommissionRate(db);
+  const commissionAmount = refCode ? (amount * commissionRate) : 0;
 
   // 3. Perform atomic updates
   await db.runTransaction(async (transaction) => {
@@ -795,8 +858,8 @@ async function processPaymentSuccess(uid: string, reference: string, amount: num
       status: 'success',
       timestamp: admin.firestore.FieldValue.serverTimestamp(),
       sparks_added: sparksToAdd,
-      referred_by: userData?.referredBy || null,
-      commission_amount: userData?.referredBy ? commissionAmount : 0
+      referred_by: refCode || null,
+      commission_amount: commissionAmount
     });
 
     // Update User Subscription / Sparks
@@ -815,7 +878,6 @@ async function processPaymentSuccess(uid: string, reference: string, amount: num
         userUpdatePayload.subscription_expiry = expiryDate.toISOString();
       }
     } else {
-      // For top-up, preserve existing plan_type or default to 'free'
       if (!userData?.plan_type) {
         userUpdatePayload.plan_type = 'free';
       }
@@ -824,8 +886,8 @@ async function processPaymentSuccess(uid: string, reference: string, amount: num
     transaction.update(userRef, userUpdatePayload);
 
     // Track affiliate conversion and financials
-    if (userData?.referredBy) {
-      const affiliateRef = db.collection('affiliates').doc(userData.referredBy);
+    if (refCode) {
+      const affiliateRef = db.collection('affiliates').doc(refCode);
       transaction.set(affiliateRef, {
         paidConversions: admin.firestore.FieldValue.increment(1),
         totalEarned: admin.firestore.FieldValue.increment(commissionAmount),
@@ -834,21 +896,23 @@ async function processPaymentSuccess(uid: string, reference: string, amount: num
       }, { merge: true });
 
       // Create detailed earnings record for audit
-      const earningRef = db.collection('affiliate_earnings').doc(`${userData.referredBy}_${reference}`);
+      const earningRef = db.collection('affiliate_earnings').doc(`${refCode}_${reference}`);
       transaction.set(earningRef, {
-        affiliateId: userData.referredBy,
+        affiliateId: refCode,
         userId: uid,
-        userEmail: userData.email,
+        userEmail: userData?.email || null,
         paymentId: reference,
         amount: amount,
         commissionRate: commissionRate,
         commissionAmount: commissionAmount,
+        payoutStatus: 'unpaid',
+        payoutId: null,
         timestamp: admin.firestore.FieldValue.serverTimestamp()
       });
     }
   });
 
-  console.log(`Payment processed successfully for ${uid} (Plan: ${planName}, Added: ${sparksToAdd} Sparks, TopUp: ${isTopUp}, Ref: ${reference})`);
+  console.log(`Payment processed successfully for ${uid} (Plan: ${planName}, Added: ${sparksToAdd} Sparks, TopUp: ${isTopUp}, Ref: ${reference}, RefCode: ${refCode || 'none'})`);
 }
 
 // Strict Rate Limiter for AI Generation Endpoints (Denial of Wallet Protection)
@@ -888,10 +952,11 @@ const clickTrackingLimiter = rateLimit({
 
 app.post('/api/track-click', clickTrackingLimiter, async (req, res) => {
   try {
-    const { refCode } = req.body || {};
-    if (!refCode || typeof refCode !== 'string') {
+    const rawRefCode = req.body?.refCode;
+    if (!rawRefCode || typeof rawRefCode !== 'string') {
       return res.status(400).json({ error: 'Missing or invalid refCode' });
     }
+    const refCode = rawRefCode.trim().toUpperCase();
     
     // Server-side click tracking logic
     const app = getAdminApp();
@@ -927,10 +992,11 @@ app.post('/api/track-click', clickTrackingLimiter, async (req, res) => {
 
 app.post('/api/track-signup', clickTrackingLimiter, async (req, res) => {
   try {
-    const { refCode, newUserId } = req.body || {};
-    if (!refCode || typeof refCode !== 'string') {
+    const { refCode: rawRefCode, newUserId } = req.body || {};
+    if (!rawRefCode || typeof rawRefCode !== 'string') {
       return res.status(400).json({ error: 'Missing or invalid refCode' });
     }
+    const refCode = rawRefCode.trim().toUpperCase();
     
     // Server-side signup tracking logic
     const app = getAdminApp();
@@ -2507,23 +2573,22 @@ app.post('/api/affiliate/request-payout', verifyAuth, async (req, res) => {
     const app = getAdminApp();
     const db = app.firestore();
     
-    // Use transaction to ensure safe balance reading and updating
-    const result = await db.runTransaction(async (transaction) => {
-        const querySnapshot = await transaction.get(db.collection('affiliates').where('userId', '==', uid).limit(1));
-        if (querySnapshot.empty) {
-            throw new Error('Affiliate record not found');
-        } // NOTE: transaction.get with query is not supported in some older sdk versions, but usually it is in recent server sdks.
-        // Actually, let's get the document ref outside or use the query.
-        return querySnapshot;
-    });
-    // Wait, transaction.get() on a Query is supported in Node.js Admin SDK, but let's be careful. Let's do it easier:
-    
-    // Find the doc outside the transaction first to get the ref, then read it IN the transaction.
+    // Find the affiliate doc first
     const affSnapshot = await db.collection('affiliates').where('userId', '==', uid).limit(1).get();
     if (affSnapshot.empty) {
         return res.status(404).json({ error: 'Affiliate record not found' });
     }
-    const affDocRef = affSnapshot.docs[0].ref;
+    const affDoc = affSnapshot.docs[0];
+    const affDocRef = affDoc.ref;
+    const affiliateId = affDoc.id;
+
+    // Fetch unpaid earnings for this affiliate to create an immutable link
+    const unpaidEarningsSnap = await db.collection('affiliate_earnings')
+      .where('affiliateId', '==', affiliateId)
+      .where('payoutStatus', '==', 'unpaid')
+      .get();
+
+    const earningIds = unpaidEarningsSnap.docs.map(doc => doc.id);
     
     const amountRequested = await db.runTransaction(async (transaction) => {
         const docSnap = await transaction.get(affDocRef);
@@ -2544,6 +2609,7 @@ app.post('/api/affiliate/request-payout', verifyAuth, async (req, res) => {
              affiliateId: docSnap.id,
              amount: pendingAmount,
              payoutDetails: affData.payoutDetails,
+             earningIds: earningIds,
              status: 'pending',
              createdAt: admin.firestore.FieldValue.serverTimestamp()
         });
@@ -2551,6 +2617,14 @@ app.post('/api/affiliate/request-payout', verifyAuth, async (req, res) => {
         transaction.update(affDocRef, {
              pendingBalance: admin.firestore.FieldValue.increment(-pendingAmount)
         });
+
+        // Mark individual earnings as linked to this requested payout
+        for (const earningDoc of unpaidEarningsSnap.docs) {
+          transaction.update(earningDoc.ref, {
+            payoutId: payoutRef.id,
+            payoutStatus: 'requested'
+          });
+        }
         
         return pendingAmount;
     });
@@ -2560,6 +2634,74 @@ app.post('/api/affiliate/request-payout', verifyAuth, async (req, res) => {
   } catch (error: any) {
     console.error('Error requesting payout:', error);
     res.status(400).json({ error: error.message || 'Failed to request payout' });
+  }
+});
+
+// Admin Automated Paystack Reconciliation Endpoint
+app.post('/api/admin/reconcile-paystack', verifyAuth, async (req, res) => {
+  try {
+    const adminUid = (req as any).user.uid;
+    const app = getAdminApp();
+    const db = app.firestore();
+
+    const adminDoc = await db.collection('users').doc(adminUid).get();
+    const isUserAdmin = adminDoc.exists && adminDoc.data()?.role === 'admin';
+    if (!isUserAdmin && !isAdminEmail((req as any).user?.email)) {
+      return res.status(403).json({ error: 'Unauthorized admin access' });
+    }
+
+    // Pull last 100 payments for audit cross-verification
+    const paymentsSnap = await db.collection('payments').orderBy('timestamp', 'desc').limit(100).get();
+    const earningsSnap = await db.collection('affiliate_earnings').limit(200).get();
+
+    const earningsMap = new Map<string, any>();
+    earningsSnap.docs.forEach(doc => {
+      const data = doc.data();
+      if (data.paymentId) {
+        earningsMap.set(data.paymentId, data);
+      }
+    });
+
+    let totalRevenue = 0;
+    let totalCommissionsPaid = 0;
+    let totalReferredPayments = 0;
+    const discrepancies: any[] = [];
+
+    paymentsSnap.docs.forEach(doc => {
+      const p = doc.data();
+      totalRevenue += (p.amount || 0);
+
+      if (p.referred_by) {
+        totalReferredPayments++;
+        const matchingEarning = earningsMap.get(p.reference);
+        if (!matchingEarning) {
+          discrepancies.push({
+            type: 'MISSING_EARNING_RECORD',
+            reference: p.reference,
+            referredBy: p.referred_by,
+            amount: p.amount
+          });
+        } else {
+          totalCommissionsPaid += (matchingEarning.commissionAmount || 0);
+        }
+      }
+    });
+
+    res.json({
+      success: true,
+      auditedAt: new Date().toISOString(),
+      summary: {
+        totalPaymentsAudited: paymentsSnap.size,
+        totalRevenue,
+        totalReferredPayments,
+        totalCommissionsAccrued: totalCommissionsPaid,
+        discrepanciesFound: discrepancies.length
+      },
+      discrepancies
+    });
+  } catch (error: any) {
+    console.error('Reconciliation error:', error);
+    res.status(500).json({ error: error.message || 'Failed to reconcile payments' });
   }
 });
 
