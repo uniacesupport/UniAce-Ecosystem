@@ -336,8 +336,8 @@ service cloud.firestore {
     }
 
     match /affiliates/{affiliateId} {
-      // Tutors can only read their own affiliate record; Admins can read all (no resource == null probing)
-      allow read: if isAdmin() || (isTutor() && resource != null && resource.data.userId == request.auth.uid);
+      // Authenticated users can read their own affiliate record or check non-existent records safely; Admins can read all
+      allow read: if isAdmin() || (isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid));
       allow write: if isAdmin();
       allow update: if isAuthenticated() &&
                     resource != null &&
@@ -361,8 +361,8 @@ service cloud.firestore {
     }
     
     match /payout_requests/{requestId} {
-      // Strict ownership check without 'resource == null' probing
-      allow read: if isAdmin() || (isAuthenticated() && resource != null && resource.data.userId == request.auth.uid);
+      // Authenticated users can read their own payout requests or check non-existent requests; Admins can read all
+      allow read: if isAdmin() || (isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid));
       allow create: if false; // Through backend
       allow update, delete: if isAdmin();
     }

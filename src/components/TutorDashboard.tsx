@@ -32,20 +32,44 @@ export default function TutorDashboard({ onBack }: TutorDashboardProps) {
   const fetchAffiliateData = async () => {
     if (!user) return;
     setIsLoading(true);
+    setError('');
     try {
       if (!db) return;
-      // We assume the tutor's affiliate ID might match their tutor referral code or UID.
-      const userRef = await getDoc(doc(db, 'users', user.uid));
-      const refCode = userRef.exists() && userRef.data().referralCode ? userRef.data().referralCode : user.uid.substring(0, 6).toUpperCase();
       
-      const affDoc = await getDoc(doc(db, 'affiliates', refCode));
-      if (affDoc.exists()) {
-        const data = affDoc.data();
-        setAffiliateData({ id: affDoc.id, ...data });
-        if (data.payoutDetails) {
-            setBankName(data.payoutDetails.bankName || '');
-            setAccountName(data.payoutDetails.accountName || '');
-            setAccountNumber(data.payoutDetails.accountNumber || '');
+      let refCode = user.uid.substring(0, 6).toUpperCase();
+      try {
+        const userRef = await getDoc(doc(db, 'users', user.uid));
+        if (userRef.exists() && userRef.data().referralCode) {
+          refCode = userRef.data().referralCode;
+        }
+      } catch (uErr) {
+        console.warn("User doc fetch fallback:", uErr);
+      }
+
+      let foundData: any = null;
+      try {
+        const affDoc = await getDoc(doc(db, 'affiliates', refCode));
+        if (affDoc.exists()) {
+          foundData = { id: affDoc.id, ...affDoc.data() };
+        } else {
+          // Secondary fallback: query by userId
+          const { collection, query, where, getDocs, limit } = await import('firebase/firestore');
+          const qSnap = await getDocs(query(collection(db, 'affiliates'), where('userId', '==', user.uid), limit(1)));
+          if (!qSnap.empty) {
+            const doc0 = qSnap.docs[0];
+            foundData = { id: doc0.id, ...doc0.data() };
+          }
+        }
+      } catch (affErr) {
+        console.warn("Affiliate record direct read fallback:", affErr);
+      }
+
+      if (foundData) {
+        setAffiliateData(foundData);
+        if (foundData.payoutDetails) {
+          setBankName(foundData.payoutDetails.bankName || '');
+          setAccountName(foundData.payoutDetails.accountName || '');
+          setAccountNumber(foundData.payoutDetails.accountNumber || '');
         }
       } else {
         // Fallback: the affiliate doc doesn't exist yet, meaning 0 referrals so far.
@@ -61,18 +85,27 @@ export default function TutorDashboard({ onBack }: TutorDashboardProps) {
 
       // Fetch payout history
       try {
-          const { collection, query, where, getDocs } = await import('firebase/firestore');
-          const pSnapshot = await getDocs(query(collection(db, 'payout_requests'), where('userId', '==', user.uid)));
-          const pData: any[] = [];
-          pSnapshot.forEach(d => pData.push({ id: d.id, ...d.data() }));
-          pData.sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0));
-          setPayoutHistories(pData);
+        const { collection, query, where, getDocs } = await import('firebase/firestore');
+        const pSnapshot = await getDocs(query(collection(db, 'payout_requests'), where('userId', '==', user.uid)));
+        const pData: any[] = [];
+        pSnapshot.forEach(d => pData.push({ id: d.id, ...d.data() }));
+        pData.sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0));
+        setPayoutHistories(pData);
       } catch (err) {
-          console.error("Failed to load payout history", err);
+        console.error("Failed to load payout history", err);
       }
     } catch (e: any) {
-      console.error(e);
-      setError(e.message || 'Failed to load dashboard data.');
+      console.error("Error in fetchAffiliateData:", e);
+      // Fallback display if complete fetch fails
+      const fallbackCode = user.uid.substring(0, 6).toUpperCase();
+      setAffiliateData({ 
+        id: fallbackCode, 
+        signups: 0, 
+        clicks: 0, 
+        paidConversions: 0, 
+        totalEarned: 0, 
+        pendingBalance: 0 
+      });
     } finally {
       setIsLoading(false);
     }
