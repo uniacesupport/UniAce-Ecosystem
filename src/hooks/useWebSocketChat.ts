@@ -9,56 +9,68 @@ export const useWebSocketChat = () => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      setIsConnected(false);
+      return;
+    }
+
+    let isMounted = true;
 
     const connect = async () => {
       try {
         const token = await user.getIdToken();
+        if (!token || !isMounted) return;
+
         // Use wss:// for https, ws:// for http
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const host = window.location.host;
-        const wsUrl = `${protocol}//${host}/api/chat?token=${token}`;
+        const wsUrl = `${protocol}//${host}/api/chat?token=${encodeURIComponent(token)}`;
 
-        console.log('Connecting to WebSocket:', wsUrl);
         const ws = new WebSocket(wsUrl);
 
         ws.onopen = () => {
-          console.log('WS Connected');
-          if (wsRef.current === ws) {
+          if (isMounted && wsRef.current === ws) {
             setIsConnected(true);
             setError(null);
           }
         };
 
-        ws.onclose = (event) => {
-          console.log('WS Closed', event.code, event.reason);
-          if (wsRef.current === ws) {
+        ws.onclose = () => {
+          if (isMounted && wsRef.current === ws) {
             setIsConnected(false);
           }
         };
 
-        ws.onerror = (err) => {
-          console.error('WS Error', err);
-          if (wsRef.current === ws) {
-            setError('Connection error');
+        ws.onerror = () => {
+          // In iframe or restricted environments, WebSocket may be blocked.
+          // Silently mark as disconnected so ChatBot smoothly uses HTTP streaming.
+          if (isMounted && wsRef.current === ws) {
+            setIsConnected(false);
+            setError('WebSocket unavailable');
           }
         };
 
         wsRef.current = ws;
-      } catch (e) {
-        console.error('WS Setup Error', e);
-        setError('Failed to setup connection');
+      } catch (e: any) {
+        if (isMounted) {
+          setIsConnected(false);
+          setError('Failed to setup connection');
+        }
       }
     };
 
-    connect().catch(err => {
-      console.error('Failed to connect to WebSocket:', err);
-      setError('Connection failed');
+    connect().catch(() => {
+      if (isMounted) {
+        setIsConnected(false);
+      }
     });
 
     return () => {
+      isMounted = false;
       if (wsRef.current) {
-        wsRef.current.close();
+        try {
+          wsRef.current.close();
+        } catch (_) {}
         wsRef.current = null;
       }
     };

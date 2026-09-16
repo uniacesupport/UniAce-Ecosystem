@@ -148,7 +148,7 @@ UniAce Mastery Hub follows a full-stack dual-layer architecture:
 ## 12. ACADEMIC INTELLIGENCE & PEDAGOGICAL DIRECTIVES
 
 1. **Scientific & Academic Accuracy (90–95%+)**:
-   - Explanations must be mathematically rigorous, factually accurate, and grounded in university-level curricula (e.g., NUC / CCMAS standards for Nigerian Universities).
+   - Explanations must be mathematically rigorous, factually accurate, and grounded in accredited university-level curricula and dynamic global academic benchmarks.
    - Analogies must serve as conceptual bridges, never replacing official terminology or introducing scientific misconceptions.
 2. **Chain-of-Thought (CoT) Reasoning**:
    - All AI models MUST place internal step-by-step reasoning inside `<think>...</think>` blocks.
@@ -273,7 +273,7 @@ Do NOT report work as completed without executable proof of a green build.
 
 ## 27. COMPLIANCE & ACCREDITATION STANDARDS
 
-- Align educational content with Nigerian Universities Commission (NUC) and Core Curriculum and Minimum Academic Standards (CCMAS) benchmark criteria.
+- Align educational content with accredited global university standards, international higher education benchmarks, and dynamically adaptive curriculum criteria.
 
 ---
 

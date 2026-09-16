@@ -19,8 +19,7 @@ import PWAInstallPrompt from './components/PWAInstallPrompt';
 import Calculator from './components/Calculator';
 import ErrorBoundary from './components/ErrorBoundary';
 
-
-// Static standard imports of views to eliminate dynamic loading pauses
+// Direct imports for instant, zero-latency navigation across all tabs
 import QuizHub from './components/QuizHub';
 import FlashcardHub from './components/FlashcardHub';
 import PastQuestions from './components/PastQuestions';
@@ -248,9 +247,7 @@ function AppContent() {
   };
 
   const handleViewSelect = (view: View) => {
-    startTransition(() => {
-      setActiveView(view);
-    });
+    setActiveView(view);
     if (window.innerWidth < 1024) {
       setIsSidebarOpen(false);
     }
@@ -265,23 +262,44 @@ function AppContent() {
   }, []);
 
   useEffect(() => {
+    let isSubscribed = true;
     if (user && chatMessages.length === 0) {
-      user.getIdToken().then(token => {
-        fetch('/api/chat/nudge', {
-          headers: { 'Authorization': `Bearer ${token}` }
+      user.getIdToken()
+        .then(token => {
+          if (!token) return;
+          return fetch('/api/chat/nudge', {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
         })
-        .then(res => res.json())
+        .then(res => {
+          if (!res || !res.ok) return null;
+          return res.json();
+        })
         .then(data => {
-          if (data.message) {
+          if (isSubscribed && data?.message) {
             setChatMessages([{
+              id: `nudge-${Date.now()}`,
               role: 'model',
-              text: data.message
+              text: data.message,
+              timestamp: new Date().toISOString()
             }]);
           }
         })
-        .catch(err => console.error('Failed to fetch nudge:', err));
-      });
+        .catch(err => {
+          console.warn('Personalized nudge not retrieved, using default welcome message:', err?.message || err);
+          if (isSubscribed && chatMessages.length === 0) {
+            setChatMessages([{
+              id: 'nudge-welcome-initial',
+              role: 'model',
+              text: "Hello! I'm UniAce AI, your university academic tutor. How can I help you study today?",
+              timestamp: new Date().toISOString()
+            }]);
+          }
+        });
     }
+    return () => {
+      isSubscribed = false;
+    };
   }, [user]);
 
   if (!isConfigured) {
@@ -725,6 +743,11 @@ function AppContent() {
             onToggleCalculator={() => setIsCalculatorOpen(!isCalculatorOpen)}
             onOpenVoiceTutor={() => setIsVoiceTutorOpen(true)}
             onPdfTextChange={setActivePdfText}
+            onSaveBookmark={(b) => addBookmark(b.content, b.type, b.note)}
+            onSelectTopicContext={(cId, mTitle, sTitle, content) => {
+              setActiveCourseId(cId);
+              if (content) setActiveLessonContent(content);
+            }}
           />
         )}
       </div>
@@ -746,6 +769,11 @@ function AppContent() {
             onToggleCalculator={() => setIsCalculatorOpen(!isCalculatorOpen)}
             onOpenVoiceTutor={() => setIsVoiceTutorOpen(true)}
             onPdfTextChange={setActivePdfText}
+            onSaveBookmark={(b) => addBookmark(b.content, b.type, b.note)}
+            onSelectTopicContext={(cId, mTitle, sTitle, content) => {
+              setActiveCourseId(cId);
+              if (content) setActiveLessonContent(content);
+            }}
           />
         </>
       )}
@@ -766,11 +794,11 @@ function AppContent() {
           onClose={() => setIsVoiceTutorOpen(false)} 
           pdfContent={activePdfText || undefined}
           personality={progress?.aiPersonality}
-          systemInstruction={`You are UniAce, a Senior Academic AI Tutor. You follow the Nigerian University System (NUC/CCMAS) standards for curriculum alignment, but your primary role is to teach the specific academic subject the student is currently studying.
+          systemInstruction={`You are UniAce, a Senior Academic AI Tutor. You dynamically adapt to accredited global university curriculum standards and international academic benchmarks, with your primary role being to teach the specific academic subject the student is currently studying.
 
 Your teaching strategy:
 1. SUBJECT FOCUS: Your primary goal is to explain the current academic topic (e.g., Science, Math, Engineering).
-2. NUC ALIGNMENT: Use NUC/CCMAS standards to ensure the content is exam-ready for Nigerian universities.
+2. CURRICULUM ALIGNMENT: Dynamically align with accredited global university standards to ensure the content is exam-ready and globally competitive.
 3. INTERNATIONAL DEPTH: Do not just list facts. Provide deep, step-by-step explanations, clear derivations, and multiple worked examples.
 4. UNIACE TUTOR STYLE: 
    - Use simple, relatable language for complex parts.
@@ -778,7 +806,7 @@ Your teaching strategy:
    - Add a "Step-by-Step Breakdown" for any calculation or complex process.
    - Include 2-3 "Self-Check Questions" at the end of the content.
 
-CRITICAL: Do NOT discuss university administration, the NUC, or CCMAS organizations unless the student's current topic is specifically about them. Use these standards as a background framework, not as the subject of conversation.`}
+CRITICAL: Do NOT discuss university administration or specific regulatory agencies unless the student's current topic is specifically about them. Focus 100% on academic mastery.`}
         />
       )}
 

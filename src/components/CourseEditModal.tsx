@@ -20,6 +20,8 @@ export default function CourseEditModal({ course, onClose, onSave }: CourseEditM
   const [level, setLevel] = useState<Level | undefined>(course.level);
   const [semester, setSemester] = useState<Semester | undefined>(course.semester);
   const [scope, setScope] = useState<CourseScope | undefined>(course.scope || 'GLOBAL');
+  const [academicStandard, setAcademicStandard] = useState<string>(course.academicStandard || 'Globally Adaptive (Universal University Standard)');
+  const [customStandard, setCustomStandard] = useState<string>('');
   const [faculties, setFaculties] = useState<string[]>(course.faculties || []);
   const [departments, setDepartments] = useState<Department[]>(course.departments || []);
   const [modules, setModules] = useState<Module[]>(course.syllabus);
@@ -30,6 +32,10 @@ export default function CourseEditModal({ course, onClose, onSave }: CourseEditM
   const handleSave = async () => {
     setIsSaving(true);
     try {
+      const activeStandard = academicStandard === 'Custom Academic Benchmark'
+        ? (customStandard.trim() || 'Custom Dynamic Academic Benchmark')
+        : academicStandard;
+
       const courseRef = doc(db, 'courses', course.id);
       await updateDoc(courseRef, {
         title,
@@ -37,6 +43,7 @@ export default function CourseEditModal({ course, onClose, onSave }: CourseEditM
         level,
         semester,
         scope,
+        academicStandard: activeStandard,
         faculties: scope === 'FACULTY' ? faculties : [],
         departments: scope === 'DEPARTMENT' ? departments : [],
         syllabus: modules
@@ -181,6 +188,39 @@ export default function CourseEditModal({ course, onClose, onSave }: CourseEditM
                 <option value="DEPARTMENT">Department</option>
               </select>
             </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">
+              Academic Standard & Curriculum Framework
+            </label>
+            <select
+              value={academicStandard}
+              onChange={(e) => setAcademicStandard(e.target.value)}
+              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            >
+              <option value="Globally Adaptive (Universal University Standard)">Globally Adaptive (Universal University Standard)</option>
+              <option value="International Higher Education Curriculum Standard">International Higher Education Curriculum Standard</option>
+              <option value="Global Accreditation & Outcomes-Based Framework">Global Accreditation & Outcomes-Based Framework</option>
+              <option value="North American University Benchmark (ABET/CSAB Aligned)">North American University Benchmark (ABET/CSAB Aligned)</option>
+              <option value="European Higher Education Area / Bologna Process">European Higher Education Area / Bologna Process</option>
+              <option value="Commonwealth Higher Education Quality Framework">Commonwealth Higher Education Quality Framework</option>
+              <option value="Custom Academic Benchmark">Custom Academic Benchmark (Enter Custom Standard)...</option>
+            </select>
+            {academicStandard === 'Custom Academic Benchmark' && (
+              <div className="mt-3">
+                <input
+                  type="text"
+                  placeholder="e.g., Oxford/Cambridge Tripos, IEEE/ACM 2023, National University Benchmark"
+                  value={customStandard}
+                  onChange={(e) => setCustomStandard(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-slate-900 border border-emerald-300 dark:border-emerald-700 rounded-xl px-4 py-2 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  Courses and AI tutoring for this course will dynamically calibrate to this accredited academic standard.
+                </p>
+              </div>
+            )}
           </div>
 
           {scope === 'FACULTY' && (

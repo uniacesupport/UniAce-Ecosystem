@@ -3,7 +3,7 @@ import { Module, SubTopic, QuizQuestion, QuestionType, ChatMessage, CourseId, Us
 import { jsonrepair } from 'jsonrepair';
 import { getValidator } from './validators';
 import { classifySubject } from './validators/classifier';
-import { MathEngine } from './mathEngine';
+import { auth } from '../firebase';
 import { CourseService } from './courseService';
 import {
   safeParseAIResponse,
@@ -20,7 +20,6 @@ import {
 
 const getAuthToken = async () => {
   try {
-    const { auth } = await import('../firebase');
     return await auth?.currentUser?.getIdToken(true);
   } catch (e) {
     return null;
@@ -206,9 +205,14 @@ export const AIService = {
         const equationMatch = lastUserMessage.text.match(/([a-zA-Z0-9\+\-\*\/\^]+)\s*=\s*([a-zA-Z0-9\+\-\*\/\^]+)/);
         if (equationMatch) {
           const [_, left, right] = equationMatch;
-          const isCorrect = MathEngine.compare(left, right);
-          if (!isCorrect) {
-            lastUserMessage.text = `${lastUserMessage.text}\n\n[MATH ENGINE VERIFICATION: The equation ${left} = ${right} appears to be mathematically incorrect.]`;
+          try {
+            const { MathEngine } = await import('./mathEngine');
+            const isCorrect = MathEngine.compare(left, right);
+            if (!isCorrect) {
+              lastUserMessage.text = `${lastUserMessage.text}\n\n[MATH ENGINE VERIFICATION: The equation ${left} = ${right} appears to be mathematically incorrect.]`;
+            }
+          } catch (e) {
+            console.warn('Math engine comparison skipped:', e);
           }
         }
       }
@@ -237,7 +241,7 @@ export const AIService = {
       'humorous': 'Be funny, make math puns, and keep the tone lighthearted. Act like a witty study buddy.'
     }[personality];
 
-    const systemInstruction = `You are UniAce, the official AI Study Companion for the UniAce platform. You follow the Nigerian University System (NUC/CCMAS) standards for curriculum alignment, but your primary role is to teach the specific academic subject the student is currently studying.
+    const systemInstruction = `You are UniAce, the official AI Study Companion for the UniAce platform. You dynamically adapt to accredited global university curriculum standards and international academic benchmarks, with your primary role being to teach the specific academic subject the student is currently studying.
 
 UNIACE ECOSYSTEM:
 You are part of the UniAce app. NEVER recommend external websites, third-party platforms, or outside resources (e.g., Khan Academy, Coursera, YouTube, Wolfram Alpha, ChatGPT, etc.). If a student needs more help, guide them to explore other modules, lessons, practice quizzes, or flashcards within the UniAce app.
@@ -272,7 +276,7 @@ For every response, follow this structure:
    - [ ] Are new terms formally defined and connected to real-world applications?
    - [ ] If I am unsure of any detail, have I admitted this uncertainty instead of guessing?
 
-CRITICAL: Do NOT discuss university administration, the NUC, or CCMAS organizations unless the student's current topic is specifically about them. Use these standards as a background framework for quality, but do not make them the subject of conversation. If the student asks about their topic, focus 100% on the academic content.
+CRITICAL: Do NOT discuss university administration or specific regulatory agencies unless the student's current topic is specifically about them. Ground your instruction in globally adaptive academic excellence, focusing 100% on the subject matter.
 5. OPTIONAL DEEP DIVE: If the topic is complex, expand step-by-step.
 
 ADAPTIVE LEARNING LEVELS:
@@ -366,7 +370,7 @@ CRITICAL: Calibrate the tone and complexity to the student's level (${level || '
 CRITICAL: Your message MUST be about the CURRENT STUDY TOPIC (${subTopic.title}). 
 CRITICAL: You MUST acknowledge the topic in your VERY FIRST sentence. For example: "Hey! I see you're diving into ${subTopic.title}—how's it going?" or "Ready to master ${subTopic.title}? I'm here if you need a hand!"
 STRICT NEGATIVE CONSTRAINT: Do NOT provide any explanation, summary, or facts about the topic. Do NOT teach. Do NOT include LaTeX formulas.
-Do NOT discuss the NUC, CCMAS, or university administration unless the topic itself is about them.
+Do NOT discuss university administration or regulatory agencies unless the topic itself is about them.
 - If the topic relates to their weaknesses, gently offer to explain it differently or provide a simpler analogy.
 - If it relates to their strengths, suggest a quick challenge or quiz.
 Always end by asking if they want a quick quiz or a simpler explanation.
@@ -429,7 +433,7 @@ Format the output beautifully using Markdown and LaTeX for math.
       `;
     }
 
-    const systemInstruction = `You are UniAce, the official AI Study Companion for the UniAce platform. You follow the Nigerian University System (NUC/CCMAS) standards for curriculum alignment, but your primary role is to teach the specific academic subject the student is currently studying.
+    const systemInstruction = `You are UniAce, the official AI Study Companion for the UniAce platform. You dynamically adapt to accredited global university curriculum standards and international academic benchmarks, with your primary role being to teach the specific academic subject the student is currently studying.
 
 UNIACE ECOSYSTEM:
 You are part of the UniAce app. NEVER recommend external websites, third-party platforms, or outside resources (e.g., Khan Academy, Coursera, YouTube, Wolfram Alpha, ChatGPT, etc.). If a student needs more help, guide them to explore other modules, lessons, practice quizzes, or flashcards within the UniAce app.
@@ -449,7 +453,7 @@ ${mode === 'proactive' ? `2. PROACTIVE CHECK-IN MODE:
    - You MUST NOT explain the topic. 
    - You are ONLY checking if the student needs help or a challenge.
    - Keep it extremely brief (2-3 sentences max).
-   - Do NOT use analogies, do NOT highlight exam pitfalls, do NOT break down processes. Just say hi and ask how they are doing with the topic.` : `2. NUC ALIGNMENT: Use NUC/CCMAS standards to ensure the content is exam-ready for Nigerian universities.
+   - Do NOT use analogies, do NOT highlight exam pitfalls, do NOT break down processes. Just say hi and ask how they are doing with the topic.` : `2. CURRICULUM ALIGNMENT: Dynamically align with accredited global university standards and international benchmarks to ensure the content is exam-ready and globally competitive.
 3. UNIACE TUTOR STYLE (LECTURER GUIDELINES): 
    - THE "WHY" BEFORE THE "HOW": Introduce the topic by explaining why understanding it is essential for professionals in the field, moving away from dry definitions.
    - COMPARATIVE & MULTI-DIMENSIONAL EXPLANATIONS: Structure complex topics using clear Comparison Tables where applicable. Ensure tables are properly formatted in Markdown.
@@ -459,7 +463,7 @@ ${mode === 'proactive' ? `2. PROACTIVE CHECK-IN MODE:
    - Break down complex processes step-by-step.
    - Format the output beautifully using Markdown and LaTeX for math. Use standard $...$ for inline and $$...$$ for block. Ensure all dollar signs are balanced and correctly closed.`}
 
-CRITICAL: Do NOT discuss university administration, the NUC, or CCMAS organizations unless the student's current topic is specifically about them. Use these standards as a background framework, not as the subject of conversation.
+CRITICAL: Do NOT discuss university administration or specific regulatory agencies unless the student's current topic is specifically about them. Focus 100% on academic mastery.
 
 ENGAGEMENT:
 - Always end your response by asking a direct, engaging question to check the student's understanding.

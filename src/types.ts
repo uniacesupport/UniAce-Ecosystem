@@ -21,6 +21,7 @@ export interface Course {
   scope?: CourseScope;
   level?: Level;
   semester?: Semester;
+  academicStandard?: string;
   deleted?: boolean;
   deletedAt?: string;
 }
@@ -181,12 +182,25 @@ export interface Module {
   subTopics: SubTopic[];
 }
 
+export interface MessageReaction {
+  id?: string;
+  messageId: string;
+  userId: string;
+  emoji: string;
+  courseId?: string;
+  createdAt?: string;
+}
+
 export interface ChatMessage {
+  id?: string;
   role: 'user' | 'model';
   text: string;
   image?: string;
   sources?: { title: string; uri: string }[];
   pdfContent?: string;
+  timestamp?: string | number | Date;
+  reactions?: { [emoji: string]: number };
+  userReactions?: string[];
   meta?: {
     providerUsed?: string;
     providerLabel?: string;

@@ -23,9 +23,10 @@ export interface GeneratedCourse {
 import { jsonrepair } from 'jsonrepair';
 import { PipelineMetadata } from '../types';
 import { autoHealQuestion } from './validators/aiSchemas';
+import { auth } from '../firebase';
+
 const getAuthToken = async () => {
   try {
-    const { auth } = await import('../firebase');
     return await auth?.currentUser?.getIdToken(true);
   } catch (e) {
     return null;
@@ -384,7 +385,7 @@ export async function generateCourseFormulas(
   provider?: string
 ): Promise<any> {
   const formulaPrompt = `
-    You are an expert university professor. Generate a comprehensive list of essential formulas, equations, and theorems for the following course, ensuring they meet the NUC/CCMAS (Core Curriculum and Minimum Academic Standards) curriculum standards, or dynamically adapt to the most relevant global academic benchmarks for this subject.
+    You are an expert university professor. Generate a comprehensive list of essential formulas, equations, and theorems for the following course, ensuring they dynamically adapt to accredited global academic benchmarks and modern university curricula for this subject.
     
     Course Name: ${courseName}
     Description: ${courseDescription}
@@ -395,7 +396,7 @@ export async function generateCourseFormulas(
     3. Proactively suggest these categories based on the ${courseName} and its ${courseDescription}.
     4. Provide the LaTeX representation for each formula.
     5. Provide a brief, clear description of what the formula is used for and what its variables mean.
-    6. Ensure the formulas are academically rigorous and align with the latest NUC/CCMAS or relevant global curriculum standards.
+    6. Ensure the formulas are academically rigorous and align with accredited global university curriculum standards.
     
     CRITICAL: You must return ONLY valid JSON matching this exact structure:
     {
@@ -438,28 +439,29 @@ export async function generateCourseSkeleton(
   level?: string,
   semester?: string,
   department?: string,
-  ccmasCore?: any, // New parameter for the 70% core
+  curriculumBenchmark?: any, // Globally adaptive curriculum benchmark
   tone: string = 'academic',
   depth: string = 'standard',
-  sourceContext?: string
+  sourceContext?: string,
+  academicStandard: string = 'Globally Adaptive (Universal University Standard)'
 ): Promise<any> {
   // Robust regex to detect if the target is a specific course code (e.g., MAT 101, PHY102, GNS 111)
   const isCourseCode = courseName.trim().match(/^[A-Z]{2,4}\s?\d{3}[A-Z]?$/i);
   const isCurriculumGen = !isCourseCode;
   
   let promptContext = "";
-  if (ccmasCore && isCurriculumGen) {
-    const coreList = ccmasCore.coreCourses.map((c: any) => `${c.code}: ${c.title} (${c.units} units)`).join(', ');
+  if (curriculumBenchmark && isCurriculumGen) {
+    const coreList = (curriculumBenchmark.coreCourses || []).map((c: any) => `${c.code}: ${c.title} (${c.units || c.credits || 3} units)`).join(', ');
     promptContext = `
-      This is a NUC/CCMAS-compliant curriculum generation for ${ccmasCore.discipline} at ${level} Level.
-      The NUC/CCMAS 70% Core Courses are already defined: ${coreList}.
-      Total Core Units: ${ccmasCore.totalCoreUnits}.
+      This is an accredited, globally adaptive curriculum generation for ${curriculumBenchmark.discipline || department || 'this discipline'} at ${level || 'Undergraduate'} Level.
+      The Core Courses are defined: ${coreList}.
+      ${curriculumBenchmark.totalCoreUnits ? `Total Core Units: ${curriculumBenchmark.totalCoreUnits}.` : ''}
       
-      Your task is to generate the remaining 30% of university-specific elective courses.
-      Requirements for the 30% Electives:
-      1. Suggest 3-5 elective courses that complement the core curriculum.
-      2. Ensure the total units (Core + Electives) stay between 30 and 48 units per session.
-      3. Tailor these electives to modern industry needs or specific university niches.
+      Your task is to generate complementary elective and specialized courses aligned with global university standards.
+      Requirements for Electives & Specializations:
+      1. Suggest 3-5 modern elective courses that complement the core academic structure.
+      2. Ensure courses reflect leading global standards and practical industry demands.
+      3. Tailor these electives to modern research frontiers, emerging technology, or field specializations.
     `;
   }
 
@@ -467,13 +469,14 @@ export async function generateCourseSkeleton(
     ${promptContext}
     Generate a comprehensive course skeleton for a university-level course.
     
-    CRITICAL: You MUST use a "Hybrid Approach" to ensure the course is both exam-relevant and deeply educational, providing a world-class academic experience:
-    1. Structure: Strictly follow the NUC/CCMAS (National Universities Commission / Core Curriculum and Minimum Academic Standards) curriculum outline (weeks, topics order, what to cover) to ensure 100% exam readiness and regulatory compliance.
-    2. Depth: Use international-style depth (Ivy League standards) for the content breakdown. Provide step-by-step teaching methodologies, advanced conceptual mappings, and comprehensive thematic breakdowns to ensures true world-class mastery.
-    3. Pedagogical Framework: Apply Bloom's Taxonomy. Ensure the progression moves from "Remembering" to "Creating", with clear learning pathways.
-    4. General Academic Context: Dynamically adapt the curriculum to reflect current global best practices in ${department || 'this discipline'}.
+    CRITICAL: You MUST use a dynamically adaptive global academic framework to ensure the course is both exam-relevant and deeply educational, providing a world-class academic experience:
+    1. Structure: Follow an accredited university curriculum outline (weeks, logical progression, learning objectives) dynamically adapted to the academic standard "${academicStandard}" in ${department || 'this discipline'} to ensure comprehensive mastery, exam readiness, and regulatory excellence.
+    2. Depth: Grounded in world-class university depth (top-tier global standards such as MIT, Stanford, Oxford, Cambridge aligned with ${academicStandard}) for the content breakdown. Provide step-by-step teaching methodologies, advanced conceptual mappings, and comprehensive thematic breakdowns to ensure true mastery.
+    3. Pedagogical Framework: Apply Bloom's Taxonomy aligned with "${academicStandard}". Ensure the progression moves from "Remembering" to "Creating", with clear learning pathways.
+    4. Adaptive Context: Dynamically adapt the curriculum to reflect current global best practices in ${department || 'this discipline'} under the standard: "${academicStandard}".
     
     Target: ${courseName}
+    Academic Standard: ${academicStandard}
     Description: ${courseDescription}
     Tone: ${tone} (e.g., academic, engaging, technical)
     Depth: ${depth} (e.g., introductory, standard, deep-dive)
@@ -485,9 +488,9 @@ export async function generateCourseSkeleton(
     ${existingModuleTitles.length > 0 ? `Current Existing Modules: ${existingModuleTitles.join(', ')}` : ''}
     
     The output must be a detailed JSON object containing:
-    1. A "description" field which is a concise summary of the course content (1-2 sentences), ensuring it aligns with NUC/CCMAS or relevant curriculum objectives.
-    2. An appropriate number of modules (typically 6-12) based on the course complexity and the provided outline, structured according to the NUC/CCMAS curriculum.
-    ${ccmasCore && isCurriculumGen ? '3. Since this is a curriculum generation, the "modules" should represent the ELECTIVE COURSES you are suggesting.' : '3. Each module should have 4 to 6 lesson titles (no content yet, just titles), structured for step-by-step learning.'}
+    1. A "description" field which is a concise summary of the course content (1-2 sentences), ensuring it aligns with modern global curriculum objectives.
+    2. An appropriate number of modules (typically 6-12) based on the course complexity and the provided outline, structured according to accredited global university curriculum standards.
+    ${curriculumBenchmark && isCurriculumGen ? '3. Since this is a curriculum generation, the "modules" should represent the ELECTIVE COURSES you are suggesting.' : '3. Each module should have 4 to 6 lesson titles (no content yet, just titles), structured for step-by-step learning.'}
     4. Each module should have a list of topics that will be covered in the quiz.
     
     CRITICAL: You must return ONLY valid JSON.
@@ -500,8 +503,8 @@ export async function generateCourseSkeleton(
     5. Ensure all LaTeX environments (like align, matrix, etc.) are wrapped in $$ ... $$ delimiters.
     6. Double check that every backslash in your LaTeX is escaped with another backslash (e.g., \\\\alpha, \\\\beta).
     CRITICAL: Ensure all double quotes inside strings are properly escaped (e.g., \\"word\\").
-    CRITICAL: If generating electives for a curriculum, ensure they do not overlap with the core courses: ${ccmasCore?.coreCourses.map((c: any) => c.code).join(', ') || 'None'}.
-    CRITICAL: Ensure the curriculum is robust, academically rigorous, and follows the Hybrid Approach (NUC/CCMAS structure + International depth).
+    CRITICAL: If generating electives for a curriculum, ensure they do not overlap with the core courses: ${(curriculumBenchmark?.coreCourses || []).map((c: any) => c.code).join(', ') || 'None'}.
+    CRITICAL: Ensure the curriculum is robust, academically rigorous, and follows a globally adaptive framework with international depth.
     {
       "description": "A concise summary...",
       "modules": [
@@ -584,30 +587,35 @@ export async function generateLessonContent(
   department?: string,
   tone: string = 'academic',
   depth: string = 'standard',
-  sourceContext?: string
+  sourceContext?: string,
+  academicStandard: string = 'Globally Adaptive (Universal University Standard)'
 ): Promise<{ title: string, content: string, metadata: PipelineMetadata }> {
   const lessonPrompt = `
     You are an expert university professor. Your task is to write an extremely comprehensive, long-form academic lesson for the topic "${lessonTitle}" which is part of the module "${moduleTitle}" in the university course "${courseName}".
     
-    CRITICAL LECTURER GUIDELINES & HYBRID APPROACH:
-    You MUST use the "Hybrid Approach" to ensure the content is deeply educational, blending General Academic excellence with local curriculum standards:
-    1. Structure: Follow the NUC/CCMAS (National Universities Commission / Core Curriculum and Minimum Academic Standards) curriculum outline for the topic to ensure absolute exam relevance.
-    2. Depth: Use international-style depth (MIT/Stanford/Cambridge level) with step-by-step teaching, complex derivations, and extensive breakdowns to ensure true mastery.
-    3. Pedagogical Framework: Apply Bloom's Taxonomy. Every lesson MUST include:
+    ACADEMIC STANDARD & CURRICULUM BENCHMARK:
+    Calibrate all content, pedagogical depth, vocabulary, and assessment criteria to the academic standard: "${academicStandard}".
+    
+    CRITICAL LECTURER GUIDELINES & GLOBALLY ADAPTIVE FRAMEWORK:
+    You MUST dynamically adapt the content to ensure it is deeply educational, blending world-class university standards with rigorous accreditation criteria under "${academicStandard}":
+    1. Structure: Follow an accredited university curriculum outline for the topic, dynamically adapted to "${academicStandard}" in ${department || 'this discipline'} to ensure absolute exam relevance, professional depth, and international applicability.
+    2. Depth: Calibrated to "${academicStandard}", use top-tier international depth (top-tier global standards such as MIT, Stanford, Oxford, Cambridge) with step-by-step teaching, rigorous derivations, and extensive conceptual breakdowns to ensure true mastery.
+    3. Pedagogical Framework: Apply Bloom's Taxonomy aligned with "${academicStandard}". Every lesson MUST include:
        - Learning Objectives (What will the student know?)
        - The "Why" Before the "How" Introduction: Introduce this chapter by stating why understanding these concepts and interrelationships is essential for professionals in the field, moving away from dry definitions to practical importance.
-       - Key Vocabulary (In-depth definitions of core terms).
+       - Key Vocabulary (In-depth definitions of core terms aligned with "${academicStandard}").
        - Detailed Lesson Body: Break down key concepts with deep, thoughtful explanations.
        - Enforce Comparative and Multi-Dimensional Explanations: You MUST structure complex topics using clear Comparison Tables (e.g., comparing material properties, contrasting theories, comparing algorithmic structures). Ensure all Markdown tables follow the standard GFM format with a proper header row, separator row (|---|), and data rows. Never compress tables into a single line.
        - Incorporate Structured Case Studies: You MUST inject at least one comprehensive real-world failure, standard case study, or concrete industry/field application related to this module/lesson (e.g., specific material classes, industrial failures, industrial processes, mathematical proofs) to anchor the theory.
        - Active Learning: Conclude with a thorough summary and 3 high-quality "Quick Check" review questions.
     
     [IF PROVIDED] RELEVANT COURSE CONTEXT/OUTLINE TO FOLLOW: 
-    ${sourceContext || 'General academic standards for this level.'}
+    ${sourceContext || `General academic standards for this level calibrated to ${academicStandard}.`}
     
     Course: ${courseName}
     Module: ${moduleTitle}
     Lesson: ${lessonTitle}
+    Academic Standard: ${academicStandard}
     Tone: ${tone}
     Depth: ${depth}
     Level: ${level || 'University Undergraduate'}
@@ -616,7 +624,7 @@ export async function generateLessonContent(
     Requirements:
     1. Write in DETAILED Markdown format. Do NOT hold back on length; make it as thorough as a university lecture transcript.
     2. Target length: 1200-2000+ words. Focus on core concepts, deep-dive qualitative explanations, structured study notes, case studies, and practical examples.
-    3. Use a professional, academic tone suitable for a top-tier university (e.g., Ivy League or equivalent), but adapted to the requested Tone: ${tone}.
+    3. Use a professional, academic tone suitable for a top-tier university, adapted to the requested Tone: ${tone} and Academic Standard: ${academicStandard}.
     4. Ensure all concepts are explained clearly and logically, using step-by-step breakdowns and multiple real-world examples to ensure deep understanding.
     5. Prioritize qualitative descriptions, conceptual definitions, and highly descriptive explanatory text. Avoid over-cluttering the lesson notes with unnecessary or excessive mathematical formulas, unless the topic is specifically and strictly quantitative or mathematical. For general science or engineering topics, balance mathematical equations with detailed qualitative "why" and "how" study notes.
     6. Use LaTeX only where absolutely necessary for core mathematical equations, variables, or scientific notation, and make sure every formula is accompanied by full text-based explanation.
@@ -642,7 +650,7 @@ export async function generateLessonContent(
     CRITICAL: Do NOT wrap the JSON in markdown blocks. Output raw JSON only.
     CRITICAL: Ensure all double quotes inside the "content" string are properly escaped (e.g., \\"word\\").
     7. CRITICAL: Ensure the lesson is COMPLETE and does not cut off abruptly.
-    8. CRITICAL: Calibrate the depth and complexity to the student's level (${level || 'University Level'}) and requested Depth: ${depth}.
+    8. CRITICAL: Calibrate the depth and complexity to the student's level (${level || 'University Level'}), academic standard (${academicStandard}), and requested Depth: ${depth}.
   `;
 
   const result = await callGenerateAPI(lessonPrompt, 'lesson', provider);
@@ -659,17 +667,19 @@ export async function generateModuleQuiz(
   quizTopics: string[],
   provider?: string,
   level?: string,
-  department?: string
+  department?: string,
+  academicStandard: string = 'Globally Adaptive (Universal University Standard)'
 ): Promise<any> {
   const quizPrompt = `
     Generate a university-level quiz for this module.
     
-    CRITICAL: You MUST use the "Hybrid Approach" to ensure the quiz is both exam-relevant and deeply educational, testing for world-class competency:
-    1. Relevance: Questions must strictly align with NUC/CCMAS (National Universities Commission / Core Curriculum and Minimum Academic Standards) curriculum standards to ensure absolute exam readiness.
-    2. Depth: Questions must be challenging, high-order, and conceptual (level 4-6 on Bloom's Taxonomy), requiring deep analytical thinking rather than rote memorization. Incorporate "General Academic" best practices for standardized testing at top-tier universities.
+    CRITICAL: You MUST use the dynamic academic standard "${academicStandard}" to ensure the quiz is both exam-relevant and deeply educational, testing for world-class competency:
+    1. Relevance: Questions must strictly align with the accredited academic standard "${academicStandard}" and its learning outcomes for ${department || 'this discipline'} at ${level || 'University Level'} to ensure comprehensive exam readiness and institutional rigor.
+    2. Depth: Calibrated to "${academicStandard}", questions must be challenging, high-order, and conceptual (level 4-6 on Bloom's Taxonomy), requiring deep analytical thinking rather than rote memorization. Incorporate global best practices for standardized testing at top-tier universities worldwide.
     
     Course: ${courseName}
     Module: ${moduleTitle}
+    Academic Standard: ${academicStandard}
     Topics: ${quizTopics.join(', ')}
     ${level ? `Level: ${level}` : ''}
     ${department ? `Department: ${department}` : ''}
@@ -678,7 +688,7 @@ export async function generateModuleQuiz(
     1. Generate 8-12 challenging, high-quality multiple-choice questions.
     2. Questions must test deep conceptual understanding and application of knowledge, avoiding simple rote memorization.
     3. Include a mix of difficulty levels: 20% foundational, 50% intermediate, 30% advanced/analytical.
-    4. CRITICAL: Calibrate the difficulty to the student's level (${level || 'University Level'}).
+    4. CRITICAL: Calibrate the difficulty to the student's level (${level || 'University Level'}) and academic standard (${academicStandard}).
     5. CRITICAL: Be concise in explanations and hints to avoid output truncation.
     6. CRITICAL: Do NOT include any conversational text, self-corrections, or "thinking out loud" inside the JSON fields. 
     7. CRITICAL: The "explanation" field must provide a detailed academic justification for the correct answer and why other options are incorrect.
@@ -692,7 +702,7 @@ export async function generateModuleQuiz(
     5. Ensure all LaTeX environments (like align, matrix, etc.) are wrapped in $$ ... $$ delimiters.
     6. Double check that every backslash in your LaTeX is escaped with another backslash (e.g., \\\\alpha, \\\\beta).
     9. CRITICAL: For LaTeX in JSON strings, use double backslashes (e.g., "\\\\mathbf"). Do NOT use triple backslashes.
-    10. CRITICAL: Ensure the quiz meets the academic standards set by NUC/CCMAS or relevant global guidelines, following the Hybrid Approach.
+    10. CRITICAL: Ensure the quiz meets world-class academic standards set by "${academicStandard}" and adaptive assessment frameworks.
     11. Return ONLY valid JSON:
     {
       "questions": [
@@ -753,7 +763,10 @@ export async function generateModuleContent(
   checkCancelled?: () => boolean,
   tone: string = 'academic',
   depth: string = 'standard',
-  sourceContext?: string
+  sourceContext?: string,
+  academicStandard: string = 'Globally Adaptive (Universal University Standard)',
+  level?: string,
+  department?: string
 ): Promise<any> {
   if (onProgress) onProgress(`Generating Module: ${moduleSkeleton.title}...`);
 
@@ -761,13 +774,13 @@ export async function generateModuleContent(
   for (const lessonTitle of moduleSkeleton.lessonTitles) {
     if (checkCancelled && checkCancelled()) throw new Error('Generation cancelled by user.');
     if (onProgress) onProgress(`Generating Lesson: ${lessonTitle}...`);
-    const lesson = await generateLessonContent(courseName, moduleSkeleton.title, lessonTitle, provider, undefined, undefined, tone, depth, sourceContext);
+    const lesson = await generateLessonContent(courseName, moduleSkeleton.title, lessonTitle, provider, level, department, tone, depth, sourceContext, academicStandard);
     lessons.push(lesson);
   }
 
   if (checkCancelled && checkCancelled()) throw new Error('Generation cancelled by user.');
   if (onProgress) onProgress(`Generating Quiz for: ${moduleSkeleton.title}...`);
-  const quiz = await generateModuleQuiz(courseName, moduleSkeleton.title, moduleSkeleton.quizTopics, provider);
+  const quiz = await generateModuleQuiz(courseName, moduleSkeleton.title, moduleSkeleton.quizTopics, provider, level, department, academicStandard);
 
   return {
     title: moduleSkeleton.title,
@@ -784,12 +797,15 @@ export async function generateCourseContent(
   onProgress?: (progress: number, message: string) => void,
   tone: string = 'academic',
   depth: string = 'standard',
-  sourceContext?: string
+  sourceContext?: string,
+  academicStandard: string = 'Globally Adaptive (Universal University Standard)',
+  level?: string,
+  department?: string
 ): Promise<GeneratedCourse> {
   
   if (onProgress) onProgress(10, "Generating course skeleton...");
 
-  const skeleton = await generateCourseSkeleton(courseName, courseDescription, outline, provider, [], undefined, undefined, undefined, undefined, tone, depth, sourceContext);
+  const skeleton = await generateCourseSkeleton(courseName, courseDescription, outline, provider, [], level, undefined, department, undefined, tone, depth, sourceContext, academicStandard);
   
   if (!skeleton || !skeleton.modules || !Array.isArray(skeleton.modules)) {
     throw new Error("Failed to generate a valid course skeleton.");
@@ -814,7 +830,7 @@ export async function generateCourseContent(
 
     try {
       const chunkPromises = chunk.map(async (moduleSkeleton: any, idx: number) => {
-        const moduleContent = await generateModuleContent(courseName, moduleSkeleton, provider, undefined, () => false, tone, depth, sourceContext);
+        const moduleContent = await generateModuleContent(courseName, moduleSkeleton, provider, undefined, () => false, tone, depth, sourceContext, academicStandard, level, department);
         return { index: i + idx, content: moduleContent };
       });
 

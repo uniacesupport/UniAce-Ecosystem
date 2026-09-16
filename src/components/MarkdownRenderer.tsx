@@ -4,10 +4,11 @@ import remarkGfm from 'remark-gfm';
 import rehypeKatex from 'rehype-katex';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
-import { Component, ErrorInfo, ReactNode } from 'react';
-import MermaidViewer from './renderers/MermaidViewer';
-import FunctionPlotViewer from './renderers/FunctionPlotViewer';
-import VennDiagramViewer from './renderers/VennDiagramViewer';
+import { Component, ErrorInfo, ReactNode, lazy, Suspense } from 'react';
+
+const MermaidViewer = lazy(() => import('./renderers/MermaidViewer'));
+const FunctionPlotViewer = lazy(() => import('./renderers/FunctionPlotViewer'));
+const VennDiagramViewer = lazy(() => import('./renderers/VennDiagramViewer'));
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -413,15 +414,27 @@ export default function MarkdownRenderer({ content = '', className = '' }: Markd
               const codeString = String(children).replace(/\n$/, '');
 
               if (!isInline && lang === 'mermaid') {
-                return <MermaidViewer chart={codeString} />;
+                return (
+                  <Suspense fallback={<div className="p-4 text-xs font-mono text-slate-400">Loading diagram...</div>}>
+                    <MermaidViewer chart={codeString} />
+                  </Suspense>
+                );
               }
 
               if (!isInline && (lang === 'function-plot' || lang === 'math-plot' || lang === 'graph')) {
-                return <FunctionPlotViewer code={codeString} />;
+                return (
+                  <Suspense fallback={<div className="p-4 text-xs font-mono text-slate-400">Loading plot...</div>}>
+                    <FunctionPlotViewer code={codeString} />
+                  </Suspense>
+                );
               }
 
               if (!isInline && (lang === 'venn' || lang === 'venn-diagram' || lang === 'set-diagram' || lang === 'venndiagram')) {
-                return <VennDiagramViewer code={codeString} />;
+                return (
+                  <Suspense fallback={<div className="p-4 text-xs font-mono text-slate-400">Loading diagram...</div>}>
+                    <VennDiagramViewer code={codeString} />
+                  </Suspense>
+                );
               }
 
               if (isInline) {

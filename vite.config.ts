@@ -10,11 +10,17 @@ const __dirname = path.dirname(__filename);
 
 export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
+  const port = process.env.VITE_PORT ? parseInt(process.env.VITE_PORT, 10) : 3000;
+  const hmrPort = process.env.VITE_HMR_PORT 
+    ? parseInt(process.env.VITE_HMR_PORT, 10) 
+    : (port + 21679); // Dynamically offsets from VITE_PORT (e.g. 3000 -> 24679)
+
   return {
     plugins: [
       react(), 
       tailwindcss(),
       VitePWA({
+        disable: mode === 'production',
         registerType: 'autoUpdate',
         includeAssets: ['icon.svg'],
         devOptions: {
@@ -119,12 +125,36 @@ export default defineConfig(({mode}) => {
       },
     },
     server: {
-      hmr: false,
+      port,
+      hmr: {
+        port: hmrPort,
+        clientPort: process.env.VITE_HMR_CLIENT_PORT ? parseInt(process.env.VITE_HMR_CLIENT_PORT, 10) : undefined
+      }
     },
     build: {
       outDir: 'dist',
-      chunkSizeWarningLimit: 2500,
+      chunkSizeWarningLimit: 3000,
+      sourcemap: false,
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules')) {
+              if (id.includes('mermaid')) return 'vendor-mermaid';
+              if (id.includes('pdfjs-dist')) return 'vendor-pdfjs';
+              if (id.includes('mathjs')) return 'vendor-mathjs';
+              if (id.includes('xlsx')) return 'vendor-xlsx';
+              if (id.includes('jspdf') || id.includes('html2canvas')) return 'vendor-pdfgen';
+              if (id.includes('katex')) return 'vendor-katex';
+              if (id.includes('recharts') || id.includes('d3')) return 'vendor-charts';
+              if (id.includes('highlight.js')) return 'vendor-highlight';
+              if (id.includes('firebase')) return 'vendor-firebase';
+              if (id.includes('lucide-react')) return 'vendor-lucide';
+              if (id.includes('react') || id.includes('react-dom') || id.includes('react-router')) return 'vendor-react';
+            }
+          }
+        }
+      }
     },
-    base: './',
+    base: '/',
   };
 });

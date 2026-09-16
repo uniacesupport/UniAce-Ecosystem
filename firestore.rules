@@ -372,5 +372,21 @@ service cloud.firestore {
       allow create: if isAdmin() || (isAuthenticated() && isValidSparkAuditLog(request.resource.data));
       allow update, delete: if isAdmin();
     }
+
+    match /message_reactions/{reactionId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+
+    match /message_reaction_tallies/{messageId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    match /system_math_telemetry/{telemetryId} {
+      allow read: if isAdmin();
+      allow write: if false; // Only written via backend server SDK
+    }
   }
 }

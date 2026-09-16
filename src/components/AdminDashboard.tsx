@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, FileText, Plus, CheckCircle, Loader2, BookOpen, AlertCircle, Settings, Trash2, Users, Activity, Database, Search, Zap, Trophy, Star, Bot, Shield, BarChart3, Globe, Edit2, RefreshCw, Clock, FileQuestion, MessageSquare, ArrowLeft, HeartPulse, X, ArrowRight, Layers, Key, Cpu, Share2, Download, Filter, Send, ChevronLeft, ChevronRight, Mic, Book, Terminal, Sparkles, TrendingUp, CreditCard, HelpCircle } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { Upload, FileText, Plus, CheckCircle, Loader2, BookOpen, AlertCircle, Settings, Trash2, Users, Activity, Database, Search, Zap, Trophy, Star, Bot, Shield, BarChart3, Globe, Edit2, RefreshCw, Clock, FileQuestion, MessageSquare, ArrowLeft, HeartPulse, X, ArrowRight, Layers, Key, Cpu, Share2, Download, Filter, Send, ChevronLeft, ChevronRight, Mic, Book, Terminal, Sparkles, TrendingUp, CreditCard, HelpCircle, Calculator } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   LineChart, Line, AreaChart, Area, PieChart, Pie, Cell
@@ -21,6 +21,8 @@ import PricingManagerTab from './admin/PricingManagerTab';
 import ChallengesManagerTab from './admin/ChallengesManagerTab';
 import SupportManagerTab from './admin/SupportManagerTab';
 import FormulasManagerTab from './admin/FormulasManagerTab';
+import MathEngineTab from './admin/MathEngineTab';
+import AcademicMCPDashboard from './admin/AcademicMCPDashboard';
 import { AIService } from '../services/ai';
 import { generateCourseContent, generateCourseSkeleton, generateModuleContent, generateCourseFormulas } from '../services/aiCourseGenerator';
 import { CourseService, sanitizeForFirestore } from '../services/courseService';
@@ -130,7 +132,7 @@ export default function AdminDashboard() {
   const [isIngesting, setIsIngesting] = useState(false);
   const [ingestionStatus, setIngestionStatus] = useState('');
   const [kbStats, setKbStats] = useState({ totalChunks: 0 });
-  const [activeTab, setActiveTab] = useState<'overview' | 'courses' | 'users' | 'rag' | 'communications' | 'settings' | 'logs' | 'question-bank' | 'curriculum-health' | 'curriculum-manager' | 'curriculum-requests' | 'api-debugger' | 'affiliates' | 'analytics' | 'api-status' | 'pricing' | 'challenges' | 'support' | 'formulas'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'courses' | 'users' | 'rag' | 'communications' | 'settings' | 'logs' | 'question-bank' | 'curriculum-health' | 'curriculum-manager' | 'curriculum-requests' | 'api-debugger' | 'affiliates' | 'analytics' | 'api-status' | 'pricing' | 'challenges' | 'support' | 'formulas' | 'math-engine' | 'academic-mcp'>('overview');
 
   useEffect(() => {
     // Redirect if current tab is not allowed for the role
@@ -291,6 +293,8 @@ export default function AdminDashboard() {
   const [quickCourseOutline, setQuickCourseOutline] = useState('');
   const [quickTone, setQuickTone] = useState('academic');
   const [quickDepth, setQuickDepth] = useState('standard');
+  const [quickAcademicStandard, setQuickAcademicStandard] = useState<string>('Globally Adaptive (Universal University Standard)');
+  const [customAcademicStandard, setCustomAcademicStandard] = useState<string>('');
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [sourceText, setSourceText] = useState('');
   const [isReadingFile, setIsReadingFile] = useState(false);
@@ -996,6 +1000,10 @@ export default function AdminDashboard() {
       let skeleton = null;
       let retries = 2;
 
+      const activeAcademicStandard = quickAcademicStandard === 'Custom Academic Benchmark'
+        ? (customAcademicStandard.trim() || 'Custom Dynamic Academic Benchmark')
+        : quickAcademicStandard;
+
       while (retries > 0 && !skeleton) {
         try {
           skeleton = await generateCourseSkeleton(
@@ -1007,10 +1015,11 @@ export default function AdminDashboard() {
             quickLevel,
             quickSemester,
             quickDepartment,
-            undefined, // ccmasCore
+            undefined, // curriculumBenchmark
             quickTone,
             quickDepth,
-            sourceText
+            sourceText,
+            activeAcademicStandard
           );
         } catch (err) {
           retries--;
@@ -1066,6 +1075,10 @@ export default function AdminDashboard() {
         }
       }
 
+      const activeAcademicStandard = quickAcademicStandard === 'Custom Academic Benchmark'
+        ? (customAcademicStandard.trim() || 'Custom Dynamic Academic Benchmark')
+        : quickAcademicStandard;
+
       // Save initial course doc
       await setDoc(courseRef, {
         id: courseId,
@@ -1077,6 +1090,7 @@ export default function AdminDashboard() {
         creditUnits: 0,
         prerequisites: [],
         scope: courseScope,
+        academicStandard: activeAcademicStandard,
         faculties: courseScope === 'FACULTY' ? selectedFaculties : [],
         departments: courseScope === 'DEPARTMENT' ? selectedDepartments : [],
         isAIGenerated: true,
@@ -1116,7 +1130,10 @@ export default function AdminDashboard() {
                   () => isCancelledRef.current,
                   quickTone,
                   quickDepth,
-                  sourceText
+                  sourceText,
+                  activeAcademicStandard,
+                  quickLevel,
+                  quickDepartment
                 );
               } catch (err) {
                 if (isCancelledRef.current) throw new Error('Generation cancelled by user.');
@@ -2846,6 +2863,8 @@ export default function AdminDashboard() {
             { id: 'challenges', label: 'Quests & Arena', icon: Trophy, show: permissions.canManageSystem || permissions.canManageCourses },
             { id: 'support', label: 'Support & FAQs', icon: HelpCircle, show: permissions.canManageSystem || permissions.canCommunicate },
             { id: 'formulas', label: 'Formula Library', icon: BookOpen, show: permissions.canManageCourses },
+            { id: 'math-engine', label: 'Math & MCP Engine', icon: Calculator, show: permissions.canManageSystem || permissions.canManageCourses },
+            { id: 'academic-mcp', label: 'Academic Research MCP', icon: BookOpen, show: permissions.canManageSystem || permissions.canManageCourses },
             { id: 'communications', label: 'Communications', icon: Globe, show: permissions.canCommunicate },
             { id: 'logs', label: 'System Logs', icon: FileText, show: permissions.canViewLogs },
             { id: 'settings', label: 'Command Center', icon: Shield, show: permissions.canManageSystem }
@@ -3336,6 +3355,40 @@ export default function AdminDashboard() {
                         <option value="deep-dive">Deep Dive (Advanced/Analytical)</option>
                       </select>
                     </div>
+                  </div>
+
+                  <div className="mb-6">
+                    <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">
+                      Academic Standard & Curriculum Framework
+                    </label>
+                    <select 
+                      value={quickAcademicStandard}
+                      onChange={(e) => setQuickAcademicStandard(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value="Globally Adaptive (Universal University Standard)">Globally Adaptive (Universal University Standard)</option>
+                      <option value="International Higher Education Curriculum Standard">International Higher Education Curriculum Standard</option>
+                      <option value="Global Accreditation & Outcomes-Based Framework">Global Accreditation & Outcomes-Based Framework</option>
+                      <option value="North American University Benchmark (ABET/CSAB Aligned)">North American University Benchmark (ABET/CSAB Aligned)</option>
+                      <option value="European Higher Education Area / Bologna Process">European Higher Education Area / Bologna Process</option>
+                      <option value="Commonwealth Higher Education Quality Framework">Commonwealth Higher Education Quality Framework</option>
+                      <option value="Custom Academic Benchmark">Custom Academic Benchmark (Enter Custom Standard)...</option>
+                    </select>
+
+                    {quickAcademicStandard === 'Custom Academic Benchmark' && (
+                      <div className="mt-3">
+                        <input
+                          type="text"
+                          placeholder="e.g., University of Oxford / Cambridge Tripos Syllabus, IEEE/ACM 2023 Curriculum"
+                          value={customAcademicStandard}
+                          onChange={(e) => setCustomAcademicStandard(e.target.value)}
+                          className="w-full bg-slate-50 dark:bg-slate-900 border border-indigo-300 dark:border-indigo-700 rounded-xl px-4 py-2 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                          Specify any accredited institutional, national, or international curriculum standard. The AI dynamically adapts modules, lessons, and quizzes to match.
+                        </p>
+                      </div>
+                    )}
                   </div>
 
                   <div className="mb-6">
@@ -7638,6 +7691,8 @@ export default function AdminDashboard() {
       {activeTab === 'challenges' && <ChallengesManagerTab />}
       {activeTab === 'support' && <SupportManagerTab />}
       {activeTab === 'formulas' && <FormulasManagerTab />}
+      {activeTab === 'math-engine' && <MathEngineTab />}
+      {activeTab === 'academic-mcp' && <AcademicMCPDashboard />}
 
       {/* Toast Notification */}
       {toast && (

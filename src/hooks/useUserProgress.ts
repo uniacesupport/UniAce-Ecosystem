@@ -8,6 +8,9 @@ import { useCourses } from '../context/CourseContext';
 import { DEPARTMENT_TO_FACULTY } from '../constants';
 import { CurriculumIntegrityService } from '../services/curriculumIntegrity';
 import { useProgressStore } from '../lib/progressStore';
+import { LogService } from '../services/logService';
+import { CourseService } from '../services/courseService';
+import { generateCourseContent } from '../services/aiCourseGenerator';
 
 const INITIAL_ACHIEVEMENTS: Achievement[] = BADGES.map(b => ({
   id: b.id,
@@ -468,9 +471,7 @@ export function useUserProgress() {
       if (prev.enrolledCourses?.includes(courseId)) return prev;
       
       // Log enrollment
-      import('../services/logService').then(({ LogService }) => {
-        LogService.log('info', 'user', `Enrolled in course: ${courseTitle || courseId}`).catch(console.error);
-      });
+      LogService.log('info', 'user', `Enrolled in course: ${courseTitle || courseId}`).catch(console.error);
 
       return {
         ...prev,
