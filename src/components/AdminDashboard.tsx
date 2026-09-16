@@ -488,7 +488,8 @@ export default function AdminDashboard() {
       + "Timestamp,Level,Category,User,Message\n"
       + logs.map(l => {
           const time = l.timestamp?.toDate ? l.timestamp.toDate().toISOString() : 'N/A';
-          return `"${time}","${l.level}","${l.category}","${l.userEmail}","${l.message.replace(/"/g, '""')}"`;
+          const message = l.message ? String(l.message).replace(/"/g, '""') : '';
+          return `"${time}","${l.level}","${l.category}","${l.userEmail}","${message}"`;
         }).join("\n");
     
     const encodedUri = encodeURI(csvContent);
@@ -2752,7 +2753,7 @@ export default function AdminDashboard() {
                                 issue.type === 'EXTRA_COURSE' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
                                 'bg-slate-100 text-slate-700 dark:bg-slate-900/30 dark:text-slate-400'
                               }`}>
-                                {issue.type.replace('_', ' ')}
+                                {issue.type ? String(issue.type).replace(/_/g, ' ') : 'ISSUE'}
                               </span>
                             </td>
                             <td className="py-5 px-4">
@@ -3129,9 +3130,11 @@ export default function AdminDashboard() {
                   <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700/50">
                     <div className="text-sm font-bold text-slate-500 mb-1">API Latency</div>
                     <div className="text-2xl font-black text-slate-900 dark:text-white flex items-baseline gap-1">
-                      {Object.values(aiMetrics).find((m: any) => m.latency !== '0s') 
-                        ? (Object.values(aiMetrics).find((m: any) => m.latency !== '0s') as any).latency.replace('s', '') 
-                        : '0.1'}
+                      {aiMetrics?.avgLatencyMs
+                        ? (Number(aiMetrics.avgLatencyMs) / 1000).toFixed(2)
+                        : (aiMetrics?.latency
+                            ? String(aiMetrics.latency).replace('s', '')
+                            : '0.1')}
                       <span className="text-sm font-bold text-slate-400">s</span>
                     </div>
                     <div className="mt-2 text-xs font-bold text-emerald-500 flex items-center gap-1"><Activity size={12}/> Optimal</div>
@@ -3139,9 +3142,11 @@ export default function AdminDashboard() {
                   <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700/50">
                     <div className="text-sm font-bold text-slate-500 mb-1">Uptime</div>
                     <div className="text-2xl font-black text-slate-900 dark:text-white flex items-baseline gap-1">
-                      {Object.values(aiMetrics).find((m: any) => m.uptime !== '100%') 
-                        ? (Object.values(aiMetrics).find((m: any) => m.uptime !== '100%') as any).uptime.replace('%', '') 
-                        : '99.9'}
+                      {aiMetrics?.successRate != null
+                        ? Number(aiMetrics.successRate).toFixed(1)
+                        : (aiMetrics?.uptime
+                            ? String(aiMetrics.uptime).replace('%', '')
+                            : '99.9')}
                       <span className="text-sm font-bold text-slate-400">%</span>
                     </div>
                     <div className="mt-2 text-xs font-bold text-emerald-500 flex items-center gap-1"><CheckCircle size={12}/> All systems operational</div>
@@ -5724,7 +5729,7 @@ export default function AdminDashboard() {
                                   : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700'
                               }`}
                             >
-                              {provider.replace('_', ' ')}
+                              {provider ? String(provider).replace(/_/g, ' ') : ''}
                             </button>
                           ))}
                         </div>
@@ -6559,7 +6564,7 @@ export default function AdminDashboard() {
                   {emailMode === 'custom' && (
                     <div className="space-y-4">
                       {emailBody ? (
-                        <div dangerouslySetInnerHTML={{ __html: emailBody.replace(/\n/g, '<br />') }} />
+                        <div dangerouslySetInnerHTML={{ __html: String(emailBody).replace(/\n/g, '<br />') }} />
                       ) : (
                         <p className="text-slate-400 italic">No custom body text specified. Type inside the text box to preview live.</p>
                       )}
