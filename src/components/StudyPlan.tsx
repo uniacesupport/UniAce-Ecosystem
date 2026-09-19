@@ -168,7 +168,7 @@ export default function StudyPlan({ progress, syllabus }: StudyPlanProps) {
 
             {/* Schedule */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {plan.dailySchedule.map((day, idx) => (
+              {(plan.dailySchedule || []).map((day, idx) => (
                 <motion.div
                   key={idx}
                   initial={{ opacity: 0, scale: 0.95 }}
@@ -184,7 +184,7 @@ export default function StudyPlan({ progress, syllabus }: StudyPlanProps) {
                   </div>
                   <h3 className="text-lg font-black text-zinc-900 dark:text-white mb-4">{day.focus}</h3>
                   <ul className="space-y-3">
-                    {day.tasks.map((task, tIdx) => (
+                    {(day.tasks || []).map((task, tIdx) => (
                       <li key={tIdx} className="flex items-start gap-3 text-sm text-zinc-600 dark:text-zinc-400 font-medium">
                         <div className="mt-1 w-1.5 h-1.5 rounded-full bg-zinc-300 dark:bg-zinc-700 shrink-0" />
                         {task}
@@ -199,7 +199,7 @@ export default function StudyPlan({ progress, syllabus }: StudyPlanProps) {
             <div className="bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-[2.5rem] p-8 shadow-xl">
               <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-[0.2em] mb-6">Expert Strategies</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                {plan.tips.map((tip, idx) => (
+                {(plan.tips || []).map((tip, idx) => (
                   <div key={idx} className="flex gap-4">
                     <div className="w-10 h-10 bg-amber-50 dark:bg-amber-900/20 rounded-xl flex items-center justify-center text-amber-500 shrink-0">
                       <Sparkles size={20} />

@@ -294,7 +294,7 @@ export default function PastQuestions({ activeCourseId }: PastQuestionsProps) {
           </AnimatePresence>
 
           <div className="space-y-6">
-            {selectedPaper.questions.map((q, idx) => {
+            {(selectedPaper?.questions || []).map((q, idx) => {
               const isSubmitted = submittedQuestions[q.id];
               const selectedOption = userAnswers[q.id];
               const isCorrect = selectedOption === q.correctAnswer;

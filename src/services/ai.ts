@@ -907,7 +907,7 @@ Generate a university-level quiz for ${subTopic ? 'the specific subtopic' : 'the
     - Level: ${progress.level}
     
     Available Syllabus:
-    ${syllabus.map(m => `- ${m.title}: ${m.subTopics.map(st => st.title).join(', ')}`).join('\n')}
+    ${(syllabus || []).map(m => `- ${m?.title || 'Module'}: ${(m?.subTopics || []).map(st => st?.title || 'Topic').join(', ')}`).join('\n')}
     
     Rules:
     1. If they have low mastery (<50%) in a topic, prioritize reviewing it.
@@ -1082,7 +1082,7 @@ Generate a university-level quiz for ${subTopic ? 'the specific subtopic' : 'the
     - Target Exam Date: ${targetDate || 'Next 30 days'}
     
     Syllabus Structure:
-    ${syllabus.map(m => `- ${m.title}: ${m.subTopics.map(st => st.title).join(', ')}`).join('\n')}
+    ${(syllabus || []).map(m => `- ${m?.title || 'Module'}: ${(m?.subTopics || []).map(st => st?.title || 'Topic').join(', ')}`).join('\n')}
     
     CRITICAL: Output ONLY the JSON object. Do not include any other text, markdown formatting, or explanations.
     Return a JSON object with the following structure:
@@ -1101,10 +1101,10 @@ Generate a university-level quiz for ${subTopic ? 'the specific subtopic' : 'the
       return safeParseAIResponse(StudyPlanSchema, rawData, {
         title: 'Personalized Study Plan',
         overview: 'A standard study schedule to cover your syllabus systematically.',
-        dailySchedule: syllabus.slice(0, 7).map((m, i) => ({
+        dailySchedule: (syllabus || []).slice(0, 7).map((m, i) => ({
           day: `Day ${i + 1}`,
-          focus: m.title,
-          tasks: [`Review subtopics for ${m.title}`, 'Take a practice quiz']
+          focus: m?.title || 'Topic',
+          tasks: [`Review subtopics for ${m?.title || 'Topic'}`, 'Take a practice quiz']
         })),
         tips: ['Review material daily', 'Take short quizzes for active recall']
       });
@@ -1146,8 +1146,8 @@ Generate a university-level quiz for ${subTopic ? 'the specific subtopic' : 'the
   },
 
   generateFastTrackPlan: async (progress: UserProgress, syllabus: Module[], fastTrackTopicTitle: string) => {
-    const masteryData = Object.entries(progress.mastery).map(([id, score]) => {
-      const topic = syllabus.flatMap(m => m.subTopics).find(st => st.id === id);
+    const masteryData = Object.entries(progress?.mastery || {}).map(([id, score]) => {
+      const topic = (syllabus || []).flatMap(m => m?.subTopics || []).find(st => st?.id === id);
       return { title: topic?.title || id, score };
     });
 
@@ -1162,7 +1162,7 @@ Generate a university-level quiz for ${subTopic ? 'the specific subtopic' : 'the
     - Target Exam Date: Next 30 days
     
     Syllabus Structure:
-    ${syllabus.map(m => `- ${m.title}: ${m.subTopics.map(st => st.title).join(', ')}`).join('\n')}
+    ${(syllabus || []).map(m => `- ${m?.title || 'Module'}: ${(m?.subTopics || []).map(st => st?.title || 'Topic').join(', ')}`).join('\n')}
     
     CRITICAL: Output ONLY the JSON object. Do not include any other text, markdown formatting, or explanations.
     Return a JSON object with the following structure:
@@ -1181,7 +1181,7 @@ Generate a university-level quiz for ${subTopic ? 'the specific subtopic' : 'the
       return safeParseAIResponse(StudyPlanSchema, rawData, {
         title: 'Fast-Track Advanced Study Plan',
         overview: `Accelerated track since you mastered ${fastTrackTopicTitle}! Skipping foundational topics to focus on advanced topics.`,
-        dailySchedule: syllabus.slice(0, 5).map((m, i) => ({
+        dailySchedule: (syllabus || []).slice(0, 5).map((m, i) => ({
           day: `Day ${i + 1}`,
           focus: m.title,
           tasks: [`Challenge yourself with advanced quiz questions on ${m.title}`]
@@ -1244,7 +1244,7 @@ Generate a university-level quiz for ${subTopic ? 'the specific subtopic' : 'the
       });
       if (!response.ok) throw new Error('Failed to fetch analytics');
       const data = await response.json();
-      return data.analytics;
+      return Array.isArray(data.analytics) ? data.analytics : [];
     } catch (error) {
       console.error('Get Struggle Analytics Error:', error);
       return [];

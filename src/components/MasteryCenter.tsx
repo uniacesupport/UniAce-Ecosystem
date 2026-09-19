@@ -31,17 +31,18 @@ export default function MasteryCenter({ progress, onBack, activeCourseId, syllab
   const [isLoadingReadiness, setIsLoadingReadiness] = useState(false);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
 
-  const totalTopics = (syllabus || []).reduce((acc, m) => acc + (m.subTopics || []).length, 0);
-  const masteredTopics = Object.values(progress.mastery).filter(m => m >= 80).length;
+  const totalTopics = (syllabus || []).reduce((acc, m) => acc + (m?.subTopics || []).length, 0);
+  const masteredTopics = Object.values(progress?.mastery || {}).filter(m => m >= 80).length;
   const masteryPercentage = totalTopics > 0 ? Math.round((masteredTopics / totalTopics) * 100) : 0;
-  const totalStudyTime = Object.values(progress.studyTime).reduce((acc, t) => acc + t, 0);
+  const totalStudyTime = Object.values(progress?.studyTime || {}).reduce((acc, t) => acc + t, 0);
   const hours = Math.floor(totalStudyTime / 3600);
   const minutes = Math.floor((totalStudyTime % 3600) / 60);
 
-  const currentLevel = GamificationService.calculateLevel(progress.xp);
-  const nextLevel = GamificationService.getNextLevel(progress.xp);
+  const xpValue = progress?.xp || 0;
+  const currentLevel = GamificationService.calculateLevel(xpValue);
+  const nextLevel = GamificationService.getNextLevel(xpValue);
   const xpForNextLevel = nextLevel ? nextLevel.xp - currentLevel.xp : 0;
-  const progressToNextLevel = nextLevel ? ((progress.xp - currentLevel.xp) / (nextLevel.xp - currentLevel.xp)) * 100 : 100;
+  const progressToNextLevel = nextLevel ? ((xpValue - currentLevel.xp) / (nextLevel.xp - currentLevel.xp)) * 100 : 100;
 
   useEffect(() => {
     const fetchData = async () => {
@@ -53,7 +54,7 @@ export default function MasteryCenter({ progress, onBack, activeCourseId, syllab
 
   useEffect(() => {
     const fetchReadiness = async () => {
-      if (!activeCourseId || syllabus.length === 0) return;
+      if (!activeCourseId || !syllabus || syllabus.length === 0) return;
       
       setIsLoadingReadiness(true);
       try {
@@ -67,7 +68,7 @@ export default function MasteryCenter({ progress, onBack, activeCourseId, syllab
     };
 
     fetchReadiness();
-  }, [activeCourseId, progress.mastery, progress.studyTime]);
+  }, [activeCourseId, progress?.mastery, progress?.studyTime]);
 
   return (
     <div className="flex-1 overflow-y-auto bg-slate-50 dark:bg-blue-950 p-4 sm:p-6 lg:p-12 pb-24 lg:pb-12 transition-colors">
@@ -237,7 +238,7 @@ export default function MasteryCenter({ progress, onBack, activeCourseId, syllab
               </div>
               
               <div className="bg-white dark:bg-blue-900 border border-slate-200 dark:border-blue-800 p-8 rounded-[3rem] shadow-sm">
-                {syllabus.length === 0 ? (
+                {(!syllabus || syllabus.length === 0) ? (
                   <div className="text-center py-12 text-slate-500 dark:text-blue-300">
                     <p className="text-lg font-medium">Select a course to view detailed mastery analysis.</p>
                     <button 
@@ -249,15 +250,15 @@ export default function MasteryCenter({ progress, onBack, activeCourseId, syllab
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
-                    {syllabus.map(module => (
+                    {(syllabus || []).map(module => (
                       <div key={module.id} className="space-y-4">
                         <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
                           <div className="w-1.5 h-6 bg-emerald-500 rounded-full" />
-                          {module.title.split('. ')[1]}
+                          {module.title ? (module.title.includes('. ') ? module.title.split('. ')[1] : module.title) : 'Module'}
                         </h3>
                         <div className="grid grid-cols-4 gap-2">
-                          {module.subTopics.map(st => {
-                            const mastery = progress.mastery[st.id] || 0;
+                          {(module.subTopics || []).map(st => {
+                            const mastery = progress?.mastery?.[st.id] || 0;
                             let color = 'bg-slate-100 dark:bg-blue-950';
                             if (mastery > 0) color = 'bg-emerald-100';
                             if (mastery > 40) color = 'bg-emerald-200';

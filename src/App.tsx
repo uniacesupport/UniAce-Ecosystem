@@ -476,24 +476,24 @@ function AppContent() {
 
               try {
                 // 1. Generate full skeleton (10 modules)
-                const existingTitlesForAI = syllabus.map(m => m.title);
+                const existingTitlesForAI = (syllabus || []).map(m => m.title);
                 const fullSkeleton = await generateCourseSkeleton(activeCourse.title, activeCourse.description, undefined, undefined, existingTitlesForAI);
                 setRegenerationProgress(15);
                 
                 // 2. Identify tasks: New modules or Repairs
                 const tasks: { type: 'new' | 'repair', skeleton: any, id?: string }[] = [];
-                const existingTitles = syllabus.map(m => m.title.toLowerCase().trim());
+                const existingTitles = (syllabus || []).map(m => m.title.toLowerCase().trim());
                 
                 // Check each module from the new skeleton
-                fullSkeleton.modules.forEach((moduleSkeleton: any) => {
+                (fullSkeleton?.modules || []).forEach((moduleSkeleton: any) => {
                   const title = moduleSkeleton.title.toLowerCase().trim();
-                  const existing = syllabus.find(m => m.title.toLowerCase().trim() === title);
+                  const existing = (syllabus || []).find(m => m.title.toLowerCase().trim() === title);
                   
                   if (!existing) {
                     tasks.push({ type: 'new', skeleton: moduleSkeleton });
                   } else {
                     // Check if existing module needs repair (missing content)
-                    const isIncomplete = existing.subTopics.some(st => !st.content || st.content.trim() === '');
+                    const isIncomplete = (existing.subTopics || []).some(st => !st.content || st.content.trim() === '');
                     if (isIncomplete) {
                       tasks.push({ type: 'repair', skeleton: moduleSkeleton, id: existing.id });
                     }

@@ -185,7 +185,7 @@ export const AdaptiveRecalibratorModal: React.FC<AdaptiveRecalibratorModalProps>
                   <span className="text-sm font-bold text-slate-700 dark:text-zinc-300">{boosterData.focus}</span>
                 </div>
                 <ul className="space-y-3">
-                  {boosterData.tasks.map((task, idx) => (
+                  {(boosterData?.tasks || []).map((task, idx) => (
                     <li key={idx} className="flex items-start gap-3 text-sm text-slate-600 dark:text-zinc-400 font-medium">
                       <div className="mt-1.5 w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />
                       {task}

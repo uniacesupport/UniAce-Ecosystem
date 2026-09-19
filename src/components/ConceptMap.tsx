@@ -32,7 +32,7 @@ export default function ConceptMap({ syllabus, onSubTopicSelect, onClose }: Conc
   const [zoomLevel, setZoomLevel] = useState(1);
 
   useEffect(() => {
-    if (!svgRef.current || !syllabus.length) return;
+    if (!svgRef.current || !syllabus || !syllabus.length) return;
 
     const width = containerRef.current?.clientWidth || 800;
     const height = containerRef.current?.clientHeight || 600;
@@ -51,9 +51,11 @@ export default function ConceptMap({ syllabus, onSubTopicSelect, onClose }: Conc
       '#ec4899', // pink
     ];
 
-    syllabus.forEach((module, mIdx) => {
+    (syllabus || []).forEach((module, mIdx) => {
+      if (!module) return;
       const color = moduleColors[mIdx % moduleColors.length];
-      module.subTopics.forEach(st => {
+      (module.subTopics || []).forEach(st => {
+        if (!st) return;
         nodes.push({
           id: st.id,
           title: st.title,
@@ -62,7 +64,7 @@ export default function ConceptMap({ syllabus, onSubTopicSelect, onClose }: Conc
           color: color,
         });
 
-        if (st.relatedTo) {
+        if (st.relatedTo && Array.isArray(st.relatedTo)) {
           st.relatedTo.forEach(relatedId => {
             links.push({
               source: st.id,
@@ -212,8 +214,8 @@ export default function ConceptMap({ syllabus, onSubTopicSelect, onClose }: Conc
         <div className="absolute top-8 left-8 bg-white/90 dark:bg-zinc-800/90 backdrop-blur-sm border border-zinc-200 dark:border-zinc-700 p-4 rounded-2xl shadow-xl max-w-xs">
           <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-widest mb-3">Module Legend</h3>
           <div className="space-y-2">
-            {syllabus.map((module, idx) => (
-              <div key={module.id} className="flex items-center gap-2">
+            {(syllabus || []).map((module, idx) => (
+              <div key={module.id || idx} className="flex items-center gap-2">
                 <div 
                   className="w-3 h-3 rounded-full shrink-0" 
                   style={{ backgroundColor: ['#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#ef4444', '#06b6d4', '#ec4899'][idx % 7] }} 

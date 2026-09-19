@@ -33,11 +33,11 @@ export default function QuizHub({ courseId, onQuizComplete, syllabus }: QuizHubP
         </header>
 
         <div className="grid grid-cols-1 gap-6">
-          {syllabus.map((module, i) => {
+          {(syllabus || []).map((module, i) => {
             const Icon = getModuleIcon(module.id, module.title, i);
             return (
               <motion.button
-                key={module.id}
+                key={module.id || i}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.1 }}
@@ -51,7 +51,7 @@ export default function QuizHub({ courseId, onQuizComplete, syllabus }: QuizHubP
                   <div>
                     <h3 className="text-2xl font-bold text-slate-900 dark:text-white mb-1">{module.title}</h3>
                     <p className="text-slate-500 dark:text-zinc-400 font-medium">
-                      {module.subTopics.length} Topics • Multiple Choice & Fill-in-the-blank
+                      {(module.subTopics || []).length} Topics • Multiple Choice & Fill-in-the-blank
                     </p>
                   </div>
                 </div>
@@ -61,6 +61,11 @@ export default function QuizHub({ courseId, onQuizComplete, syllabus }: QuizHubP
               </motion.button>
             );
           })}
+          {(!syllabus || syllabus.length === 0) && (
+            <div className="p-8 text-center text-slate-500 dark:text-zinc-400 bg-white dark:bg-zinc-900 rounded-[2.5rem] border border-slate-200 dark:border-zinc-800">
+              No modules found for this course.
+            </div>
+          )}
         </div>
 
         <div className="bg-slate-900 dark:bg-zinc-900 text-white p-10 rounded-[3rem] space-y-6 border dark:border-zinc-800">

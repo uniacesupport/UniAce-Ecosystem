@@ -133,12 +133,12 @@ export default function CourseSyllabus({
         {/* Course Modules Grid */}
         <section className="space-y-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-            {syllabus.map((module, i) => {
+            {(syllabus || []).map((module, i) => {
               const Icon = getModuleIcon(module.id, module.title, i);
               const isLockedModule = false; // Modules are no longer locked, only subtopics are locked
               return (
                 <motion.button
-                  key={module.id}
+                  key={module.id || i}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.1 }}
@@ -169,7 +169,7 @@ export default function CourseSyllabus({
                     <div className="flex-1 flex flex-col">
                       <h3 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white mb-2 break-words leading-tight pr-4">{module.title}</h3>
                       <p className="text-slate-500 dark:text-blue-300 text-xs sm:text-sm leading-relaxed mb-6 flex-1">
-                        Explore {module.subTopics.length} key topics including {module.subTopics[0].title.toLowerCase()}.
+                        Explore {(module?.subTopics || []).length} key topics including {(module?.subTopics?.[0]?.title || 'core concepts').toLowerCase()}.
                       </p>
                       <div className={`flex items-center gap-2 font-bold text-xs sm:text-sm mt-auto ${
                         isEnrolled && !isLockedModule ? 'text-slate-900 dark:text-blue-100' : 'text-slate-400 dark:text-slate-500'
@@ -197,7 +197,7 @@ export default function CourseSyllabus({
             <p className="text-slate-400 dark:text-blue-200 text-sm sm:text-base">By the end of this course, students should be able to:</p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-            {objectives.map((objective, index) => (
+            {(objectives || []).map((objective, index) => (
               <div key={index} className="flex gap-4">
                 <div className="bg-emerald-500/20 text-emerald-400 p-2 rounded-lg h-fit">
                   <GraduationCap size={20} />

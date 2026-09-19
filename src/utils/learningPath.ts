@@ -11,11 +11,14 @@ export interface Recommendation {
 
 export function getRecommendations(progress: UserProgress, syllabus: Module[]): Recommendation[] {
   const recommendations: Recommendation[] = [];
+  if (!syllabus || !Array.isArray(syllabus) || !progress) return recommendations;
   const now = new Date();
   let foundNextNew = false;
 
   syllabus.forEach(module => {
+    if (!module || !Array.isArray(module.subTopics)) return;
     module.subTopics.forEach(topic => {
+      if (!topic) return;
       const mastery = progress.mastery?.[topic.id] || 0;
       const lastStudied = progress.topicLastStudied?.[topic.id];
       

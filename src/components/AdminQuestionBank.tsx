@@ -470,12 +470,12 @@ export default function AdminQuestionBank() {
                               rows={3}
                             />
                             <div className="grid grid-cols-2 gap-4">
-                              {editingQuestion.options.map((opt: string, oIdx: number) => (
+                              {(editingQuestion?.options || []).map((opt: string, oIdx: number) => (
                                 <input 
                                   key={oIdx}
                                   value={opt}
                                   onChange={e => {
-                                    const newOpts = [...editingQuestion.options];
+                                    const newOpts = [...(editingQuestion?.options || [])];
                                     newOpts[oIdx] = e.target.value;
                                     setEditingQuestion({...editingQuestion, options: newOpts});
                                   }}
@@ -572,14 +572,14 @@ export default function AdminQuestionBank() {
               </div>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {singleQuestion.options.map((opt, idx) => (
+                {(singleQuestion?.options || []).map((opt, idx) => (
                   <div key={idx}>
                     <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Option {String.fromCharCode(65 + idx)}</label>
                     <input 
                       type="text"
                       value={opt}
                       onChange={e => {
-                        const newOpts = [...singleQuestion.options];
+                        const newOpts = [...(singleQuestion?.options || [])];
                         newOpts[idx] = e.target.value;
                         setSingleQuestion({...singleQuestion, options: newOpts});
                       }}
@@ -599,7 +599,7 @@ export default function AdminQuestionBank() {
                     className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   >
                     <option value="">Select Correct Option</option>
-                    {singleQuestion.options.map((opt, idx) => opt && (
+                    {(singleQuestion?.options || []).map((opt, idx) => opt && (
                       <option key={idx} value={opt}>Option {String.fromCharCode(65 + idx)}: {opt}</option>
                     ))}
                   </select>
@@ -805,7 +805,7 @@ export default function AdminQuestionBank() {
                     </div>
                     
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4 pl-8">
-                      {q.options.map((opt: string, oIdx: number) => (
+                      {(q?.options || []).map((opt: string, oIdx: number) => (
                         <div 
                           key={oIdx} 
                           className={`p-3 rounded-xl border ${opt === q.correctAnswer ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 font-medium' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'}`}

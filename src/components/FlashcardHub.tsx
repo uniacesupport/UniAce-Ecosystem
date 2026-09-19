@@ -117,9 +117,9 @@ export default function FlashcardHub({ syllabus }: FlashcardHubProps) {
 
         {/* Module Grid */}
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {syllabus.map((module, i) => (
+          {(syllabus || []).map((module, i) => (
             <motion.div
-              key={module.id}
+              key={module.id || i}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.1 }}
@@ -134,7 +134,7 @@ export default function FlashcardHub({ syllabus }: FlashcardHubProps) {
                     {module.title}
                   </h3>
                   <p className="text-slate-500 dark:text-blue-300 text-sm line-clamp-2">
-                    {module.subTopics.length} topics to review
+                    {(module.subTopics || []).length} topics to review
                   </p>
                 </div>
               </div>
@@ -148,6 +148,11 @@ export default function FlashcardHub({ syllabus }: FlashcardHubProps) {
               </button>
             </motion.div>
           ))}
+          {(!syllabus || syllabus.length === 0) && (
+            <div className="col-span-full p-8 text-center text-slate-500 dark:text-blue-300 bg-white dark:bg-blue-900 rounded-3xl border border-slate-200 dark:border-blue-800">
+              No modules available for flashcards.
+            </div>
+          )}
         </div>
       </div>
 

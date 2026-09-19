@@ -121,10 +121,10 @@ export default function ModuleTopics({ module, onBack, onSubTopicSelect, onTakeQ
 
         {/* Topics List */}
         <div className="grid gap-4">
-          {module.subTopics.map((topic, i) => {
+          {(module?.subTopics || []).map((topic, i) => {
             const isLockedTopic = isLocked && i > 0;
             const mastery = getMasteryLevel(topic.id);
-            const masteryPercent = progress.mastery?.[topic.id] || 0;
+            const masteryPercent = progress?.mastery?.[topic.id] || 0;
 
             return (
             <motion.div

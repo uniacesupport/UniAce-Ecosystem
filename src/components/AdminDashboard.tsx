@@ -560,9 +560,13 @@ export default function AdminDashboard() {
     setIsLoadingChatAnalytics(true);
     try {
       const analytics = await AIService.getChatAnalytics();
-      setChatAnalytics(analytics);
+      setChatAnalytics({
+        topTopics: Array.isArray(analytics?.topTopics) ? analytics.topTopics : [],
+        recentQueries: Array.isArray(analytics?.recentQueries) ? analytics.recentQueries : []
+      });
     } catch (error) {
       console.error("Error fetching chat analytics:", error);
+      setChatAnalytics({ topTopics: [], recentQueries: [] });
     } finally {
       setIsLoadingChatAnalytics(false);
     }
@@ -732,9 +736,10 @@ export default function AdminDashboard() {
     setIsLoadingAnalytics(true);
     try {
       const analytics = await AIService.getStruggleAnalytics();
-      setStruggleAnalytics(analytics);
+      setStruggleAnalytics(Array.isArray(analytics) ? analytics : []);
     } catch (error) {
       console.error("Error fetching struggle analytics:", error);
+      setStruggleAnalytics([]);
     } finally {
       setIsLoadingAnalytics(false);
     }
@@ -2492,7 +2497,7 @@ export default function AdminDashboard() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-                  {curriculumRequests.map((req) => (
+                  {(curriculumRequests || []).map((req) => (
                     <tr key={req.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
                       <td className="p-4">
                         <div className="font-medium text-slate-900 dark:text-white">{req.email}</div>
@@ -2888,9 +2893,9 @@ export default function AdminDashboard() {
         {activeTab === 'overview' && (
           <div className="space-y-8">
             {/* Real-time System Alerts Banner */}
-            {systemAlerts.length > 0 && (
+            {(systemAlerts || []).length > 0 && (
               <div className="space-y-3">
-                {systemAlerts.map(alert => (
+                {(systemAlerts || []).map(alert => (
                   <div 
                     key={alert.id}
                     className={`p-4 rounded-2xl border flex items-center justify-between gap-4 transition-all shadow-sm ${
@@ -3083,8 +3088,8 @@ export default function AdminDashboard() {
                 </div>
                 
                 <div className="flex-1 space-y-5 overflow-y-auto pr-2 custom-scrollbar">
-                  {struggleAnalytics.length > 0 ? (
-                    struggleAnalytics.map((item, idx) => (
+                  {(struggleAnalytics || []).length > 0 ? (
+                    (struggleAnalytics || []).map((item, idx) => (
                       <div key={idx} className="group">
                         <div className="flex justify-between text-sm mb-2">
                           <span className="font-bold text-slate-700 dark:text-slate-300 truncate pr-4">{item.subTopicTitle}</span>
@@ -3598,10 +3603,10 @@ export default function AdminDashboard() {
                   </div>
 
                   <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
-                    {courseSkeleton.modules.map((module: any, mIdx: number) => (
+                    {(courseSkeleton?.modules || []).map((module: any, mIdx: number) => (
                       <div key={mIdx} className="p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700">
                         <MathEditableInput 
-                          value={module.title}
+                          value={module?.title || ''}
                           onChange={(val) => {
                             const newSkeleton = { ...courseSkeleton };
                             newSkeleton.modules[mIdx].title = val;
@@ -3610,7 +3615,7 @@ export default function AdminDashboard() {
                           className="w-full bg-transparent font-bold text-slate-900 dark:text-white mb-2 focus:outline-none focus:ring-1 focus:ring-indigo-500 rounded px-1"
                         />
                         <div className="pl-4 space-y-1 border-l-2 border-slate-200 dark:border-slate-700">
-                          {module.lessonTitles.map((lesson: string, lIdx: number) => (
+                          {(module?.lessonTitles || []).map((lesson: string, lIdx: number) => (
                             <MathEditableInput 
                               key={lIdx}
                               value={lesson}
@@ -6026,8 +6031,8 @@ export default function AdminDashboard() {
                       <tr>
                         <td colSpan={5} className="py-8 text-center text-slate-500">Loading analytics...</td>
                       </tr>
-                    ) : struggleAnalytics.length > 0 ? (
-                      struggleAnalytics.map((item, idx) => (
+                    ) : (struggleAnalytics || []).length > 0 ? (
+                      (struggleAnalytics || []).map((item, idx) => (
                         <tr key={idx} className="border-b border-slate-100 dark:border-slate-700/50 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
                           <td className="py-4">
                             <div className="font-bold text-slate-900 dark:text-white">{item.subTopicTitle}</div>
@@ -6106,9 +6111,9 @@ export default function AdminDashboard() {
                   <h4 className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-4 uppercase tracking-wider">Top Topics</h4>
                   {isLoadingChatAnalytics ? (
                     <div className="py-8 text-center text-slate-500 text-sm flex-grow flex items-center justify-center">Loading topics...</div>
-                  ) : chatAnalytics.topTopics.length > 0 ? (
+                  ) : (chatAnalytics?.topTopics || []).length > 0 ? (
                     <div className="space-y-3 flex-grow overflow-y-auto max-h-[400px] custom-scrollbar pr-2">
-                      {chatAnalytics.topTopics.map((item, idx) => (
+                      {(chatAnalytics?.topTopics || []).map((item, idx) => (
                         <div key={idx} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-700/30 border border-slate-100 dark:border-slate-700/50">
                           <span className="font-bold text-slate-800 dark:text-slate-200 capitalize">{item.topic}</span>
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
@@ -6127,9 +6132,9 @@ export default function AdminDashboard() {
                   <h4 className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-4 uppercase tracking-wider">Recent Queries</h4>
                   {isLoadingChatAnalytics ? (
                     <div className="py-8 text-center text-slate-500 text-sm flex-grow flex items-center justify-center">Loading queries...</div>
-                  ) : chatAnalytics.recentQueries.length > 0 ? (
+                  ) : (chatAnalytics?.recentQueries || []).length > 0 ? (
                     <div className="space-y-3 flex-grow overflow-y-auto max-h-[400px] custom-scrollbar pr-2">
-                      {chatAnalytics.recentQueries.map((item, idx) => (
+                      {(chatAnalytics?.recentQueries || []).map((item, idx) => (
                         <div key={idx} className="p-3 rounded-xl bg-slate-50 dark:bg-slate-700/30 border border-slate-100 dark:border-slate-700/50">
                           <p className="text-sm text-slate-800 dark:text-slate-200 line-clamp-2">"{item.query}"</p>
                           <div className="flex justify-between items-center mt-2">
@@ -6857,7 +6862,7 @@ export default function AdminDashboard() {
                       </tr>
                     </thead>
                     <tbody className="text-sm divide-y divide-slate-100 dark:divide-slate-700/50">
-                      {broadcastHistory.map((item, idx) => (
+                      {(broadcastHistory || []).map((item, idx) => (
                         <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
                           <td className="py-3.5">
                             <span className={`px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wider ${

@@ -4,11 +4,10 @@ import remarkGfm from 'remark-gfm';
 import rehypeKatex from 'rehype-katex';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
-import { Component, ErrorInfo, ReactNode, lazy, Suspense } from 'react';
-
-const MermaidViewer = lazy(() => import('./renderers/MermaidViewer'));
-const FunctionPlotViewer = lazy(() => import('./renderers/FunctionPlotViewer'));
-const VennDiagramViewer = lazy(() => import('./renderers/VennDiagramViewer'));
+import { Component, ErrorInfo, ReactNode, Suspense } from 'react';
+import MermaidViewer from './renderers/MermaidViewer';
+import FunctionPlotViewer from './renderers/FunctionPlotViewer';
+import VennDiagramViewer from './renderers/VennDiagramViewer';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
