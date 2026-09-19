@@ -207,7 +207,7 @@ export const AIService = {
           const [_, left, right] = equationMatch;
           try {
             const { MathEngine } = await import('./mathEngine');
-            const isCorrect = MathEngine.compare(left, right);
+            const isCorrect = await MathEngine.compare(left, right);
             if (!isCorrect) {
               lastUserMessage.text = `${lastUserMessage.text}\n\n[MATH ENGINE VERIFICATION: The equation ${left} = ${right} appears to be mathematically incorrect.]`;
             }

@@ -2,6 +2,8 @@ import express from 'express';
 import admin from 'firebase-admin';
 import { MailService } from '../mailService';
 import { GoogleGenAI } from '@google/genai';
+import { exportFirestoreToSupabase } from '../db/exporter';
+import { isSupabaseConfigured } from '../db/supabaseClient';
 
 export function setupAdminRoutes(app: express.Express, verifyAuth: any, getAdminApp: any, isAdminEmail: any) {
   
@@ -685,6 +687,55 @@ Include 3 multiple-choice conceptual questions with step-by-step verified explan
       res.status(500).json({ error: error.message || 'Failed to prune orphaned users' });
     }
   });
+
+  // 13. Supabase Status Check
+  app.get('/api/admin/supabase-status', verifyAuth, async (req, res) => {
+    const user = (req as any).user;
+    const adminApp = getAdminApp();
+    if (!adminApp) return res.status(503).json({ error: 'Firebase not initialized' });
+
+    try {
+      const userDoc = await adminApp.firestore().collection('users').doc(user.uid).get();
+      const userData = userDoc.data();
+      const isAdmin = userData?.role === 'admin' || isAdminEmail(user.email);
+      if (!isAdmin) return res.status(403).json({ error: 'Forbidden: Admin access required' });
+
+      const configured = isSupabaseConfigured();
+      res.json({
+        configured,
+        phase: configured ? 'Phase 2: Hybrid Read Offload Active' : 'Phase 1: Firestore Launch Active',
+        urlConfigured: Boolean(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL),
+        keyConfigured: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY),
+        timestamp: new Date().toISOString()
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Failed to check Supabase status' });
+    }
+  });
+
+  // 14. Trigger Static Data Migration to Supabase
+  app.post('/api/admin/supabase-migrate', verifyAuth, async (req, res) => {
+    const user = (req as any).user;
+    const adminApp = getAdminApp();
+    if (!adminApp) return res.status(503).json({ error: 'Firebase not initialized' });
+
+    try {
+      const userDoc = await adminApp.firestore().collection('users').doc(user.uid).get();
+      const userData = userDoc.data();
+      const isAdmin = userData?.role === 'admin' || isAdminEmail(user.email);
+      if (!isAdmin) return res.status(403).json({ error: 'Forbidden: Admin access required' });
+
+      const summary = await exportFirestoreToSupabase();
+      res.json({
+        success: summary.errors.length === 0,
+        summary
+      });
+    } catch (error: any) {
+      console.error('Supabase Migration Error:', error);
+      res.status(500).json({ error: error.message || 'Failed to execute Supabase migration' });
+    }
+  });
 }
+
 
 

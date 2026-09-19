@@ -1,22 +1,30 @@
 import React, { useEffect, useRef, useState } from 'react';
-import mermaid from 'mermaid';
-import { Copy, Check, Download, AlertTriangle, RefreshCw, Maximize2, ZoomIn, ZoomOut } from 'lucide-react';
+import { Copy, Check, Download, AlertTriangle, RefreshCw, Maximize2, ZoomIn, ZoomOut, Loader2 } from 'lucide-react';
 
-mermaid.initialize({
-  startOnLoad: false,
-  theme: 'default',
-  securityLevel: 'loose',
-  fontFamily: 'inherit',
-  themeVariables: {
-    fontSize: '14px',
-    primaryColor: '#6366f1',
-    primaryTextColor: '#1e293b',
-    primaryBorderColor: '#cbd5e1',
-    lineColor: '#64748b',
-    secondaryColor: '#f8fafc',
-    tertiaryColor: '#ffffff'
+let mermaidInitialized = false;
+async function getMermaid() {
+  const mermaidModule = await import('mermaid');
+  const mermaid = mermaidModule.default;
+  if (!mermaidInitialized) {
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'default',
+      securityLevel: 'loose',
+      fontFamily: 'inherit',
+      themeVariables: {
+        fontSize: '14px',
+        primaryColor: '#6366f1',
+        primaryTextColor: '#1e293b',
+        primaryBorderColor: '#cbd5e1',
+        lineColor: '#64748b',
+        secondaryColor: '#f8fafc',
+        tertiaryColor: '#ffffff'
+      }
+    });
+    mermaidInitialized = true;
   }
-});
+  return mermaid;
+}
 
 interface MermaidViewerProps {
   chart: string;
@@ -37,6 +45,7 @@ export default function MermaidViewer({ chart }: MermaidViewerProps) {
       const id = `mermaid-${Math.random().toString(36).substring(2, 9)}`;
       try {
         setHasError(false);
+        const mermaid = await getMermaid();
         const { svg } = await mermaid.render(id, chart.trim());
         if (isMounted) {
           setSvgContent(svg);

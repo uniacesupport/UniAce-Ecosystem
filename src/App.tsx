@@ -1,4 +1,4 @@
-import { useState, useEffect, useTransition } from 'react';
+import { useState, useEffect, useTransition, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import Sidebar from './components/Sidebar';
 import BottomNav from './components/BottomNav';
@@ -16,8 +16,9 @@ import GlobalNotification from './components/GlobalNotification';
 import GlobalErrorInterceptor from './components/GlobalErrorInterceptor';
 import PaywallManager from './components/PaywallManager';
 import PWAInstallPrompt from './components/PWAInstallPrompt';
-import Calculator from './components/Calculator';
 import ErrorBoundary from './components/ErrorBoundary';
+
+const Calculator = lazy(() => import('./components/Calculator'));
 
 // Direct imports for instant, zero-latency navigation across all tabs
 import QuizHub from './components/QuizHub';
@@ -393,7 +394,9 @@ function AppContent() {
 
       <AnimatePresence>
         {isCalculatorOpen && (
-          <Calculator isOpen={isCalculatorOpen} onClose={() => setIsCalculatorOpen(false)} />
+          <Suspense fallback={null}>
+            <Calculator isOpen={isCalculatorOpen} onClose={() => setIsCalculatorOpen(false)} />
+          </Suspense>
         )}
       </AnimatePresence>
 

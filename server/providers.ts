@@ -50,14 +50,21 @@ async function fetchWithTimeout(url: string, options: any, timeout = 600000) {
 }
 
 class ModelProviderError extends Error {
+  provider: string;
+  statusCode?: number;
+  isRetryable: boolean;
+
   constructor(
     message: string,
-    public readonly provider: string,
-    public readonly statusCode?: number,
-    public readonly isRetryable: boolean = true
+    provider: string,
+    statusCode?: number,
+    isRetryable: boolean = true
   ) {
     super(message);
     this.name = 'ModelProviderError';
+    this.provider = provider;
+    this.statusCode = statusCode;
+    this.isRetryable = isRetryable;
   }
 }
 
@@ -1392,8 +1399,11 @@ export class CircuitBreaker {
   private lastFailureTime = 0;
   private readonly threshold = 5;
   private readonly resetTimeout = 60000; // 1 minute
+  private provider: ModelProvider;
 
-  constructor(private provider: ModelProvider) {}
+  constructor(provider: ModelProvider) {
+    this.provider = provider;
+  }
 
   get name() {
     return this.provider.name;

@@ -1,10 +1,7 @@
-import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
-import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
 
 /**
- * Export any HTML element to a PDF file using html2canvas and jsPDF.
+ * Export any HTML element to a PDF file using html2canvas and jsPDF (dynamically imported).
  */
 export async function exportElementToPdf(
   element: HTMLElement,
@@ -13,6 +10,11 @@ export async function exportElementToPdf(
 ): Promise<boolean> {
   const toastId = toast.loading('Generating high-resolution PDF...');
   try {
+    const [{ default: jsPDF }, { default: html2canvas }] = await Promise.all([
+      import('jspdf'),
+      import('html2canvas')
+    ]);
+
     const canvas = await html2canvas(element, {
       scale: 2,
       useCORS: true,
@@ -54,19 +56,20 @@ export async function exportElementToPdf(
 }
 
 /**
- * Export structured JSON data to an Excel (.xlsx) spreadsheet.
+ * Export structured JSON data to an Excel (.xlsx) spreadsheet (dynamically imported).
  */
-export function exportJsonToExcel(
+export async function exportJsonToExcel(
   data: Record<string, any>[],
   sheetName: string = 'UniAce Data',
   filename: string = 'uniace-export.xlsx'
-): boolean {
+): Promise<boolean> {
   try {
     if (!data || data.length === 0) {
       toast.error('No data available to export');
       return false;
     }
 
+    const XLSX = await import('xlsx');
     const worksheet = XLSX.utils.json_to_sheet(data);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, sheetName.substring(0, 31));
