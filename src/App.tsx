@@ -18,6 +18,7 @@ import PaywallManager from './components/PaywallManager';
 import PWAInstallPrompt from './components/PWAInstallPrompt';
 import Calculator from './components/Calculator';
 import ErrorBoundary from './components/ErrorBoundary';
+import StudyNotificationScheduler from './components/StudyNotificationScheduler';
 
 // Direct imports for instant, zero-latency navigation across all tabs
 import QuizHub from './components/QuizHub';
@@ -826,6 +827,9 @@ function AppContent() {
 
       {/* PWA Install Prompt */}
       <PWAInstallPrompt />
+
+      {/* Study Notification Scheduler */}
+      <StudyNotificationScheduler />
 
       {/* Voice Tutor */}
       {isVoiceTutorOpen && (

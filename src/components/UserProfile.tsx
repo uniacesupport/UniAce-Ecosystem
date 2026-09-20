@@ -232,7 +232,7 @@ export default function UserProfile({ onBack, onNavigate }: UserProfileProps) {
 
   return (
     <div className="flex-1 overflow-y-auto bg-slate-50 dark:bg-slate-900 p-4 sm:p-6 lg:p-12 pb-24 lg:pb-12 transition-colors">
-      <div className="max-w-2xl mx-auto space-y-8">
+      <div className="w-full max-w-5xl xl:max-w-6xl 2xl:max-w-7xl mx-auto space-y-8">
         {/* Header */}
         <div className="flex items-center justify-between lg:pl-4 xl:pl-0">
           <button 

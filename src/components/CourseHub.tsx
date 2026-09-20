@@ -150,7 +150,7 @@ export default function CourseHub({ onSelectCourse, onProfileClick, onViewSelect
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-zinc-950 transition-colors overflow-x-hidden">
-      <div className="w-full max-w-7xl 2xl:max-w-[1600px] mx-auto flex flex-col lg:flex-row p-3 sm:p-6 lg:p-8 gap-6 lg:gap-8 relative">
+      <div className="w-full flex flex-col lg:flex-row p-3 sm:p-6 lg:p-8 gap-6 lg:gap-8 relative">
         {/* Configuration Warning */}
         {!isConfigured && (
           <div className="fixed top-0 left-0 right-0 bg-amber-500 text-white p-2 text-center text-xs font-bold z-50 shadow-lg">

@@ -44,7 +44,7 @@ export default function CourseSyllabus({
 
   return (
     <div className="flex-1 overflow-y-auto bg-slate-50 dark:bg-zinc-950 p-3 sm:p-6 lg:p-8 pb-16 transition-colors">
-      <div className="w-full max-w-7xl 2xl:max-w-[1600px] mx-auto space-y-6 sm:space-y-8">
+      <div className="w-full space-y-6 sm:space-y-8">
         {/* Header */}
         <header className="space-y-4 sm:space-y-6 lg:pl-4 xl:pl-0">
           <div className="flex items-center justify-between">

@@ -1062,192 +1062,106 @@ export default function AdminDashboard() {
     isCancelledRef.current = false;
     setGenerationError(null);
     setGenerationStep('generating');
-    setGenerationProgress(0);
+    setGenerationProgress(5);
+    setStatusMessage('Contacting server to coordinate course creation...');
     
     try {
       const courseId = quickCourseCode.replace(/\s+/g, '').toUpperCase();
-      const totalModules = courseSkeleton.modules.length;
-      let generatedModules: any[] = [];
-      let startingIndex = 0;
-
-      // Check for existing progress to resume
-      const courseRef = doc(db, 'courses', courseId);
-      const courseDoc = await getDoc(courseRef);
-      
-      if (courseDoc.exists() && courseDoc.data().modules) {
-        generatedModules = courseDoc.data().modules;
-        startingIndex = generatedModules.length;
-        if (startingIndex > 0 && startingIndex < totalModules) {
-          setStatusMessage(`Resuming from Module ${startingIndex + 1}...`);
-        }
-      }
+      const user = auth.currentUser;
+      if (!user) throw new Error('You must be logged in.');
+      const idToken = await user.getIdToken();
 
       const activeAcademicStandard = quickAcademicStandard === 'Custom Academic Benchmark'
         ? (customAcademicStandard.trim() || 'Custom Dynamic Academic Benchmark')
         : quickAcademicStandard;
 
-      // Save initial course doc
-      await setDoc(courseRef, {
-        id: courseId,
-        title: quickCourseName,
-        description: courseSkeleton.description || `A comprehensive course on ${quickCourseName}.`,
-        subject: quickSubject,
-        level: quickLevel,
-        semester: quickSemester,
-        creditUnits: 0,
-        prerequisites: [],
-        scope: courseScope,
-        academicStandard: activeAcademicStandard,
-        faculties: courseScope === 'FACULTY' ? selectedFaculties : [],
-        departments: courseScope === 'DEPARTMENT' ? selectedDepartments : [],
-        isAIGenerated: true,
-        createdAt: new Date().toISOString()
-      }, { merge: true });
+      // Call our server-coordinated endpoint
+      const response = await fetch('/api/course/generate-coordinated', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
+        body: JSON.stringify({
+          courseId,
+          courseName: quickCourseName,
+          courseDescription: courseSkeleton.description,
+          outline: quickCourseOutline,
+          provider: aiProvider,
+          level: quickLevel,
+          semester: quickSemester,
+          department: quickDepartment,
+          tone: quickTone,
+          depth: quickDepth,
+          sourceText,
+          academicStandard: activeAcademicStandard,
+          subject: quickSubject,
+          scope: courseScope,
+          selectedFaculties: courseScope === 'FACULTY' ? selectedFaculties : [],
+          selectedDepartments: courseScope === 'DEPARTMENT' ? selectedDepartments : []
+        })
+      });
 
-      const CONCURRENCY_LIMIT = 3;
-      for (let i = startingIndex; i < totalModules; i += CONCURRENCY_LIMIT) {
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || 'Server failed to start coordinated course generation.');
+      }
+
+      const initData = await response.json();
+      console.log('Coordinated generation started:', initData);
+
+      // Subscribe to real-time updates from Firestore Course Document
+      const courseRef = doc(db, 'courses', courseId);
+      const unsubscribe = onSnapshot(courseRef, (snapshot) => {
         if (isCancelledRef.current) {
-          throw new Error('Generation cancelled by user.');
+          unsubscribe();
+          return;
         }
 
-        const chunk = courseSkeleton.modules.slice(i, i + CONCURRENCY_LIMIT);
-        const chunkEnd = Math.min(i + CONCURRENCY_LIMIT, totalModules);
-        
-        const baseProgress = Math.round((i / totalModules) * 90);
-        setGenerationProgress(baseProgress);
-        setStatusMessage(`Generating Modules ${i + 1}-${chunkEnd} of ${totalModules} in parallel...`);
-
-        try {
-          const chunkPromises = chunk.map(async (moduleSkeleton: any, idx: number) => {
-            const moduleIndex = i + idx;
-            let moduleContent = null;
-            let retries = 2;
-            
-            while (retries > 0 && !moduleContent) {
-              try {
-                moduleContent = await generateModuleContent(
-                  quickCourseName, 
-                  moduleSkeleton, 
-                  aiProvider, 
-                  (msg) => {
-                    if (idx === 0) {
-                      setStatusMessage(`Modules ${i + 1}-${chunkEnd}/${totalModules}: ${msg}`);
-                    }
-                  }, 
-                  () => isCancelledRef.current,
-                  quickTone,
-                  quickDepth,
-                  sourceText,
-                  activeAcademicStandard,
-                  quickLevel,
-                  quickDepartment
-                );
-              } catch (err) {
-                if (isCancelledRef.current) throw new Error('Generation cancelled by user.');
-                retries--;
-                if (retries > 0) {
-                  if (idx === 0) setStatusMessage(`Retrying Module ${moduleIndex + 1}/${totalModules}... (${retries} attempts left)`);
-                  await new Promise(resolve => setTimeout(resolve, 2000));
-                } else {
-                  throw err;
-                }
-              }
-            }
-
-            if (isCancelledRef.current) {
-              throw new Error('Generation cancelled by user.');
-            }
-
-            return { index: moduleIndex, content: moduleContent };
-          });
-
-          const results = await Promise.all(chunkPromises);
-          results.sort((a, b) => a.index - b.index);
-
-          for (const res of results) {
-            if (res.content) {
-              generatedModules.push(res.content);
-            }
+        const data = snapshot.data();
+        if (data) {
+          if (data.generationProgress !== undefined) {
+            setGenerationProgress(data.generationProgress);
           }
-          
-          await CourseService.saveGeneratedCourse(courseId, { modules: generatedModules });
-          
-        } catch (moduleError: any) {
-          console.error(`Failed to generate a module in chunk ${i + 1}-${chunkEnd}:`, moduleError);
-          throw new Error(`Failed during Modules ${i + 1}-${chunkEnd}: ${moduleError.message}`);
+          if (data.statusMessage) {
+            setStatusMessage(data.statusMessage);
+          }
+
+          if (data.generationStatus === 'completed') {
+            unsubscribe();
+            setIsGeneratingQuick(false);
+            setUploadSuccess(true);
+            setGenerationProgress(100);
+            showToast('Course generated successfully!', 'success');
+            refreshCourses();
+
+            // Reset fields after a delay
+            setTimeout(() => {
+              setGenerationStep('input');
+              setCourseSkeleton(null);
+              setQuickCourseName('');
+              setQuickCourseCode('');
+              setQuickCourseOutline('');
+              setGenerationProgress(0);
+              setUploadSuccess(false);
+            }, 3000);
+          } else if (data.generationStatus === 'failed') {
+            unsubscribe();
+            setIsGeneratingQuick(false);
+            setGenerationError(data.generationError || 'Generation failed on the server.');
+            setGenerationStep('error');
+            showToast('Failed to complete generation: ' + (data.generationError || 'Internal Error'), 'error');
+          }
         }
-      }
-
-      // Final Ingestion
-      setGenerationProgress(95);
-      setStatusMessage('Step 2: Ingesting course into Knowledge Base...');
-      const syllabus = generatedModules.map((m: any, mIdx: number) => ({
-        id: `m${mIdx + 1}`,
-        title: m.title || `Module ${mIdx + 1}`,
-        subTopics: (m.lessons || []).map((l: any, lIdx: number) => ({
-          id: `m${mIdx + 1}-l${lIdx + 1}`,
-          title: l.title || `Lesson ${lIdx + 1}`,
-          content: l.content || ''
-        }))
-      }));
-
-      await ingestCourseToKB({
-        id: courseId,
-        title: quickCourseName,
-        description: courseSkeleton.description || `A comprehensive course on ${quickCourseName}.`,
-        syllabus: syllabus
-      } as any);
-
-      // Generate Formulas
-      setStatusMessage('Step 3: Generating essential formulas...');
-      try {
-        const generatedFormulas = await generateCourseFormulas(
-          quickCourseName,
-          courseSkeleton.description || `A comprehensive course on ${quickCourseName}.`,
-          aiProvider
-        );
-        
-        if (generatedFormulas && generatedFormulas.length > 0) {
-          const batch = writeBatch(db);
-          generatedFormulas.forEach((formula: any, idx: number) => {
-            const formulaId = `f${idx + 1}`;
-            const formulaRef = doc(db, `courses/${courseId}/formulas`, formulaId);
-            batch.set(formulaRef, sanitizeForFirestore({
-              id: formulaId,
-              ...formula
-            }));
-          });
-          await batch.commit();
-          setStatusMessage('Formulas generated successfully!');
-        }
-      } catch (formulaError) {
-        console.error('Failed to generate formulas:', formulaError);
-        showToast('Course generated, but formula generation failed.', 'error');
-      }
-
-      setGenerationProgress(100);
-      setUploadSuccess(true);
-      setStatusMessage('Course generated, published, and ingested successfully!');
-      showToast('Course generated successfully!', 'success');
-      refreshCourses();
-      
-      // Reset fields after a delay
-      setTimeout(() => {
-        setGenerationStep('input');
-        setCourseSkeleton(null);
-        setQuickCourseName('');
-        setQuickCourseCode('');
-        setQuickCourseOutline('');
-        setGenerationProgress(0);
-        setUploadSuccess(false);
-      }, 3000);
+      }, (error) => {
+        console.error('Snapshot subscription error:', error);
+      });
 
     } catch (error: any) {
       console.error('Final generation error:', error);
       setGenerationError(error.message);
       setGenerationStep('error');
       showToast('Failed to complete generation: ' + error.message, 'error');
-    } finally {
       setIsGeneratingQuick(false);
     }
   };

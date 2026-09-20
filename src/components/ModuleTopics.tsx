@@ -74,7 +74,7 @@ export default function ModuleTopics({ module, onBack, onSubTopicSelect, onTakeQ
 
   return (
     <div className="flex-1 overflow-y-auto bg-slate-50 dark:bg-zinc-950 p-4 sm:p-6 lg:p-12 pb-24 lg:pb-12 transition-colors">
-      <div className="max-w-4xl mx-auto space-y-10">
+      <div className="w-full space-y-10">
         {/* Header */}
         <header className="space-y-6 lg:pl-4 xl:pl-0">
           <button 
