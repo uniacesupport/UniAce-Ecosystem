@@ -332,16 +332,31 @@ async function fetchHuggingFaceModels(apiKey: string): Promise<ProviderModelOpti
   const res = await fetch('https://huggingface.co/api/models?pipeline_tag=text-generation&sort=downloads&direction=-1&limit=60', {
     headers: {
       'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
     }
   });
+
+  const contentType = res.headers.get('content-type') || '';
+  if (contentType.includes('text/html')) {
+    const htmlText = await res.text().catch(() => '');
+    if (htmlText.toLowerCase().includes('cloudflare') || res.status === 403) {
+      throw new Error(`Model discovery was blocked by Cloudflare security rules (403 HTML). Hugging Face requires browser-like verification. Try manually entering a model identifier (e.g., meta-llama/Llama-3.2-1B-Instruct).`);
+    }
+    throw new Error(`HuggingFace returned an HTML page (Status: ${res.status}) instead of JSON data. Model discovery is currently restricted.`);
+  }
 
   if (!res.ok) {
     const errText = await res.text().catch(() => '');
     throw new Error(`HuggingFace API returned ${res.status}: ${errText || res.statusText}`);
   }
 
-  const data = await res.json();
+  const rawText = await res.text();
+  if (rawText.trim().startsWith('<!')) {
+    throw new Error(`HuggingFace returned an HTML error document. Your API key might be inactive, or the endpoint rate-limited.`);
+  }
+
+  const data = JSON.parse(rawText);
   if (!Array.isArray(data)) {
     throw new Error('Invalid response format from HuggingFace API');
   }

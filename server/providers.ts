@@ -1305,27 +1305,37 @@ export class HuggingFaceProvider implements ModelProvider {
         );
       }
       const fallbackModel = (await this.rotator.getFallbackModel() || '').trim();
-      const hf = new HfInference(apiKey);
+      const hf = new HfInference(apiKey, {
+        headers: {
+          'X-Wait-For-Model': 'true'
+        }
+      });
 
       const executeGenerate = async (targetModel: string) => {
-        const response = await hf.chatCompletion({
-          model: targetModel,
-          messages: messages,
-          max_tokens: 4096,
-          temperature: 0.5,
-          // @ts-ignore - wait_for_model is supported by the API to handle model loading
-          wait_for_model: true
-        });
+        try {
+          const response = await hf.chatCompletion({
+            model: targetModel,
+            messages: messages,
+            max_tokens: 4096,
+            temperature: 0.5
+          });
 
-        return {
-          text: response.choices[0]?.message?.content || '',
-          usage: {
-            promptTokens: response.usage?.prompt_tokens || 0,
-            completionTokens: response.usage?.completion_tokens || 0,
-            totalTokens: response.usage?.total_tokens || 0
-          },
-          finishReason: response.choices[0]?.finish_reason || 'stop'
-        };
+          return {
+            text: response.choices[0]?.message?.content || '',
+            usage: {
+              promptTokens: response.usage?.prompt_tokens || 0,
+              completionTokens: response.usage?.completion_tokens || 0,
+              totalTokens: response.usage?.total_tokens || 0
+            },
+            finishReason: response.choices[0]?.finish_reason || 'stop'
+          };
+        } catch (error: any) {
+          const errMsg = error?.message || '';
+          if (errMsg.includes('Unexpected token') && (errMsg.includes('<') || errMsg.includes('doctype') || errMsg.includes('JSON'))) {
+            throw new Error(`Hugging Face returned an HTML error page (404 Not Found) instead of JSON. This means the model ID "${targetModel}" is invalid or is not deployed on Hugging Face's Serverless Inference API.`);
+          }
+          throw error;
+        }
       };
 
       try {
@@ -1372,32 +1382,42 @@ export class HuggingFaceProvider implements ModelProvider {
         );
       }
       const fallbackModel = (await this.rotator.getFallbackModel() || '').trim();
-      const hf = new HfInference(apiKey);
+      const hf = new HfInference(apiKey, {
+        headers: {
+          'X-Wait-For-Model': 'true'
+        }
+      });
 
       const executeStream = async (targetModel: string) => {
-        const stream = hf.chatCompletionStream({
-          model: targetModel,
-          messages: messages,
-          max_tokens: 4096,
-          temperature: 0.5,
-          // @ts-ignore
-          wait_for_model: true
-        });
+        try {
+          const stream = hf.chatCompletionStream({
+            model: targetModel,
+            messages: messages,
+            max_tokens: 4096,
+            temperature: 0.5
+          });
 
-        let fullText = '';
-        for await (const chunk of stream) {
-          const content = chunk.choices[0]?.delta?.content || '';
-          if (content) {
-            fullText += content;
-            onChunk(content);
+          let fullText = '';
+          for await (const chunk of stream) {
+            const content = chunk.choices[0]?.delta?.content || '';
+            if (content) {
+              fullText += content;
+              onChunk(content);
+            }
           }
-        }
 
-        return {
-          text: fullText,
-          usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
-          finishReason: 'stop'
-        };
+          return {
+            text: fullText,
+            usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+            finishReason: 'stop'
+          };
+        } catch (error: any) {
+          const errMsg = error?.message || '';
+          if (errMsg.includes('Unexpected token') && (errMsg.includes('<') || errMsg.includes('doctype') || errMsg.includes('JSON'))) {
+            throw new Error(`Hugging Face returned an HTML error page (404 Not Found) instead of JSON. This means the model ID "${targetModel}" is invalid or is not deployed on Hugging Face's Serverless Inference API.`);
+          }
+          throw error;
+        }
       };
 
       try {
