@@ -651,62 +651,78 @@ export default function ApiKeyManagerModal({ provider, onClose }: ApiKeyManagerM
                     {keys.map((k, index) => (
                       <div 
                         key={index} 
-                        className="flex items-center justify-between p-3.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm"
+                        className="flex flex-col p-3.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm space-y-2"
                       >
-                        <div className="flex items-center gap-3 overflow-hidden">
-                          <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${k.isExhausted ? 'bg-red-500' : 'bg-emerald-500'}`} />
-                          <div className="font-mono text-sm text-slate-700 dark:text-slate-300 truncate">
-                            {k.key.substring(0, 8)}...{k.key.substring(k.key.length - 4)}
-                          </div>
-                          {k.isExhausted && (
-                            <span className="px-2 py-0.5 bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 text-[10px] font-bold uppercase rounded-md shrink-0">
-                              Rate Limited
-                            </span>
-                          )}
-                        </div>
-
-                        <div className="flex items-center gap-2 shrink-0">
-                          {k.testStatus === 'testing' ? (
-                            <Loader2 size={16} className="text-indigo-500 animate-spin" />
-                          ) : k.testStatus === 'success' ? (
-                            <span className="flex items-center gap-1 text-xs text-emerald-600 font-medium">
-                              <Check size={16} /> Verified
-                            </span>
-                          ) : k.testStatus === 'error' ? (
-                            <div className="group relative">
-                              <AlertTriangle size={16} className="text-rose-500 cursor-help" />
-                              <div className="absolute bottom-full right-0 mb-2 w-56 p-2 bg-slate-900 text-white text-[10px] rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-30 shadow-lg">
-                                {k.testError}
-                              </div>
+                        <div className="flex items-center justify-between w-full">
+                          <div className="flex items-center gap-3 overflow-hidden">
+                            <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${k.isExhausted ? 'bg-red-500' : 'bg-emerald-500'}`} />
+                            <div className="font-mono text-sm text-slate-700 dark:text-slate-300 truncate">
+                              {k.key.substring(0, 8)}...{k.key.substring(k.key.length - 4)}
                             </div>
-                          ) : (
-                            <button
-                              onClick={() => handleTestKey(index)}
-                              disabled={isTestingAny}
-                              className="px-2.5 py-1 text-xs text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-lg transition-colors flex items-center gap-1"
-                              title="Test API Key Connectivity"
-                            >
-                              <Play size={12} /> Test
-                            </button>
-                          )}
+                            {k.isExhausted && (
+                              <span className="px-2 py-0.5 bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 text-[10px] font-bold uppercase rounded-md shrink-0">
+                                Rate Limited
+                              </span>
+                            )}
+                          </div>
 
-                          {k.isExhausted && (
-                            <button
-                              onClick={() => handleResetExhaustion(index)}
-                              className="px-2.5 py-1 text-xs font-bold text-amber-600 bg-amber-50 hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-400 dark:hover:bg-amber-900/40 rounded-lg transition-colors"
-                            >
-                              Reset
-                            </button>
-                          )}
+                          <div className="flex items-center gap-2 shrink-0">
+                            {k.testStatus === 'testing' ? (
+                              <Loader2 size={16} className="text-indigo-500 animate-spin" />
+                            ) : k.testStatus === 'success' ? (
+                              <span className="flex items-center gap-1 text-xs text-emerald-600 font-medium">
+                                <Check size={16} /> Verified
+                              </span>
+                            ) : k.testStatus === 'error' ? (
+                              <button
+                                onClick={() => handleTestKey(index)}
+                                disabled={isTestingAny}
+                                className="px-2 py-1 text-xs text-rose-600 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/20 dark:text-rose-400 rounded-lg transition-colors flex items-center gap-1 font-semibold"
+                                title="Click to test again"
+                              >
+                                <AlertTriangle size={13} /> Retest
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => handleTestKey(index)}
+                                disabled={isTestingAny}
+                                className="px-2.5 py-1 text-xs text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-lg transition-colors flex items-center gap-1"
+                                title="Test API Key Connectivity"
+                              >
+                                <Play size={12} /> Test
+                              </button>
+                            )}
 
-                          <button
-                            onClick={() => handleRemoveKey(index)}
-                            className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-                            title="Remove Key"
-                          >
-                            <Trash2 size={15} />
-                          </button>
+                            {k.isExhausted && (
+                              <button
+                                onClick={() => handleResetExhaustion(index)}
+                                className="px-2.5 py-1 text-xs font-bold text-amber-600 bg-amber-50 hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-400 dark:hover:bg-amber-900/40 rounded-lg transition-colors"
+                              >
+                                Reset
+                              </button>
+                            )}
+
+                            <button
+                              onClick={() => handleRemoveKey(index)}
+                              className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                              title="Remove Key"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
                         </div>
+
+                        {k.testStatus === 'error' && k.testError && (
+                          <div className="mt-1 text-xs bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-400 border border-rose-100 dark:border-rose-900/30 p-2.5 rounded-lg flex flex-col gap-1 shadow-inner font-mono leading-relaxed break-words">
+                            <div className="flex items-center gap-1 font-bold text-[10px] uppercase tracking-wide">
+                              <AlertTriangle size={12} className="text-rose-500" />
+                              <span>Diagnostics Reason:</span>
+                            </div>
+                            <div className="text-[11px] select-text">
+                              {k.testError}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
