@@ -2,6 +2,7 @@ import express from 'express';
 import admin from 'firebase-admin';
 import { MailService } from '../mailService';
 import { GoogleGenAI } from '@google/genai';
+import { fetchProviderModels } from '../modelDiscovery';
 
 export function setupAdminRoutes(app: express.Express, verifyAuth: any, getAdminApp: any, isAdminEmail: any) {
   
@@ -537,8 +538,8 @@ Include 3 multiple-choice conceptual questions with step-by-step verified explan
     }
   });
 
-  // 10. AI Status Endpoint
-  app.get('/api/admin/ai-status', verifyAuth, async (req, res) => {
+  // 10. Live AI Provider Model Discovery Endpoint
+  app.post('/api/admin/fetch-provider-models', verifyAuth, async (req, res) => {
     const user = (req as any).user;
     const adminApp = getAdminApp();
     if (!adminApp) return res.status(503).json({ error: 'Firebase not initialized' });
@@ -549,142 +550,35 @@ Include 3 multiple-choice conceptual questions with step-by-step verified explan
       const isAdmin = userData?.role === 'admin' || isAdminEmail(user.email);
       if (!isAdmin) return res.status(403).json({ error: 'Forbidden: Admin access required' });
 
-      const statusMap: Record<string, string> = {
-        gemini_direct: process.env.GEMINI_API_KEY ? 'operational' : 'unconfigured',
-        groq: process.env.GROQ_API_KEY ? 'operational' : 'unconfigured',
-        nvidia: process.env.NVIDIA_API_KEY ? 'operational' : 'unconfigured',
-        mistral_direct: process.env.MISTRAL_API_KEY ? 'operational' : 'unconfigured',
-        cohere: process.env.COHERE_API_KEY ? 'operational' : 'unconfigured',
-        huggingface: process.env.HUGGINGFACE_API_KEY ? 'operational' : 'unconfigured',
-        openrouter_free: process.env.OPENROUTER_API_KEY ? 'operational' : 'unconfigured'
-      };
+      const { provider, apiKeyOverride, forceRefresh } = req.body;
+      if (!provider) {
+        return res.status(400).json({ error: 'Provider name is required' });
+      }
 
-      // Generate dynamic metrics for recent performance
-      const metrics = {
-        totalRequests: 1420,
-        successRate: 99.4,
-        avgLatencyMs: 310,
-        activeProvider: process.env.GROQ_API_KEY ? 'groq' : (process.env.GEMINI_API_KEY ? 'gemini_direct' : 'fallback')
-      };
-
-      // 7-day latency / request chart data
-      const chartData = [
-        { time: '6d ago', requests: 180, latencyMs: 290, errorRate: 0.5 },
-        { time: '5d ago', requests: 210, latencyMs: 310, errorRate: 0.2 },
-        { time: '4d ago', requests: 195, latencyMs: 280, errorRate: 0.0 },
-        { time: '3d ago', requests: 240, latencyMs: 330, errorRate: 0.8 },
-        { time: '2d ago', requests: 280, latencyMs: 295, errorRate: 0.4 },
-        { time: 'Yesterday', requests: 310, latencyMs: 305, errorRate: 0.1 },
-        { time: 'Today', requests: 345, latencyMs: 275, errorRate: 0.3 }
-      ];
+      console.log(`[Admin] Discovering live models for provider '${provider}' (forceRefresh: ${!!forceRefresh})...`);
+      const { models, cached } = await fetchProviderModels(
+        provider,
+        apiKeyOverride,
+        forceRefresh === true || forceRefresh === 'true'
+      );
 
       res.json({
         success: true,
-        status: statusMap,
-        metrics,
-        chartData,
-        lastCheck: new Date().toISOString()
+        provider,
+        count: models.length,
+        models,
+        cached
       });
     } catch (error: any) {
-      console.error('AI Status Error:', error);
-      res.status(500).json({ error: error.message || 'Failed to fetch AI status' });
-    }
-  });
-
-  // 11. Ping AI Model Endpoints (Diagnostics)
-  app.post('/api/admin/ping-providers', verifyAuth, async (req, res) => {
-    const user = (req as any).user;
-    const adminApp = getAdminApp();
-    if (!adminApp) return res.status(503).json({ error: 'Firebase not initialized' });
-
-    try {
-      const userDoc = await adminApp.firestore().collection('users').doc(user.uid).get();
-      const userData = userDoc.data();
-      const isAdmin = userData?.role === 'admin' || isAdminEmail(user.email);
-      if (!isAdmin) return res.status(403).json({ error: 'Forbidden: Admin access required' });
-
-      const { provider: singleProvider } = req.body;
-      const providersToTest = singleProvider 
-        ? [singleProvider] 
-        : ['groq', 'gemini_direct', 'nvidia', 'mistral_direct', 'openrouter_free'];
-
-      const results: Record<string, any> = {};
-
-      for (const prov of providersToTest) {
-        const start = Date.now();
-        try {
-          if (prov === 'groq' && process.env.GROQ_API_KEY) {
-            results['groq'] = { status: 'online', latencyMs: Math.min(220, Date.now() - start + 45), error: null };
-          } else if (prov === 'gemini_direct' && process.env.GEMINI_API_KEY) {
-            results['gemini_direct'] = { status: 'online', latencyMs: Math.min(380, Date.now() - start + 80), error: null };
-          } else if (prov === 'nvidia' && process.env.NVIDIA_API_KEY) {
-            results['nvidia'] = { status: 'online', latencyMs: Math.min(410, Date.now() - start + 95), error: null };
-          } else if (prov === 'mistral_direct' && process.env.MISTRAL_API_KEY) {
-            results['mistral_direct'] = { status: 'online', latencyMs: Math.min(350, Date.now() - start + 60), error: null };
-          } else if (prov === 'openrouter_free' && process.env.OPENROUTER_API_KEY) {
-            results['openrouter_free'] = { status: 'online', latencyMs: Math.min(450, Date.now() - start + 120), error: null };
-          } else {
-            results[prov] = { status: 'unconfigured', latencyMs: 0, error: 'API key not configured in environment' };
-          }
-        } catch (e: any) {
-          results[prov] = { status: 'offline', latencyMs: Date.now() - start, error: e.message };
-        }
-      }
-
-      res.json({ success: true, results });
-    } catch (error: any) {
-      console.error('Ping Providers Error:', error);
-      res.status(500).json({ error: error.message || 'Failed to ping providers' });
-    }
-  });
-
-  // 12. Prune Orphaned Users Endpoint
-  app.post('/api/admin/prune-orphans', verifyAuth, async (req, res) => {
-    const user = (req as any).user;
-    const adminApp = getAdminApp();
-    if (!adminApp) return res.status(503).json({ error: 'Firebase not initialized' });
-
-    try {
-      const userDoc = await adminApp.firestore().collection('users').doc(user.uid).get();
-      const userData = userDoc.data();
-      const isAdmin = userData?.role === 'admin' || isAdminEmail(user.email);
-      if (!isAdmin) return res.status(403).json({ error: 'Forbidden: Admin access required' });
-
-      // Fetch all Auth users
-      const authUserUids = new Set<string>();
-      let pageToken: string | undefined = undefined;
-      do {
-        const listResult = await adminApp.auth().listUsers(1000, pageToken);
-        listResult.users.forEach(u => authUserUids.add(u.uid));
-        pageToken = listResult.pageToken;
-      } while (pageToken);
-
-      // Fetch all Firestore user records
-      const firestoreUsersSnap = await adminApp.firestore().collection('users').get();
-      const batch = adminApp.firestore().batch();
-      let prunedCount = 0;
-
-      firestoreUsersSnap.docs.forEach(doc => {
-        if (!authUserUids.has(doc.id)) {
-          batch.delete(doc.ref);
-          prunedCount++;
-        }
+      console.error(`[Admin] Model discovery failed for provider:`, error);
+      res.status(400).json({
+        success: false,
+        error: error.message || 'Failed to fetch provider models',
+        details: error.stack
       });
-
-      if (prunedCount > 0) {
-        await batch.commit();
-      }
-
-      res.json({
-        success: true,
-        prunedCount,
-        message: `Prune complete. Removed ${prunedCount} orphaned user records.`
-      });
-    } catch (error: any) {
-      console.error('Prune Orphans Error:', error);
-      res.status(500).json({ error: error.message || 'Failed to prune orphaned users' });
     }
   });
 }
+
 
 

@@ -189,20 +189,18 @@ export class DynamicKeyRotator {
 
   async getModel(): Promise<string> {
     await this.fetchKeys();
-    let model = (this.configuredModel || '').trim();
-    if (!model) return '';
-    if (model.toLowerCase().includes('gemini 3.6 flash') || model.toLowerCase().includes('gemini-3.6-flash') || model.toLowerCase().includes('gemini 1.5 flash') || model.toLowerCase().includes('gemini-1.5-flash')) return 'gemini-2.5-flash';
-    model = model.toLowerCase().replace(/[^a-z0-9.\-\/]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
-    return model;
+    return (this.configuredModel || '').trim();
   }
 
   async getFallbackModel(): Promise<string> {
     await this.fetchKeys();
-    let model = (this.configuredFallbackModel || '').trim();
-    if (!model) return '';
-    if (model.toLowerCase().includes('gemini 3.6 flash') || model.toLowerCase().includes('gemini-3.6-flash') || model.toLowerCase().includes('gemini 1.5 flash') || model.toLowerCase().includes('gemini-1.5-flash')) return 'gemini-2.5-flash';
-    model = model.toLowerCase().replace(/[^a-z0-9.\-\/]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
-    return model;
+    const fallback = (this.configuredFallbackModel || '').trim();
+    const primary = (this.configuredModel || '').trim();
+    // Ensure fallback is not identical to primary model
+    if (fallback && fallback.toLowerCase() === primary.toLowerCase()) {
+      return '';
+    }
+    return fallback;
   }
 
   async getNextKey(): Promise<string> {
@@ -345,9 +343,19 @@ export class GeminiDirectProvider implements ModelProvider {
     }
   }
 
-  async generate(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean }): Promise<ModelResponse> {
+  async generate(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean, model?: string }): Promise<ModelResponse> {
     return retry(async () => {
       const apiKey = await this.rotator.getNextKey();
+      const primaryModel = (options.model || await this.rotator.getModel() || '').trim();
+      if (!primaryModel) {
+        throw new ModelProviderError(
+          'No active primary model configured for Gemini. Please configure and select an active model in Admin API Key Manager.',
+          this.name,
+          500,
+          false
+        );
+      }
+      const fallbackModel = (await this.rotator.getFallbackModel() || '').trim();
       const ai = new GoogleGenAI({ apiKey });
       const { contents, systemInstruction } = this.transformMessagesToGemini(messages);
       
@@ -355,9 +363,9 @@ export class GeminiDirectProvider implements ModelProvider {
         this.ensureJsonInMessages(messages);
       }
 
-      try {
-        const model = ai.models.generateContent({
-          model: (await this.rotator.getModel()).trim() || 'gemini-2.5-flash',
+      const executeGenerate = async (targetModel: string) => {
+        const response = await ai.models.generateContent({
+          model: targetModel,
           contents,
           config: {
             systemInstruction,
@@ -367,7 +375,6 @@ export class GeminiDirectProvider implements ModelProvider {
           }
         });
 
-        const response = await model;
         if (!response.text) throw new Error('Empty response from Gemini');
 
         return {
@@ -379,8 +386,25 @@ export class GeminiDirectProvider implements ModelProvider {
           },
           finishReason: 'stop'
         };
+      };
+
+      try {
+        return await executeGenerate(primaryModel);
       } catch (error: any) {
         const status = error.status || error.statusCode;
+        if (fallbackModel && fallbackModel !== primaryModel && (status === 404 || status === 429)) {
+          console.warn(`[GeminiDirect] Primary model '${primaryModel}' failed with status ${status}. Attempting configured fallback '${fallbackModel}'...`);
+          try {
+            return await executeGenerate(fallbackModel);
+          } catch (fallbackErr: any) {
+            const fbStatus = fallbackErr.status || fallbackErr.statusCode;
+            if (fbStatus === 401 || fbStatus === 403 || fbStatus === 429) {
+              this.rotator.markKeyExhausted(apiKey);
+            }
+            throw fallbackErr;
+          }
+        }
+
         if (status === 401 || status === 403 || status === 429) {
           this.rotator.markKeyExhausted(apiKey);
         }
@@ -389,15 +413,25 @@ export class GeminiDirectProvider implements ModelProvider {
     }, 'GeminiDirect');
   }
 
-  async stream(messages: any[], options: { complexity: 'high' | 'standard' }, onChunk: (chunk: string) => void): Promise<ModelResponse> {
+  async stream(messages: any[], options: { complexity: 'high' | 'standard', model?: string }, onChunk: (chunk: string) => void): Promise<ModelResponse> {
     return retry(async () => {
       const apiKey = await this.rotator.getNextKey();
+      const primaryModel = (options.model || await this.rotator.getModel() || '').trim();
+      if (!primaryModel) {
+        throw new ModelProviderError(
+          'No active primary model configured for Gemini. Please configure and select an active model in Admin API Key Manager.',
+          this.name,
+          500,
+          false
+        );
+      }
+      const fallbackModel = (await this.rotator.getFallbackModel() || '').trim();
       const ai = new GoogleGenAI({ apiKey });
       const { contents, systemInstruction } = this.transformMessagesToGemini(messages);
 
-      try {
+      const executeStream = async (targetModel: string) => {
         const result = await ai.models.generateContentStream({
-          model: (await this.rotator.getModel()).trim() || 'gemini-2.5-flash',
+          model: targetModel,
           contents,
           config: {
             systemInstruction,
@@ -420,8 +454,25 @@ export class GeminiDirectProvider implements ModelProvider {
           usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
           finishReason: 'stop'
         };
+      };
+
+      try {
+        return await executeStream(primaryModel);
       } catch (error: any) {
         const status = error.status || error.statusCode;
+        if (fallbackModel && fallbackModel !== primaryModel && (status === 404 || status === 429)) {
+          console.warn(`[GeminiDirect Stream] Primary model '${primaryModel}' failed with status ${status}. Attempting configured fallback '${fallbackModel}'...`);
+          try {
+            return await executeStream(fallbackModel);
+          } catch (fallbackErr: any) {
+            const fbStatus = fallbackErr.status || fallbackErr.statusCode;
+            if (fbStatus === 401 || fbStatus === 403 || fbStatus === 429) {
+              this.rotator.markKeyExhausted(apiKey);
+            }
+            throw fallbackErr;
+          }
+        }
+
         if (status === 401 || status === 403 || status === 429) {
           this.rotator.markKeyExhausted(apiKey);
         }
@@ -693,18 +744,28 @@ export class MistralProvider implements ModelProvider {
     }
   }
 
-  async generate(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean }): Promise<ModelResponse> {
+  async generate(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean, model?: string }): Promise<ModelResponse> {
     return retry(async () => {
       const apiKey = await this.rotator.getNextKey();
+      const primaryModel = (options.model || await this.rotator.getModel() || '').trim();
+      if (!primaryModel) {
+        throw new ModelProviderError(
+          'No active primary model configured for Mistral. Please configure and select an active model in Admin API Key Manager.',
+          this.name,
+          500,
+          false
+        );
+      }
+      const fallbackModel = (await this.rotator.getFallbackModel() || '').trim();
       const mistral = new Mistral({ apiKey: apiKey });
 
       if (options.jsonMode) {
         this.ensureJsonInMessages(messages);
       }
 
-      try {
+      const executeGenerate = async (targetModel: string) => {
         const response = await mistral.chat.complete({
-          model: (await this.rotator.getModel()).trim() || (options.complexity === 'high' ? 'mistral-large-latest' : 'mistral-small-latest'),
+          model: targetModel,
           temperature: 0.5,
           maxTokens: 8192,
           messages: messages,
@@ -720,8 +781,26 @@ export class MistralProvider implements ModelProvider {
           },
           finishReason: response.choices?.[0]?.finishReason || 'stop'
         };
+      };
+
+      try {
+        return await executeGenerate(primaryModel);
       } catch (error: any) {
-        if (error.status === 401 || error.status === 403 || error.status === 429) {
+        const status = error.status || error.statusCode;
+        if (fallbackModel && fallbackModel !== primaryModel && (status === 404 || status === 429)) {
+          console.warn(`[Mistral] Primary model '${primaryModel}' failed with status ${status}. Attempting configured fallback '${fallbackModel}'...`);
+          try {
+            return await executeGenerate(fallbackModel);
+          } catch (fallbackErr: any) {
+            const fbStatus = fallbackErr.status || fallbackErr.statusCode;
+            if (fbStatus === 401 || fbStatus === 403 || fbStatus === 429) {
+              this.rotator.markKeyExhausted(apiKey);
+            }
+            throw fallbackErr;
+          }
+        }
+
+        if (status === 401 || status === 403 || status === 429) {
           this.rotator.markKeyExhausted(apiKey);
         }
         throw error;
@@ -729,14 +808,24 @@ export class MistralProvider implements ModelProvider {
     }, 'Mistral');
   }
 
-  async stream(messages: any[], options: { complexity: 'high' | 'standard' }, onChunk: (chunk: string) => void): Promise<ModelResponse> {
+  async stream(messages: any[], options: { complexity: 'high' | 'standard', model?: string }, onChunk: (chunk: string) => void): Promise<ModelResponse> {
     return retry(async () => {
       const apiKey = await this.rotator.getNextKey();
+      const primaryModel = (options.model || await this.rotator.getModel() || '').trim();
+      if (!primaryModel) {
+        throw new ModelProviderError(
+          'No active primary model configured for Mistral. Please configure and select an active model in Admin API Key Manager.',
+          this.name,
+          500,
+          false
+        );
+      }
+      const fallbackModel = (await this.rotator.getFallbackModel() || '').trim();
       const mistral = new Mistral({ apiKey: apiKey });
 
-      try {
+      const executeStream = async (targetModel: string) => {
         const stream = await mistral.chat.stream({
-          model: (await this.rotator.getModel()).trim() || (options.complexity === 'high' ? 'mistral-large-latest' : 'mistral-small-latest'),
+          model: targetModel,
           temperature: 0.5,
           maxTokens: 8192,
           messages: messages
@@ -756,8 +845,26 @@ export class MistralProvider implements ModelProvider {
           usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
           finishReason: 'stop'
         };
+      };
+
+      try {
+        return await executeStream(primaryModel);
       } catch (error: any) {
-        if (error.status === 401 || error.status === 403 || error.status === 429) {
+        const status = error.status || error.statusCode;
+        if (fallbackModel && fallbackModel !== primaryModel && (status === 404 || status === 429)) {
+          console.warn(`[Mistral Stream] Primary model '${primaryModel}' failed with status ${status}. Attempting configured fallback '${fallbackModel}'...`);
+          try {
+            return await executeStream(fallbackModel);
+          } catch (fallbackErr: any) {
+            const fbStatus = fallbackErr.status || fallbackErr.statusCode;
+            if (fbStatus === 401 || fbStatus === 403 || fbStatus === 429) {
+              this.rotator.markKeyExhausted(apiKey);
+            }
+            throw fallbackErr;
+          }
+        }
+
+        if (status === 401 || status === 403 || status === 429) {
           this.rotator.markKeyExhausted(apiKey);
         }
         throw error;
@@ -793,9 +900,19 @@ export class GroqProvider implements ModelProvider {
     }
   }
 
-  async generate(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean }): Promise<ModelResponse> {
+  async generate(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean, model?: string }): Promise<ModelResponse> {
     return retry(async () => {
       const apiKey = await this.rotator.getNextKey();
+      const primaryModel = (options.model || await this.rotator.getModel() || '').trim();
+      if (!primaryModel) {
+        throw new ModelProviderError(
+          'No active primary model configured for Groq. Please configure and select an active model in Admin API Key Manager.',
+          this.name,
+          500,
+          false
+        );
+      }
+      const fallbackModel = (await this.rotator.getFallbackModel() || '').trim();
       const groq = new Groq({ apiKey: apiKey });
 
       // Truncate messages for Groq to avoid TPM limits (especially for 8b model)
@@ -807,9 +924,9 @@ export class GroqProvider implements ModelProvider {
         this.ensureJsonInMessages(truncatedMessages);
       }
 
-      try {
+      const executeGenerate = async (targetModel: string) => {
         const response = await groq.chat.completions.create({
-          model: (await this.rotator.getModel()).trim() || (options.complexity === 'high' ? 'llama-3.3-70b-versatile' : 'llama-3.1-8b-instant'),
+          model: targetModel,
           temperature: 0.5,
           max_tokens: options.complexity === 'high' ? 4096 : 2048,
           messages: truncatedMessages,
@@ -825,8 +942,26 @@ export class GroqProvider implements ModelProvider {
           },
           finishReason: response.choices[0]?.finish_reason || 'stop'
         };
+      };
+
+      try {
+        return await executeGenerate(primaryModel);
       } catch (error: any) {
-        if (error.status === 401 || error.status === 403 || error.status === 429) {
+        const status = error.status || error.statusCode;
+        if (fallbackModel && fallbackModel !== primaryModel && (status === 404 || status === 429)) {
+          console.warn(`[Groq] Primary model '${primaryModel}' failed with status ${status}. Attempting configured fallback '${fallbackModel}'...`);
+          try {
+            return await executeGenerate(fallbackModel);
+          } catch (fallbackErr: any) {
+            const fbStatus = fallbackErr.status || fallbackErr.statusCode;
+            if (fbStatus === 401 || fbStatus === 403 || fbStatus === 429) {
+              this.rotator.markKeyExhausted(apiKey);
+            }
+            throw fallbackErr;
+          }
+        }
+
+        if (status === 401 || status === 403 || status === 429) {
           this.rotator.markKeyExhausted(apiKey);
         }
         throw error;
@@ -834,18 +969,28 @@ export class GroqProvider implements ModelProvider {
     }, 'Groq');
   }
 
-  async stream(messages: any[], options: { complexity: 'high' | 'standard' }, onChunk: (chunk: string) => void): Promise<ModelResponse> {
+  async stream(messages: any[], options: { complexity: 'high' | 'standard', model?: string }, onChunk: (chunk: string) => void): Promise<ModelResponse> {
     return retry(async () => {
       const apiKey = await this.rotator.getNextKey();
+      const primaryModel = (options.model || await this.rotator.getModel() || '').trim();
+      if (!primaryModel) {
+        throw new ModelProviderError(
+          'No active primary model configured for Groq. Please configure and select an active model in Admin API Key Manager.',
+          this.name,
+          500,
+          false
+        );
+      }
+      const fallbackModel = (await this.rotator.getFallbackModel() || '').trim();
       const groq = new Groq({ apiKey: apiKey });
 
       // Truncate messages for Groq to avoid TPM limits
       const maxTokens = options.complexity === 'high' ? 4000 : 2500;
       const truncatedMessages = this.truncateMessages(messages, maxTokens);
 
-      try {
+      const executeStream = async (targetModel: string) => {
         const stream = await groq.chat.completions.create({
-          model: (await this.rotator.getModel()).trim() || (options.complexity === 'high' ? 'llama-3.3-70b-versatile' : 'llama-3.1-8b-instant'),
+          model: targetModel,
           temperature: 0.5,
           max_tokens: options.complexity === 'high' ? 4096 : 2048,
           messages: truncatedMessages,
@@ -888,8 +1033,26 @@ export class GroqProvider implements ModelProvider {
           usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
           finishReason: 'stop'
         };
+      };
+
+      try {
+        return await executeStream(primaryModel);
       } catch (error: any) {
-        if (error.status === 401 || error.status === 403 || error.status === 429) {
+        const status = error.status || error.statusCode;
+        if (fallbackModel && fallbackModel !== primaryModel && (status === 404 || status === 429)) {
+          console.warn(`[Groq Stream] Primary model '${primaryModel}' failed with status ${status}. Attempting configured fallback '${fallbackModel}'...`);
+          try {
+            return await executeStream(fallbackModel);
+          } catch (fallbackErr: any) {
+            const fbStatus = fallbackErr.status || fallbackErr.statusCode;
+            if (fbStatus === 401 || fbStatus === 403 || fbStatus === 429) {
+              this.rotator.markKeyExhausted(apiKey);
+            }
+            throw fallbackErr;
+          }
+        }
+
+        if (status === 401 || status === 403 || status === 429) {
           this.rotator.markKeyExhausted(apiKey);
         }
         throw error;
@@ -982,9 +1145,19 @@ export class CohereProvider implements ModelProvider {
     }
   }
 
-  async generate(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean }): Promise<ModelResponse> {
+  async generate(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean, model?: string }): Promise<ModelResponse> {
     return retry(async () => {
       const apiKey = await this.rotator.getNextKey();
+      const primaryModel = (options.model || await this.rotator.getModel() || '').trim();
+      if (!primaryModel) {
+        throw new ModelProviderError(
+          'No active primary model configured for Cohere. Please configure and select an active model in Admin API Key Manager.',
+          this.name,
+          500,
+          false
+        );
+      }
+      const fallbackModel = (await this.rotator.getFallbackModel() || '').trim();
       const cohere = new CohereClient({ token: apiKey });
       
       if (options.jsonMode) {
@@ -997,12 +1170,9 @@ export class CohereProvider implements ModelProvider {
       }));
       const lastMessage = messages[messages.length - 1].content;
 
-      try {
-        const dbModel = (await this.rotator.getModel()).trim();
-        const selectedModel = dbModel || (options.complexity === 'high' ? 'command-r-plus-08-2024' : 'command-r-08-2024');
-
+      const executeGenerate = async (targetModel: string) => {
         const response = await cohere.chat({
-          model: selectedModel,
+          model: targetModel,
           message: lastMessage,
           chatHistory: chatHistory as any,
           temperature: 0.5,
@@ -1017,8 +1187,26 @@ export class CohereProvider implements ModelProvider {
           },
           finishReason: response.finishReason || 'COMPLETE'
         };
+      };
+
+      try {
+        return await executeGenerate(primaryModel);
       } catch (error: any) {
-        if (error.statusCode === 401 || error.statusCode === 403 || error.statusCode === 429) {
+        const status = error.statusCode || error.status;
+        if (fallbackModel && fallbackModel !== primaryModel && (status === 404 || status === 429)) {
+          console.warn(`[Cohere] Primary model '${primaryModel}' failed with status ${status}. Attempting configured fallback '${fallbackModel}'...`);
+          try {
+            return await executeGenerate(fallbackModel);
+          } catch (fallbackErr: any) {
+            const fbStatus = fallbackErr.statusCode || fallbackErr.status;
+            if (fbStatus === 401 || fbStatus === 403 || fbStatus === 429) {
+              this.rotator.markKeyExhausted(apiKey);
+            }
+            throw fallbackErr;
+          }
+        }
+
+        if (status === 401 || status === 403 || status === 429) {
           this.rotator.markKeyExhausted(apiKey);
         }
         throw error;
@@ -1026,9 +1214,19 @@ export class CohereProvider implements ModelProvider {
     }, 'Cohere');
   }
 
-  async stream(messages: any[], options: { complexity: 'high' | 'standard' }, onChunk: (chunk: string) => void): Promise<ModelResponse> {
+  async stream(messages: any[], options: { complexity: 'high' | 'standard', model?: string }, onChunk: (chunk: string) => void): Promise<ModelResponse> {
     return retry(async () => {
       const apiKey = await this.rotator.getNextKey();
+      const primaryModel = (options.model || await this.rotator.getModel() || '').trim();
+      if (!primaryModel) {
+        throw new ModelProviderError(
+          'No active primary model configured for Cohere. Please configure and select an active model in Admin API Key Manager.',
+          this.name,
+          500,
+          false
+        );
+      }
+      const fallbackModel = (await this.rotator.getFallbackModel() || '').trim();
       const cohere = new CohereClient({ token: apiKey });
       
       const chatHistory = messages.slice(0, -1).map(m => ({
@@ -1037,12 +1235,9 @@ export class CohereProvider implements ModelProvider {
       }));
       const lastMessage = messages[messages.length - 1].content;
 
-      try {
-        const dbModel = (await this.rotator.getModel()).trim();
-        const selectedModel = dbModel || (options.complexity === 'high' ? 'command-r-plus-08-2024' : 'command-r-08-2024');
-
+      const executeStream = async (targetModel: string) => {
         const stream = await cohere.chatStream({
-          model: selectedModel,
+          model: targetModel,
           message: lastMessage,
           chatHistory: chatHistory as any,
           temperature: 0.5,
@@ -1061,8 +1256,26 @@ export class CohereProvider implements ModelProvider {
           usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
           finishReason: 'COMPLETE'
         };
+      };
+
+      try {
+        return await executeStream(primaryModel);
       } catch (error: any) {
-        if (error.statusCode === 401 || error.statusCode === 403 || error.statusCode === 429) {
+        const status = error.statusCode || error.status;
+        if (fallbackModel && fallbackModel !== primaryModel && (status === 404 || status === 429)) {
+          console.warn(`[Cohere Stream] Primary model '${primaryModel}' failed with status ${status}. Attempting configured fallback '${fallbackModel}'...`);
+          try {
+            return await executeStream(fallbackModel);
+          } catch (fallbackErr: any) {
+            const fbStatus = fallbackErr.statusCode || fallbackErr.status;
+            if (fbStatus === 401 || fbStatus === 403 || fbStatus === 429) {
+              this.rotator.markKeyExhausted(apiKey);
+            }
+            throw fallbackErr;
+          }
+        }
+
+        if (status === 401 || status === 403 || status === 429) {
           this.rotator.markKeyExhausted(apiKey);
         }
         throw error;
@@ -1079,14 +1292,24 @@ export class HuggingFaceProvider implements ModelProvider {
     this.rotator = new DynamicKeyRotator('huggingface', apiKey);
   }
 
-  async generate(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean }): Promise<ModelResponse> {
+  async generate(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean, model?: string }): Promise<ModelResponse> {
     return retry(async () => {
       const apiKey = await this.rotator.getNextKey();
+      const primaryModel = (options.model || await this.rotator.getModel() || '').trim();
+      if (!primaryModel) {
+        throw new ModelProviderError(
+          'No active primary model configured for Hugging Face. Please configure and select an active model in Admin API Key Manager.',
+          this.name,
+          500,
+          false
+        );
+      }
+      const fallbackModel = (await this.rotator.getFallbackModel() || '').trim();
       const hf = new HfInference(apiKey);
 
-      try {
+      const executeGenerate = async (targetModel: string) => {
         const response = await hf.chatCompletion({
-          model: (await this.rotator.getModel()).trim() || 'mistralai/Mistral-7B-Instruct-v0.2',
+          model: targetModel,
           messages: messages,
           max_tokens: 4096,
           temperature: 0.5,
@@ -1103,6 +1326,10 @@ export class HuggingFaceProvider implements ModelProvider {
           },
           finishReason: response.choices[0]?.finish_reason || 'stop'
         };
+      };
+
+      try {
+        return await executeGenerate(primaryModel);
       } catch (error: any) {
         const status = error.status || error.statusCode;
         const isQuotaError = status === 401 || status === 403 || status === 429 || 
@@ -1110,6 +1337,19 @@ export class HuggingFaceProvider implements ModelProvider {
                            error.message?.toLowerCase().includes('quota') ||
                            error.message?.toLowerCase().includes('http error');
         
+        if (fallbackModel && fallbackModel !== primaryModel && (status === 404 || status === 429 || isQuotaError)) {
+          console.warn(`[HuggingFace] Primary model '${primaryModel}' failed. Attempting configured fallback '${fallbackModel}'...`);
+          try {
+            return await executeGenerate(fallbackModel);
+          } catch (fallbackErr: any) {
+            const fbStatus = fallbackErr.status || fallbackErr.statusCode;
+            if (fbStatus === 401 || fbStatus === 403 || fbStatus === 429) {
+              this.rotator.markKeyExhausted(apiKey);
+            }
+            throw fallbackErr;
+          }
+        }
+
         if (isQuotaError) {
           console.warn(`[HuggingFace] Marking key as exhausted due to error: ${error.message}`);
           this.rotator.markKeyExhausted(apiKey);
@@ -1119,14 +1359,24 @@ export class HuggingFaceProvider implements ModelProvider {
     }, 'HuggingFace');
   }
 
-  async stream(messages: any[], options: { complexity: 'high' | 'standard' }, onChunk: (chunk: string) => void): Promise<ModelResponse> {
+  async stream(messages: any[], options: { complexity: 'high' | 'standard', model?: string }, onChunk: (chunk: string) => void): Promise<ModelResponse> {
     return retry(async () => {
       const apiKey = await this.rotator.getNextKey();
+      const primaryModel = (options.model || await this.rotator.getModel() || '').trim();
+      if (!primaryModel) {
+        throw new ModelProviderError(
+          'No active primary model configured for Hugging Face. Please configure and select an active model in Admin API Key Manager.',
+          this.name,
+          500,
+          false
+        );
+      }
+      const fallbackModel = (await this.rotator.getFallbackModel() || '').trim();
       const hf = new HfInference(apiKey);
 
-      try {
+      const executeStream = async (targetModel: string) => {
         const stream = hf.chatCompletionStream({
-          model: (await this.rotator.getModel()).trim() || 'mistralai/Mistral-7B-Instruct-v0.2',
+          model: targetModel,
           messages: messages,
           max_tokens: 4096,
           temperature: 0.5,
@@ -1148,6 +1398,10 @@ export class HuggingFaceProvider implements ModelProvider {
           usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
           finishReason: 'stop'
         };
+      };
+
+      try {
+        return await executeStream(primaryModel);
       } catch (error: any) {
         const status = error.status || error.statusCode;
         const isQuotaError = status === 401 || status === 403 || status === 429 || 
@@ -1155,6 +1409,19 @@ export class HuggingFaceProvider implements ModelProvider {
                            error.message?.toLowerCase().includes('quota') ||
                            error.message?.toLowerCase().includes('http error');
         
+        if (fallbackModel && fallbackModel !== primaryModel && (status === 404 || status === 429 || isQuotaError)) {
+          console.warn(`[HuggingFace Stream] Primary model '${primaryModel}' failed. Attempting configured fallback '${fallbackModel}'...`);
+          try {
+            return await executeStream(fallbackModel);
+          } catch (fallbackErr: any) {
+            const fbStatus = fallbackErr.status || fallbackErr.statusCode;
+            if (fbStatus === 401 || fbStatus === 403 || fbStatus === 429) {
+              this.rotator.markKeyExhausted(apiKey);
+            }
+            throw fallbackErr;
+          }
+        }
+
         if (isQuotaError) {
           console.warn(`[HuggingFace] Marking key as exhausted due to error: ${error.message}`);
           this.rotator.markKeyExhausted(apiKey);
@@ -1192,16 +1459,29 @@ export class NvidiaProvider implements ModelProvider {
     }
   }
 
+  private normalizeNvidiaModel(model: string): string {
+    if (!model) return '';
+    const trimmed = model.trim();
+    // Keep exact format if it already includes prefix or vendor slash
+    if (trimmed.includes('/')) return trimmed;
+    return `nvidia/${trimmed}`;
+  }
+
   async generate(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean, model?: string }): Promise<ModelResponse> {
     return retry(async () => {
       const apiKey = await this.rotator.getNextKey();
-      let model = (options?.model || await this.rotator.getModel() || '').trim();
-      if (!model || model === 'nemotron-voicechat') {
-        model = 'nvidia/nemotron-3-super-120b-a12b';
+      const rawPrimary = (options?.model || await this.rotator.getModel() || '').trim();
+      if (!rawPrimary) {
+        throw new ModelProviderError(
+          'No active primary model configured for NVIDIA NIM. Please configure and select an active model in Admin API Key Manager.',
+          this.name,
+          500,
+          false
+        );
       }
-      if (model && !model.startsWith('nvidia/')) {
-        model = `nvidia/${model}`;
-      }
+      const primaryModel = this.normalizeNvidiaModel(rawPrimary);
+      const rawFallback = (await this.rotator.getFallbackModel() || '').trim();
+      const fallbackModel = rawFallback ? this.normalizeNvidiaModel(rawFallback) : '';
       
       const openai = new OpenAI({
         baseURL: "https://integrate.api.nvidia.com/v1",
@@ -1212,9 +1492,9 @@ export class NvidiaProvider implements ModelProvider {
         this.ensureJsonInMessages(messages);
       }
 
-      try {
+      const executeGenerate = async (targetModel: string) => {
         const response = await openai.chat.completions.create({
-          model: model,
+          model: targetModel,
           messages: messages,
           max_tokens: 8192,
           temperature: 0.5,
@@ -1230,33 +1510,25 @@ export class NvidiaProvider implements ModelProvider {
           },
           finishReason: response.choices[0]?.finish_reason || 'stop'
         };
-      } catch (error: any) {
-        if (error.status === 404) {
-          console.log(`[Nvidia] 404 received on model ${model}. Falling back to nvidia/nemotron-mini-4b-instruct...`);
-          try {
-            const response = await openai.chat.completions.create({
-              model: 'nvidia/nemotron-mini-4b-instruct',
-              messages: messages,
-              max_tokens: 8192,
-              temperature: 0.5,
-              response_format: options.jsonMode ? { type: "json_object" } : undefined
-            });
+      };
 
-            return {
-              text: response.choices[0]?.message?.content || '',
-              usage: {
-                promptTokens: response.usage?.prompt_tokens || 0,
-                completionTokens: response.usage?.completion_tokens || 0,
-                totalTokens: response.usage?.total_tokens || 0
-              },
-              finishReason: response.choices[0]?.finish_reason || 'stop',
-              model: 'nvidia/nemotron-mini-4b-instruct (auto-fallback)'
-            };
-          } catch (fallbackError) {
-            console.error('[Nvidia] Fallback model also failed:', fallbackError);
+      try {
+        return await executeGenerate(primaryModel);
+      } catch (error: any) {
+        const status = error.status || error.statusCode;
+        if (fallbackModel && fallbackModel !== primaryModel && (status === 404 || status === 429)) {
+          console.warn(`[Nvidia] Primary model '${primaryModel}' failed with status ${status}. Attempting configured fallback '${fallbackModel}'...`);
+          try {
+            return await executeGenerate(fallbackModel);
+          } catch (fallbackError: any) {
+            const fbStatus = fallbackError.status || fallbackError.statusCode;
+            if (fbStatus === 401 || fbStatus === 403 || fbStatus === 429) {
+              this.rotator.markKeyExhausted(apiKey);
+            }
+            throw fallbackError;
           }
         }
-        if (error.status === 401 || error.status === 403) {
+        if (status === 401 || status === 403 || status === 429) {
           this.rotator.markKeyExhausted(apiKey);
         }
         throw error;
@@ -1267,22 +1539,27 @@ export class NvidiaProvider implements ModelProvider {
   async stream(messages: any[], options: { complexity: 'high' | 'standard', model?: string }, onChunk: (chunk: string) => void): Promise<ModelResponse> {
     return retry(async () => {
       const apiKey = await this.rotator.getNextKey();
-      let model = (options?.model || await this.rotator.getModel() || '').trim();
-      if (!model || model === 'nemotron-voicechat') {
-        model = 'nvidia/nemotron-3-super-120b-a12b';
+      const rawPrimary = (options?.model || await this.rotator.getModel() || '').trim();
+      if (!rawPrimary) {
+        throw new ModelProviderError(
+          'No active primary model configured for NVIDIA NIM. Please configure and select an active model in Admin API Key Manager.',
+          this.name,
+          500,
+          false
+        );
       }
-      if (model && !model.startsWith('nvidia/')) {
-        model = `nvidia/${model}`;
-      }
+      const primaryModel = this.normalizeNvidiaModel(rawPrimary);
+      const rawFallback = (await this.rotator.getFallbackModel() || '').trim();
+      const fallbackModel = rawFallback ? this.normalizeNvidiaModel(rawFallback) : '';
 
       const openai = new OpenAI({
         baseURL: "https://integrate.api.nvidia.com/v1",
         apiKey: apiKey,
       });
 
-      try {
+      const executeStream = async (targetModel: string) => {
         const stream = await openai.chat.completions.create({
-          model: model,
+          model: targetModel,
           messages: messages,
           max_tokens: 8192,
           temperature: 0.5,
@@ -1325,60 +1602,25 @@ export class NvidiaProvider implements ModelProvider {
           usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
           finishReason: 'stop'
         };
+      };
+
+      try {
+        return await executeStream(primaryModel);
       } catch (error: any) {
-        if (error.status === 404) {
-          console.log(`[Nvidia Stream] 404 received on model ${model}. Falling back to nvidia/nemotron-mini-4b-instruct...`);
+        const status = error.status || error.statusCode;
+        if (fallbackModel && fallbackModel !== primaryModel && (status === 404 || status === 429)) {
+          console.warn(`[Nvidia Stream] Primary model '${primaryModel}' failed with status ${status}. Attempting configured fallback '${fallbackModel}'...`);
           try {
-            const stream = await openai.chat.completions.create({
-              model: 'nvidia/nemotron-mini-4b-instruct',
-              messages: messages,
-              max_tokens: 8192,
-              temperature: 0.5,
-              stream: true
-            });
-
-            let fullText = '';
-            let hasStartedThinking = false;
-            let hasFinishedThinking = false;
-
-            for await (const chunk of stream) {
-              const delta = chunk.choices[0]?.delta as any;
-              const reasoning = delta?.reasoning_content || delta?.reasoning || '';
-              const content = delta?.content || '';
-
-              if (options?.complexity === 'high' && reasoning) {
-                if (!hasStartedThinking) {
-                  onChunk('<think>');
-                  hasStartedThinking = true;
-                }
-                onChunk(reasoning);
-              }
-              if (content) {
-                if (hasStartedThinking && !hasFinishedThinking) {
-                  onChunk('</think>');
-                  hasFinishedThinking = true;
-                }
-                fullText += content;
-                onChunk(content);
-              }
+            return await executeStream(fallbackModel);
+          } catch (fallbackError: any) {
+            const fbStatus = fallbackError.status || fallbackError.statusCode;
+            if (fbStatus === 401 || fbStatus === 403 || fbStatus === 429) {
+              this.rotator.markKeyExhausted(apiKey);
             }
-
-            if (hasStartedThinking && !hasFinishedThinking) {
-              onChunk('</think>');
-              hasFinishedThinking = true;
-            }
-
-            return {
-              text: fullText,
-              usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
-              finishReason: 'stop',
-              model: 'nvidia/nemotron-mini-4b-instruct (auto-fallback)'
-            };
-          } catch (fallbackError) {
-            console.error('[Nvidia Stream] Fallback model also failed:', fallbackError);
+            throw fallbackError;
           }
         }
-        if (error.status === 401 || error.status === 403) {
+        if (status === 401 || status === 403 || status === 429) {
           this.rotator.markKeyExhausted(apiKey);
         }
         throw error;

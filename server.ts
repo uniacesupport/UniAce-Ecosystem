@@ -2306,8 +2306,10 @@ app.get('/api/admin/ai-status', verifyAuth, async (req, res) => {
     const app = getAdminApp();
     if (!app) return res.status(503).json({ error: 'Service unavailable: Firebase not initialized' });
     const userDoc = await app.firestore().collection('users').doc(uid).get();
-    if (userDoc.data()?.role !== 'admin') {
-      return res.status(403).json({ error: 'Unauthorized' });
+    const userEmail = (req as any).user.email;
+    const isAdmin = userDoc.data()?.role === 'admin' || isAdminEmail(userEmail);
+    if (!isAdmin) {
+      return res.status(403).json({ error: 'Unauthorized: Admin access required' });
     }
 
     const keysDocRef = app.firestore().collection('system_settings').doc('api_keys');
@@ -2353,7 +2355,10 @@ app.get('/api/admin/ai-status', verifyAuth, async (req, res) => {
 
     const getProviderStatus = (provider: string, envKeyString: string | undefined) => {
       const envKeys = envKeyString ? envKeyString.split(',').map(k => k.trim()).filter(k => k.length > 0) : [];
-      const dbKeysList = (dbKeys[provider] && Array.isArray(dbKeys[provider].keys)) ? dbKeys[provider].keys : [];
+      const alias = provider === 'openrouter_free' ? 'openrouter' : (provider === 'openrouter' ? 'openrouter_free' : null);
+      const dbKeysList = (dbKeys[provider] && Array.isArray(dbKeys[provider].keys))
+        ? dbKeys[provider].keys
+        : (alias && dbKeys[alias] && Array.isArray(dbKeys[alias].keys) ? dbKeys[alias].keys : []);
       
       const totalKeys = envKeys.length + dbKeysList.length;
       const exhaustedKeys = dbKeysList.filter((k: any) => k.isExhausted).length;
@@ -2369,7 +2374,8 @@ app.get('/api/admin/ai-status', verifyAuth, async (req, res) => {
 
     const status = {
       gemini_direct: getProviderStatus('gemini_direct', process.env.GEMINI_API_KEY),
-      openrouter_free: getProviderStatus('openrouter', process.env.OPENROUTER_API_KEY),
+      openrouter_free: getProviderStatus('openrouter_free', process.env.OPENROUTER_API_KEY),
+      openrouter: getProviderStatus('openrouter', process.env.OPENROUTER_API_KEY),
       groq: getProviderStatus('groq', process.env.GROQ_API_KEY),
       mistral_direct: getProviderStatus('mistral_direct', process.env.MISTRAL_API_KEY),
       cohere: getProviderStatus('cohere', process.env.COHERE_API_KEY),
@@ -2423,7 +2429,9 @@ app.post('/api/admin/ping-providers', verifyAuth, async (req, res) => {
     if (!app) return res.status(503).json({ error: 'Service unavailable' });
 
     const userDoc = await app.firestore().collection('users').doc(uid).get();
-    if (userDoc.data()?.role !== 'admin') {
+    const userEmail = (req as any).user.email;
+    const isAdmin = userDoc.data()?.role === 'admin' || isAdminEmail(userEmail);
+    if (!isAdmin) {
       return res.status(403).json({ error: 'Unauthorized: Admin access required' });
     }
 
