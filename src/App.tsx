@@ -1,4 +1,4 @@
-import { useState, useEffect, useTransition, lazy, Suspense } from 'react';
+import { useState, useEffect, useTransition } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import Sidebar from './components/Sidebar';
 import BottomNav from './components/BottomNav';
@@ -16,9 +16,8 @@ import GlobalNotification from './components/GlobalNotification';
 import GlobalErrorInterceptor from './components/GlobalErrorInterceptor';
 import PaywallManager from './components/PaywallManager';
 import PWAInstallPrompt from './components/PWAInstallPrompt';
+import Calculator from './components/Calculator';
 import ErrorBoundary from './components/ErrorBoundary';
-
-const Calculator = lazy(() => import('./components/Calculator'));
 
 // Direct imports for instant, zero-latency navigation across all tabs
 import QuizHub from './components/QuizHub';
@@ -255,11 +254,22 @@ function AppContent() {
   };
 
   useEffect(() => {
-    // Check backend connectivity on mount
-    fetch('/api/debug')
-      .then(res => res.json())
-      .then(data => console.log('Backend connectivity check:', data))
-      .catch(err => console.error('Backend connectivity check failed:', err));
+    let isMounted = true;
+    const checkConnectivity = async () => {
+      try {
+        const res = await fetch('/api/health');
+        if (res.ok) {
+          const data = await res.json();
+          if (isMounted) console.log('Backend connectivity check:', data);
+        } else {
+          if (isMounted) console.warn('Backend connectivity check non-200:', res.status);
+        }
+      } catch (err) {
+        if (isMounted) console.warn('Backend connectivity check pending server initialization:', err);
+      }
+    };
+    checkConnectivity();
+    return () => { isMounted = false; };
   }, []);
 
   useEffect(() => {
@@ -394,9 +404,7 @@ function AppContent() {
 
       <AnimatePresence>
         {isCalculatorOpen && (
-          <Suspense fallback={null}>
-            <Calculator isOpen={isCalculatorOpen} onClose={() => setIsCalculatorOpen(false)} />
-          </Suspense>
+          <Calculator isOpen={isCalculatorOpen} onClose={() => setIsCalculatorOpen(false)} />
         )}
       </AnimatePresence>
 

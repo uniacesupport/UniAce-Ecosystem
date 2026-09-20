@@ -1,6 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from "firebase/firestore";
+import { getFirestore, doc, getDocFromServer, initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 import { getMessaging, isSupported } from "firebase/messaging";
 import firebaseConfig from "../firebase-applet-config.json";
@@ -22,6 +22,18 @@ export const db = firebaseConfig.firestoreDatabaseId &&
                   firebaseConfig.firestoreDatabaseId !== firebaseConfig.projectId
   ? initializeFirestore(app, firestoreSettings, firebaseConfig.firestoreDatabaseId)
   : initializeFirestore(app, firestoreSettings);
+
+// Connection test
+async function testConnection() {
+  console.log("Testing Firestore connection for project:", firebaseConfig.projectId);
+  try {
+    const testDoc = await getDocFromServer(doc(db, 'test', 'connection'));
+    console.log("Firestore connection test successful. Doc exists:", testDoc.exists());
+  } catch (error: any) {
+    console.error("Firestore connection test failed:", error.code, error.message);
+  }
+}
+testConnection();
 
 // Messaging (FCM) - only if supported in browser
 export const messaging = async () => {

@@ -1,16 +1,15 @@
+import * as pdfjsLib from 'pdfjs-dist';
+
+// Import the worker URL to let Vite handle it
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+
 self.onmessage = async (e: MessageEvent) => {
   const { fileData, type } = e.data;
 
   if (type === 'PARSE_PDF') {
     try {
-      // Dynamically import pdfjs-dist and worker URL on-demand to reduce initial bundle memory
-      const [pdfjsLib, workerUrlModule] = await Promise.all([
-        import('pdfjs-dist'),
-        import('pdfjs-dist/build/pdf.worker.min.mjs?url')
-      ]);
-
-      pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrlModule.default;
-
       // fileData is expected to be an ArrayBuffer
       const loadingTask = pdfjsLib.getDocument({ data: fileData });
       const pdf = await loadingTask.promise;
@@ -35,4 +34,3 @@ self.onmessage = async (e: MessageEvent) => {
     }
   }
 };
-

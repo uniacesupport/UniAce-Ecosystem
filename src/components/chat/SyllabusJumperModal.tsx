@@ -27,6 +27,16 @@ export const SyllabusJumperModal: React.FC<SyllabusJumperModalProps> = ({
   const [selectedCourseId, setSelectedCourseId] = useState<CourseId>(activeCourseId || Object.keys(courses)[0] || '');
   const [searchQuery, setSearchQuery] = useState('');
 
+  React.useEffect(() => {
+    if (isOpen) {
+      if (activeCourseId && courses[activeCourseId]) {
+        setSelectedCourseId(activeCourseId);
+      } else if (Object.keys(courses).length > 0 && (!selectedCourseId || !courses[selectedCourseId])) {
+        setSelectedCourseId(Object.keys(courses)[0] as CourseId);
+      }
+    }
+  }, [isOpen, activeCourseId, courses]);
+
   if (!isOpen) return null;
 
   const currentCourse = courses[selectedCourseId] || Object.values(courses)[0];

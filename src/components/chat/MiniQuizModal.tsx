@@ -49,18 +49,19 @@ export const MiniQuizModal: React.FC<MiniQuizModalProps> = ({
     setLoading(true);
     setError(null);
     try {
+      const cleanTopic = activeSubTopicTitle || activeModuleTitle || (activeCourseId ? `Course ${activeCourseId}` : 'University Academic Topics & Problem Solving');
       const prompt = `
 Generate a quick 3-question university-level diagnostic check for:
-Course: ${activeCourseId || 'Academic Subject'}
-Module: ${activeModuleTitle || 'Core Module'}
-Topic: ${activeSubTopicTitle || 'General Topic'}
+Subject/Course: ${activeCourseId || 'Academic Subject'}
+Module: ${activeModuleTitle || 'Core Curriculum'}
+Topic: ${cleanTopic}
 Content Extract: ${(subTopicContent || '').substring(0, 4000)}
 
 Requirements:
-- Exactly 3 multiple-choice questions.
-- High university-level academic rigor with proper LaTeX for formulas.
+- Exactly 3 multiple-choice questions testing core principles and analytical problem-solving.
+- High university-level academic rigor with proper LaTeX for all formulas (e.g. $E = mc^2$, $\\int_0^1 x\\,dx$).
 - Provide 4 distinct options (A, B, C, D) per question.
-- Specify the single correctAnswer (exact text of one option), an explanation, and a hint.
+- Specify the single correctAnswer (exact text of one option), an explanation with full derivation/justification, and a hint.
 
 Return JSON in this format:
 {
@@ -80,18 +81,36 @@ Return JSON in this format:
 
       const response = await callAI(prompt, 'You are an expert university examiner. Output only valid JSON.', 'json', 2000, 'quiz', 'quiz_generation');
       
-      let parsedData: { questions: QuizQuestion[] };
+      let parsedData: any = null;
+      const rawText = (response.text || '').replace(/```(?:json)?\s*([\s\S]*?)\s*```/g, '$1').trim();
+      
       try {
-        parsedData = JSON.parse(response.text);
+        parsedData = JSON.parse(rawText);
       } catch (e) {
-        const repaired = jsonrepair(response.text);
-        parsedData = JSON.parse(repaired);
+        try {
+          const repaired = jsonrepair(rawText);
+          parsedData = JSON.parse(repaired);
+        } catch (repairErr) {
+          const firstBrace = rawText.indexOf('{');
+          const lastBrace = rawText.lastIndexOf('}');
+          if (firstBrace !== -1 && lastBrace > firstBrace) {
+            try {
+              parsedData = JSON.parse(jsonrepair(rawText.slice(firstBrace, lastBrace + 1)));
+            } catch (innerErr) {
+              console.warn("JSON repair attempt failed:", innerErr);
+            }
+          }
+        }
       }
 
-      if (parsedData?.questions && Array.isArray(parsedData.questions) && parsedData.questions.length > 0) {
-        setQuestions(parsedData.questions.slice(0, 3));
+      const rawQuestions = Array.isArray(parsedData)
+        ? parsedData
+        : (parsedData?.questions || parsedData?.quiz || Object.values(parsedData || {}).find(v => Array.isArray(v)));
+
+      if (Array.isArray(rawQuestions) && rawQuestions.length > 0) {
+        setQuestions(rawQuestions.slice(0, 3));
       } else {
-        throw new Error("Unable to parse quiz questions from AI response.");
+        throw new Error("Unable to parse quiz questions from AI response. Please retry.");
       }
     } catch (err: any) {
       console.error("Failed to generate mini quiz:", err);

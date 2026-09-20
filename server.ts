@@ -25,7 +25,7 @@ const currentDirname = typeof __dirname !== 'undefined' ? __dirname : process.cw
 import { initializeVectorStore, findRelevantContentSemantic, addVectorItem, removeVectorItem } from './server/vectorSearch';
 
 import { GeminiDirectProvider, MistralProvider, GroqProvider, CohereProvider, HuggingFaceProvider, OpenRouterFreeProvider, NvidiaProvider, CircuitBreaker } from './server/providers';
-import { getCachedResponse, setCachedResponse, getCachedSystemConfig, invalidateMemoryCache, getMemoryCache, setMemoryCache } from './server/cache';
+import { getCachedResponse, setCachedResponse } from './server/cache';
 import { MailService } from './server/mailService';
 import { telemetry } from './server/telemetry';
 import academicRouter from './server/routes/academic.js';
@@ -1723,9 +1723,11 @@ function validateAIResponse(text: string): { isValid: boolean; error?: string } 
   return { isValid: true };
 }
 
-// Robust JSON Parsing Layer
-function parseRobustJSON(text: string, fallback: any = {}) {
-  if (!text) return fallback;
+// Robust JSON Parsing Layer enforcing Zero-Fallback Policy
+function parseRobustJSON(text: string) {
+  if (!text) {
+    throw new Error('Zero-Fallback Policy: Received empty AI response text');
+  }
   
   // Pre-process to fix common unescaped LaTeX commands in JSON
   // This prevents issues where \text becomes <tab>ext or \omega becomes omega
@@ -1754,7 +1756,7 @@ function parseRobustJSON(text: string, fallback: any = {}) {
       return JSON.parse(repaired);
     } catch (repairError) {
       console.error('Failed to parse and repair JSON:', repairError, 'Original text:', text.substring(0, 200) + '...');
-      return fallback;
+      throw new Error(`Zero-Fallback Policy: Failed to parse valid dynamic JSON from AI response: ${repairError instanceof Error ? repairError.message : String(repairError)}`);
     }
   }
 }
@@ -2080,9 +2082,9 @@ app.post('/api/chat', verifyAuth, async (req, res) => {
     let routingConfig: any = { chat: 'groq' };
     try {
       if (appAdmin) {
-        const cachedRouting = await getCachedSystemConfig('routing');
-        if (cachedRouting) {
-          routingConfig = cachedRouting;
+        const routingDoc = await appAdmin.firestore().collection('system_config').doc('routing').get();
+        if (routingDoc.exists) {
+          routingConfig = routingDoc.data() || { chat: 'groq' };
         }
       }
     } catch (err) {
@@ -3345,9 +3347,10 @@ app.post('/api/ai/generate-image', verifyAuth, async (req, res) => {
 
     let routingConfig: any = {};
     try {
-      const cachedRouting = await getCachedSystemConfig('routing');
-      if (cachedRouting) {
-        routingConfig = cachedRouting;
+      const appAdmin = getAdminApp();
+      const routingDoc = await appAdmin.firestore().collection('system_config').doc('routing').get();
+      if (routingDoc.exists) {
+        routingConfig = routingDoc.data() || {};
       }
     } catch (e) {
       console.warn("Failed to fetch routing config for image gen:", e);
@@ -3497,8 +3500,8 @@ app.post('/api/ai/generate', verifyAuth, async (req, res) => {
     const effectiveTaskType = classified.taskType;
     const effectiveComplexity = complexity || classified.complexity;
 
-    const cachedRouting = await getCachedSystemConfig('routing');
-    const routingConfig = cachedRouting || {
+    const routingDoc = await appAdmin.firestore().collection('system_config').doc('routing').get();
+    const routingConfig = routingDoc.data() || {
       chat: 'groq',
       deep_reasoning: 'nvidia',
       coding: 'nvidia',
@@ -3711,8 +3714,8 @@ app.post('/api/ai/stream', verifyAuth, async (req, res) => {
     const effectiveTaskType = classified.taskType;
     const effectiveComplexity = complexity || classified.complexity;
 
-    const cachedRoutingStream = await getCachedSystemConfig('routing');
-    const routingConfig = cachedRoutingStream || {
+    const routingDoc = await appAdmin.firestore().collection('system_config').doc('routing').get();
+    const routingConfig = routingDoc.data() || {
       chat: 'groq',
       deep_reasoning: 'nvidia',
       coding: 'nvidia',
@@ -3730,9 +3733,9 @@ app.post('/api/ai/stream', verifyAuth, async (req, res) => {
       nvidia_image_model: 'black-forest-labs/flux.1-dev'
     };
     
-    // Fetch Global AI Mode from memory cache
-    const aiModeData = await getCachedSystemConfig('ai_mode');
-    const globalAiMode = aiModeData?.mode || 'normal';
+    // Fetch Global AI Mode
+    const aiModeDoc = await appAdmin.firestore().collection('system_config').doc('ai_mode').get();
+    const globalAiMode = aiModeDoc.exists ? aiModeDoc.data()?.mode : 'normal';
     
     let preferredProviderName = req.body.preferredProvider || routingConfig.global_provider || process.env.ACTIVE_AI_PROVIDER || routingConfig[effectiveTaskType] || 'groq';
     
@@ -3933,8 +3936,8 @@ app.post('/api/course/generate', verifyAuth, async (req, res) => {
     const cohereBreaker = globalCohereBreaker;
     const huggingFaceBreaker = globalHuggingFaceBreaker;
 
-    const cachedRouting = await getCachedSystemConfig('routing');
-    const routingConfig = cachedRouting || {};
+    const routingDoc = await app.firestore().collection('system_config').doc('routing').get();
+    const routingConfig = routingDoc.data() || {};
     
     const TASK_ROUTING_TABLE: Record<string, { primary: string, fallbacks: string[] }> = {
       'skeleton': { primary: 'cohere', fallbacks: ['openrouter_free'] },
@@ -4090,14 +4093,9 @@ app.post('/api/study-architect/generate-plan', verifyAuth, async (req, res) => {
       throw lastError || new Error('All AI providers failed');
     }
 
-    const rawJson = parseRobustJSON(response.text, { sessions: [] });
-    try {
-      const validatedData = StudySessionSchema.parse(rawJson);
-      res.json(validatedData);
-    } catch (validationError) {
-      console.error('Study Architect Validation Error:', validationError);
-      res.json(rawJson); // Fallback to raw if validation fails but parsing succeeded
-    }
+    const rawJson = parseRobustJSON(response.text);
+    const validatedData = StudySessionSchema.parse(rawJson);
+    res.json(validatedData);
   } catch (error: any) {
     console.error('Study Architect Error:', error);
     res.status(500).json({ error: 'Failed to generate study plan' });
@@ -4188,14 +4186,9 @@ app.post('/api/vision-to-quiz', verifyAuth, async (req, res) => {
       throw lastError || new Error('All AI providers failed');
     }
 
-    const rawJson = parseRobustJSON(response.text, {});
-    try {
-      const validatedData = VisionToQuizSchema.parse(rawJson);
-      res.json(validatedData);
-    } catch (validationError) {
-      console.error('Vision-to-Quiz Validation Error:', validationError);
-      res.json(rawJson); // Fallback to raw
-    }
+    const rawJson = parseRobustJSON(response.text);
+    const validatedData = VisionToQuizSchema.parse(rawJson);
+    res.json(validatedData);
   } catch (error: any) {
     console.error('Vision-to-Quiz Error:', error);
     res.status(500).json({ error: 'Failed to process image' });
@@ -4412,9 +4405,9 @@ app.post('/api/formulas/search', verifyAuth, async (req, res) => {
     let routingConfig: any = { formulas: 'cohere' };
     try {
       if (appAdmin) {
-        const cached = await getCachedSystemConfig('routing');
-        if (cached) {
-          routingConfig = cached;
+        const routingDoc = await appAdmin.firestore().collection('system_config').doc('routing').get();
+        if (routingDoc.exists) {
+          routingConfig = routingDoc.data() || { formulas: 'cohere' };
         }
       }
     } catch (err) {
@@ -4466,8 +4459,8 @@ app.post('/api/formulas/search', verifyAuth, async (req, res) => {
       throw lastError || new Error('No AI providers available or all failed for formula search');
     }
 
-    const data = parseRobustJSON(aiResponse.text, { formulas: [] });
-    const formulas = data.formulas || [];
+    const data = parseRobustJSON(aiResponse.text);
+    const formulas = Array.isArray(data?.formulas) ? data.formulas : (Array.isArray(data) ? data : []);
 
     if (formulas.length === 0) {
       return res.status(404).json({ error: 'No related formulas found' });
@@ -5492,7 +5485,6 @@ app.post('/api/admin/ai-mode', verifyAuth, async (req, res) => {
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedBy: adminUid
     });
-    invalidateMemoryCache('sys_config:ai_mode');
     
     console.log(`[Admin] Global AI Mode updated to: ${mode}`);
     res.json({ success: true, mode });
@@ -5826,12 +5818,13 @@ async function analyzeAndUpdateLearningProfile(userMessage: string, aiResponse: 
 
     if (!response) return;
 
-    const rawJson = parseRobustJSON(response.text, {});
-    let result = rawJson;
+    let result: any = null;
     try {
+      const rawJson = parseRobustJSON(response.text);
       result = LearningProfileSchema.parse(rawJson);
     } catch (e) {
-      console.warn('Learning Profile Validation Error:', e);
+      console.warn('Learning Profile Parse/Validation Error:', e);
+      return;
     }
     
     const invalidPattern = /(?:tutor|response|error|technical|clarity|behavior|feedback|object\s*object|unstructured|malformed|initiating|engagement)/i;
@@ -5859,19 +5852,24 @@ async function analyzeAndUpdateLearningProfile(userMessage: string, aiResponse: 
 async function startServer() {
   console.log('Starting server... NODE_ENV:', process.env.NODE_ENV);
   
-  // Initialize Telemetry in background without blocking server startup
-  telemetry.initialize().catch(err => {
-    console.error('Failed to initialize telemetry in background:', err);
-  });
+  // Initialize Telemetry
+  await telemetry.initialize();
 
   if (process.env.NODE_ENV !== 'production') {
     console.log('Starting Vite in middleware mode...');
     try {
-      const isHmrDisabled = process.env.DISABLE_HMR === 'true';
+      const vitePort = process.env.VITE_PORT ? parseInt(process.env.VITE_PORT, 10) : PORT;
+      const hmrPort = process.env.VITE_HMR_PORT 
+        ? parseInt(process.env.VITE_HMR_PORT, 10) 
+        : (vitePort + 21679);
+
       const vite = await createViteServer({
         server: { 
           middlewareMode: true,
-          hmr: isHmrDisabled ? false : undefined
+          hmr: {
+            port: hmrPort,
+            clientPort: process.env.VITE_HMR_CLIENT_PORT ? parseInt(process.env.VITE_HMR_CLIENT_PORT, 10) : undefined
+          }
         },
         appType: 'spa',
       });
@@ -6007,70 +6005,31 @@ async function startServer() {
       socket.emit('lobby:joined', lobby);
     });
 
-    socket.on('lobby:start', async (lobbyId) => {
-      const lobby = lobbies.get(lobbyId) as any;
+    socket.on('lobby:start', (lobbyId) => {
+      const lobby = lobbies.get(lobbyId);
       if (lobby && lobby.players[0].id === socket.id) { // Only host can start
         lobby.status = 'playing';
         io.to(lobbyId).emit('match:started', lobby);
         io.emit('lobbies:update', Array.from(lobbies.values()));
         
-        try {
-          const adminApp = getAdminApp();
-          let realQuestion: any = null;
-          if (adminApp) {
-            // Retrieve live verified question from past_papers collection with 15-minute server memory cache
-            let cachedQuestions = getMemoryCache<any[]>('arena:questions_pool');
-            if (!cachedQuestions || cachedQuestions.length === 0) {
-              const snapshot = await adminApp.firestore().collection('past_papers').limit(10).get();
-              cachedQuestions = [];
-              if (!snapshot.empty) {
-                for (const doc of snapshot.docs) {
-                  const data = doc.data();
-                  if (Array.isArray(data.questions) && data.questions.length > 0) {
-                    for (const q of data.questions) {
-                      if (q && q.question && Array.isArray(q.options) && q.options.length >= 2) {
-                        cachedQuestions.push({
-                          question: q.question,
-                          options: q.options,
-                          correctAnswer: q.correctAnswer || q.answer,
-                          timeLimit: 20
-                        });
-                      }
-                    }
-                  }
-                }
-              }
-              if (cachedQuestions.length > 0) {
-                setMemoryCache('arena:questions_pool', cachedQuestions, 15 * 60 * 1000);
-              }
-            }
-
-            if (cachedQuestions && cachedQuestions.length > 0) {
-              realQuestion = cachedQuestions[Math.floor(Math.random() * cachedQuestions.length)];
-            }
-          }
-
-          if (realQuestion) {
-            lobby.currentQuestion = realQuestion;
-            io.to(lobbyId).emit('question:next', {
-              question: realQuestion.question,
-              options: realQuestion.options,
-              timeLimit: realQuestion.timeLimit
-            });
-          }
-        } catch (fetchErr) {
-          console.error('Error fetching live question for arena lobby:', fetchErr);
-        }
+        // Simulate a question after 3 seconds
+        setTimeout(() => {
+          io.to(lobbyId).emit('question:next', {
+            question: "What is the derivative of x^2?",
+            options: ["x", "2x", "x^2", "2"],
+            timeLimit: 15
+          });
+        }, 3000);
       }
     });
 
     socket.on('match:answer', (lobbyId, answerIndex) => {
-      const lobby = lobbies.get(lobbyId) as any;
+      const lobby = lobbies.get(lobbyId);
       if (lobby && lobby.status === 'playing') {
-        const player = lobby.players.find((p: any) => p.id === socket.id);
-        if (player && lobby.currentQuestion) {
-          const chosenOption = lobby.currentQuestion.options[answerIndex];
-          if (chosenOption && (chosenOption === lobby.currentQuestion.correctAnswer || chosenOption === lobby.currentQuestion.answer)) {
+        const player = lobby.players.find(p => p.id === socket.id);
+        if (player) {
+          // Simplified scoring logic
+          if (answerIndex === 1) { // 2x is correct
             player.score += 100;
           }
           io.to(lobbyId).emit('score:updated', lobby.players);
@@ -6321,9 +6280,9 @@ async function startServer() {
         let routingConfig: any = { chat: 'groq' };
         try {
           if (app) {
-            const cachedRouting = await getCachedSystemConfig('routing');
-            if (cachedRouting) {
-              routingConfig = cachedRouting;
+            const routingDoc = await app.firestore().collection('system_config').doc('routing').get();
+            if (routingDoc.exists) {
+              routingConfig = routingDoc.data() || { chat: 'groq' };
             }
           }
         } catch (err) {
@@ -6539,10 +6498,13 @@ async function startServer() {
           try {
             const appAdmin = getAdminApp();
             if (appAdmin) {
-              const config = await getCachedSystemConfig('routing');
-              if (config && config.voice_tutor_model) {
-                voiceModel = config.voice_tutor_model;
-                console.log(`[VoiceTutor] Dynamically routing to configured model: ${voiceModel}`);
+              const routingDoc = await appAdmin.firestore().collection('system_config').doc('routing').get();
+              if (routingDoc.exists) {
+                const config = routingDoc.data();
+                if (config && config.voice_tutor_model) {
+                  voiceModel = config.voice_tutor_model;
+                  console.log(`[VoiceTutor] Dynamically routing to configured model: ${voiceModel}`);
+                }
               }
             }
           } catch (routingErr) {
@@ -6653,36 +6615,6 @@ async function startServer() {
       socket.destroy();
     }
   });
-
-  // Graceful shutdown handling for container deployments (Render, Cloud Run, Docker)
-  const handleShutdown = (signal: string) => {
-    console.log(`Received ${signal}. Gracefully closing HTTP and WebSocket connections...`);
-    try {
-      io.close();
-      wss.close();
-      liveWss.close();
-    } catch (wsErr) {
-      console.warn('Error closing WebSocket listeners during shutdown:', wsErr);
-    }
-
-    server.close((err) => {
-      if (err) {
-        console.error('Error closing HTTP server on shutdown:', err);
-        process.exit(1);
-      }
-      console.log('HTTP server terminated cleanly.');
-      process.exit(0);
-    });
-
-    // Forceful exit fallback after 8 seconds if connections remain open
-    setTimeout(() => {
-      console.warn('Forcefully terminating process after shutdown timeout.');
-      process.exit(0);
-    }, 8000).unref();
-  };
-
-  process.on('SIGTERM', () => handleShutdown('SIGTERM'));
-  process.on('SIGINT', () => handleShutdown('SIGINT'));
 
 }
 

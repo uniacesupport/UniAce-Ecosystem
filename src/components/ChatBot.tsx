@@ -389,12 +389,18 @@ export default function ChatBot({
 
     // Fallback HTTP Fetch
     try {
-      const token = await user.getIdToken();
+      let token = '';
+      try {
+        token = (await user?.getIdToken()) || '';
+      } catch (tokErr) {
+        console.warn("Could not retrieve user auth token:", tokErr);
+      }
+
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
         },
         body: JSON.stringify({
           message: userMsg.text,
@@ -413,17 +419,33 @@ export default function ChatBot({
         })
       });
 
+      const contentType = response.headers.get('content-type') || '';
       const responseText = await response.text();
-      let data;
-      try {
-        data = JSON.parse(responseText);
-      } catch (parseError) {
-        const repaired = jsonrepair(responseText);
-        data = JSON.parse(repaired);
+
+      let data: any = null;
+      if (contentType.includes('application/json')) {
+        try {
+          data = JSON.parse(responseText);
+        } catch {
+          try {
+            data = JSON.parse(jsonrepair(responseText));
+          } catch {
+            data = null;
+          }
+        }
       }
 
       if (!response.ok) {
-        throw new Error(data?.error || data?.message || `Server error: ${response.status}`);
+        const errorMsg = data?.error || data?.message || (
+          response.status === 502 || response.status === 503 || response.status === 504
+            ? 'UniAce Tutor is currently reconnecting. Please wait a moment and try again.'
+            : `Server error (${response.status}): ${response.statusText || 'Request failed'}`
+        );
+        throw new Error(errorMsg);
+      }
+
+      if (!data || !data.response) {
+        throw new Error("Unable to parse tutor response. Please try sending your message again.");
       }
 
       const modelMsg: ChatMessage = {
@@ -439,7 +461,8 @@ export default function ChatBot({
       }
     } catch (error: any) {
       console.error("Chat fetch error:", error);
-      setMessages((prev) => [...prev, { role: "model", text: error.message || "Error: Failed to connect to UniAce Tutor.", timestamp: new Date().toISOString() }]);
+      const displayMsg = error?.message || "Error: Failed to connect to UniAce Tutor.";
+      setMessages((prev) => [...prev, { role: "model", text: displayMsg, timestamp: new Date().toISOString() }]);
     } finally {
       setIsLoading(false);
     }

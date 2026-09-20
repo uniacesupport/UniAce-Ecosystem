@@ -207,7 +207,7 @@ export const AIService = {
           const [_, left, right] = equationMatch;
           try {
             const { MathEngine } = await import('./mathEngine');
-            const isCorrect = await MathEngine.compare(left, right);
+            const isCorrect = MathEngine.compare(left, right);
             if (!isCorrect) {
               lastUserMessage.text = `${lastUserMessage.text}\n\n[MATH ENGINE VERIFICATION: The equation ${left} = ${right} appears to be mathematically incorrect.]`;
             }
@@ -681,23 +681,11 @@ Generate a university-level quiz for ${subTopic ? 'the specific subtopic' : 'the
     try {
       const response = await callAI(prompt, undefined, 'json', 1500, 'standard', 'quiz-eval');
       const data = extractJSON(response.text || "{}");
-      const validated = safeParseAIResponse(EvaluateWrittenAnswerSchema, data, {
-        score: 0,
-        isCorrect: false,
-        feedback: "Your answer has been recorded. Please compare it with the model explanation below."
-      });
+      const validated = safeParseAIResponse(EvaluateWrittenAnswerSchema, data);
       return validated;
     } catch (e) {
       console.error("Failed to evaluate written answer via AI:", e);
-      // Fallback matching
-      const userClean = userAnswer.toLowerCase().trim();
-      const modelClean = correctAnswerModel.toLowerCase().trim();
-      const isCorrect = userClean.length > 20 || userClean.includes(modelClean) || modelClean.includes(userClean);
-      return {
-        score: isCorrect ? 85 : 20,
-        isCorrect,
-        feedback: "Your written answer was recorded. Review the detailed model explanation and rubric below to self-assess."
-      };
+      throw e;
     }
   },
 
@@ -732,15 +720,7 @@ Generate a university-level quiz for ${subTopic ? 'the specific subtopic' : 'the
     const response = await callAI(prompt, undefined, 'json', 1000, 'quiz', 'quiz');
     try {
       const rawData = extractJSON(response.text || "{}");
-      const validated = safeParseAIResponse(QuickCheckSchema, rawData, {
-        id: `quick-check-${subTopic.id}`,
-        type: 'multiple-choice',
-        question: `Based on the subtopic "${subTopic.title}", what is a core concept discussed in the content?`,
-        options: ['An introductory concept', 'An advanced application', 'A fundamental rule', 'A practical overview'],
-        correctAnswer: 'An introductory concept',
-        explanation: 'Review the lecture notes above for a thorough understanding.',
-        hint: 'Consider the primary definitions.'
-      });
+      const validated = safeParseAIResponse(QuickCheckSchema, rawData);
       return {
         ...validated,
         id: validated.id || `quick-check-${subTopic.id}`,
@@ -927,21 +907,7 @@ Generate a university-level quiz for ${subTopic ? 'the specific subtopic' : 'the
     const response = await callAI(prompt, undefined, 'json', undefined, 'standard', 'recommendation');
     try {
       const rawData = extractJSON(response.text || "null");
-      const defaultRec = syllabus[0]?.subTopics[0] ? {
-        title: syllabus[0].subTopics[0].title,
-        reason: 'Start with the introductory lesson of your syllabus!',
-        moduleId: syllabus[0].id,
-        subTopicId: syllabus[0].subTopics[0].id,
-        type: 'new' as const
-      } : {
-        title: 'Core Concept',
-        reason: 'Continue studying your current topics to build mastery.',
-        moduleId: '',
-        subTopicId: '',
-        type: 'new' as const
-      };
-      
-      return safeParseAIResponse(RecommendationSchema, rawData, defaultRec);
+      return safeParseAIResponse(RecommendationSchema, rawData);
     } catch (e) {
       console.error("Smart recommendation error:", e);
       throw e;
@@ -1006,11 +972,7 @@ Generate a university-level quiz for ${subTopic ? 'the specific subtopic' : 'the
     const response = await callAI(prompt, undefined, 'json', undefined, 'standard', 'recommendation');
     try {
       const rawData = extractJSON(response.text || "null");
-      return safeParseAIResponse(ExamReadinessSchema, rawData, {
-        probability: 60,
-        analysis: 'Keep practicing quizzes and reviewing flashcards to strengthen your foundation.',
-        weakestArea: 'No specific topic identified yet.'
-      });
+      return safeParseAIResponse(ExamReadinessSchema, rawData);
     } catch (e) {
       console.error("Exam readiness prediction error:", e);
       throw e;
@@ -1098,16 +1060,7 @@ Generate a university-level quiz for ${subTopic ? 'the specific subtopic' : 'the
     const response = await callAI(prompt, undefined, 'json', undefined, 'standard', 'recommendation');
     try {
       const rawData = extractJSON(response.text || "null");
-      return safeParseAIResponse(StudyPlanSchema, rawData, {
-        title: 'Personalized Study Plan',
-        overview: 'A standard study schedule to cover your syllabus systematically.',
-        dailySchedule: (syllabus || []).slice(0, 7).map((m, i) => ({
-          day: `Day ${i + 1}`,
-          focus: m?.title || 'Topic',
-          tasks: [`Review subtopics for ${m?.title || 'Topic'}`, 'Take a practice quiz']
-        })),
-        tips: ['Review material daily', 'Take short quizzes for active recall']
-      });
+      return safeParseAIResponse(StudyPlanSchema, rawData);
     } catch (e) {
       console.error("Study plan generation error:", e);
       throw e;
@@ -1131,14 +1084,7 @@ Generate a university-level quiz for ${subTopic ? 'the specific subtopic' : 'the
     const response = await callAI(prompt, undefined, 'json', undefined, 'standard', 'recommendation');
     try {
       const rawData = extractJSON(response.text || "null");
-      return safeParseAIResponse(BoosterLessonSchema, rawData, {
-        focus: `Foundational Review of ${topicTitle}`,
-        tasks: [
-          `Review core concepts and definitions of ${topicTitle}`,
-          'Practice step-by-step worked examples',
-          'Complete a quick concept check diagnostic quiz'
-        ]
-      });
+      return safeParseAIResponse(BoosterLessonSchema, rawData);
     } catch (e) {
       console.error("Booster lesson generation error:", e);
       throw e;
@@ -1178,16 +1124,7 @@ Generate a university-level quiz for ${subTopic ? 'the specific subtopic' : 'the
     const response = await callAI(prompt, undefined, 'json', undefined, 'standard', 'recommendation');
     try {
       const rawData = extractJSON(response.text || "null");
-      return safeParseAIResponse(StudyPlanSchema, rawData, {
-        title: 'Fast-Track Advanced Study Plan',
-        overview: `Accelerated track since you mastered ${fastTrackTopicTitle}! Skipping foundational topics to focus on advanced topics.`,
-        dailySchedule: (syllabus || []).slice(0, 5).map((m, i) => ({
-          day: `Day ${i + 1}`,
-          focus: m.title,
-          tasks: [`Challenge yourself with advanced quiz questions on ${m.title}`]
-        })),
-        tips: ['Engage in advanced peer discussions', 'Focus on proof-oriented concepts']
-      });
+      return safeParseAIResponse(StudyPlanSchema, rawData);
     } catch (e) {
       console.error("Fast track plan generation error:", e);
       throw e;

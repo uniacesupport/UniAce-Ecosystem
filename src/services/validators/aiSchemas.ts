@@ -208,15 +208,18 @@ export const BoosterLessonSchema = z.object({
 });
 
 /**
- * Robustly parses and validates any JSON payload against a Zod schema.
- * Logs validation failures but returns a valid typed object reconstructed with defaults where possible.
+ * Parses and validates live AI JSON payload against a Zod schema.
+ * Enforces Zero-Fallback Policy: strictly prohibits static fallbacks or mock substitutions.
+ * Only validates and recovers real dynamically retrieved data, throwing an error if invalid.
  */
 export function safeParseAIResponse<T>(
   schema: z.ZodSchema<T>,
   data: any,
-  fallback: T
+  fallback?: T
 ): T {
-  if (!data) return fallback;
+  if (!data) {
+    throw new Error('Zero-Fallback Policy: No dynamic AI data received to validate.');
+  }
 
   // Try standard parsing
   const result = schema.safeParse(data);
@@ -224,7 +227,7 @@ export function safeParseAIResponse<T>(
     return result.data;
   }
 
-  console.warn('AI Zod validation failed, attempting partial recovery:', result.error.format());
+  console.warn('AI Zod validation failed, attempting partial recovery from dynamic data:', result.error.format());
 
   // Attempt partial array recovery for arrays of items (filtering out bad ones instead of failing all)
   if (Array.isArray(data) && (schema instanceof z.ZodArray || (schema as any)._def?.typeName === 'ZodArray')) {
@@ -271,5 +274,5 @@ export function safeParseAIResponse<T>(
     }
   }
 
-  return fallback;
+  throw new Error(`Zero-Fallback Policy: AI response data does not match required schema (${result.error.issues.map(i => i.message).join('; ')}). Refusing to return static fallback.`);
 }

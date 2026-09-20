@@ -131,9 +131,6 @@ export default defineConfig(({mode}) => {
         clientPort: process.env.VITE_HMR_CLIENT_PORT ? parseInt(process.env.VITE_HMR_CLIENT_PORT, 10) : undefined
       }
     },
-    worker: {
-      format: 'es',
-    },
     build: {
       outDir: 'dist',
       chunkSizeWarningLimit: 3000,

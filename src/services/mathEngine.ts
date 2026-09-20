@@ -1,17 +1,10 @@
-let mathInstance: any = null;
+import { create, all } from 'mathjs';
 
-async function getMath() {
-  if (!mathInstance) {
-    const { create, all } = await import('mathjs');
-    mathInstance = create(all);
-  }
-  return mathInstance;
-}
+const math = create(all);
 
 export const MathEngine = {
-  evaluate: async (expression: string): Promise<any> => {
+  evaluate: (expression: string): any => {
     try {
-      const math = await getMath();
       return math.evaluate(expression);
     } catch (error) {
       console.error('MathEngine evaluation error:', error);
@@ -19,9 +12,8 @@ export const MathEngine = {
     }
   },
   
-  compare: async (expr1: string, expr2: string): Promise<boolean> => {
+  compare: (expr1: string, expr2: string): boolean => {
     try {
-      const math = await getMath();
       const val1 = math.evaluate(expr1);
       const val2 = math.evaluate(expr2);
       const result = math.equal(val1, val2);

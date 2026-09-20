@@ -122,6 +122,9 @@ export default function VoiceTutor({ isOpen, onClose, pdfContent, systemInstruct
       });
 
       const responseText = await response.text();
+      if (!response.ok) {
+        throw new Error(`Voice tutor server error (${response.status}): ${response.statusText || 'Request failed'}`);
+      }
       let aiText = '';
       
       try {

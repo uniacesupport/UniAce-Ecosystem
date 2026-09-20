@@ -239,7 +239,7 @@ export default function LandingPage() {
                   </span>
                 </div>
                 
-                {/* Simulated Conversation Snippet */}
+                {/* Product Preview Card */}
                 <div className="space-y-3">
                   <div className="bg-white dark:bg-zinc-900 p-3.5 rounded-xl rounded-tl-none shadow-xs border border-slate-200/60 dark:border-zinc-800 max-w-[90%]">
                     <p className="text-xs text-slate-700 dark:text-zinc-300 leading-relaxed">
