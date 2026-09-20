@@ -117,10 +117,23 @@ export const ChatInputBar: React.FC<ChatInputBarProps> = ({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      if (!isLoading && (input.trim() || selectedImage || pdfText)) {
-        onSend();
+    // If the keyboard is composing text (IME/autocorrect/predictive suggestion in progress), do nothing
+    if (e.nativeEvent.isComposing) {
+      return;
+    }
+
+    if (e.key === 'Enter') {
+      // On mobile screens (width < 768px), Enter should always start a new line naturally
+      if (window.innerWidth < 768) {
+        return;
+      }
+
+      // On desktop, Enter sends the message, Shift+Enter starts a new line
+      if (!e.shiftKey) {
+        e.preventDefault();
+        if (!isLoading && (input.trim() || selectedImage || pdfText)) {
+          onSend();
+        }
       }
     }
   };

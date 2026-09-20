@@ -788,7 +788,7 @@ export default function QuizGenerator({
                   key="quiz"
                   initial={{ opacity: 0, x: 20 }}
                   animate={{ opacity: 1, x: 0 }}
-                  className="space-y-8 max-w-3xl mx-auto"
+                  className="space-y-8 w-full max-w-5xl xl:max-w-6xl 2xl:max-w-7xl mx-auto"
                 >
                   <div className="flex justify-between items-center">
                     <span className="text-xs font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-widest">
