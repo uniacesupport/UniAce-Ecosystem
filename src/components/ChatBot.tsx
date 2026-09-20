@@ -516,7 +516,7 @@ export default function ChatBot({
             exit={{ height: 0, opacity: 0 }}
             className="bg-white dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-800 overflow-hidden z-20 shrink-0"
           >
-            <div className="p-4 max-w-4xl mx-auto space-y-4">
+            <div className="p-4 w-full max-w-7xl mx-auto space-y-4">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-zinc-500">
                   Pedagogical Tutor Calibration
@@ -564,15 +564,15 @@ export default function ChatBot({
       {/* Main Messages Scroll Area */}
       <div 
         ref={scrollRef} 
-        className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 scroll-smooth"
+        className="flex-1 overflow-y-auto p-2.5 sm:p-4 md:p-6 space-y-4 sm:space-y-6 scroll-smooth w-full"
       >
         {messages.length === 0 ? (
-          <div className="max-w-2xl mx-auto py-8 text-center space-y-6">
+          <div className="w-full max-w-4xl mx-auto py-6 sm:py-8 text-center space-y-6 px-2">
             <div className="w-16 h-16 bg-emerald-500/10 text-emerald-500 rounded-3xl flex items-center justify-center mx-auto shadow-inner">
               <Bot size={32} />
             </div>
             <div>
-              <h3 className="text-xl font-extrabold text-slate-900 dark:text-white">
+              <h3 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white">
                 UniAce Academic Companion
               </h3>
               <p className="text-xs sm:text-sm text-slate-500 dark:text-zinc-400 mt-1 max-w-md mx-auto">
@@ -582,7 +582,7 @@ export default function ChatBot({
             </div>
 
             {/* Quick Action Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-xl mx-auto text-left">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-3xl mx-auto text-left">
               {[
                 { title: "Explain Core Mechanics", desc: "Break down fundamental theorems and definitions with proofs.", prompt: "Explain the core mechanics and derivations of this topic in rigorous detail." },
                 { title: "Worked University Problem", desc: "Show a step-by-step worked exam calculation with formulas.", prompt: "Provide a challenging worked exam problem on this topic with step-by-step solutions." },
@@ -601,14 +601,14 @@ export default function ChatBot({
                   className="p-4 bg-white dark:bg-zinc-900 border border-slate-200/90 dark:border-zinc-800 rounded-2xl hover:border-emerald-500 hover:shadow-md transition-all group flex flex-col justify-between text-left"
                 >
                   <div>
-                    <h4 className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+                    <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
                       {card.title}
                     </h4>
-                    <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-1 leading-relaxed">
+                    <p className="text-[11px] sm:text-xs text-slate-500 dark:text-zinc-400 mt-1 leading-relaxed">
                       {card.desc}
                     </p>
                   </div>
-                  <div className="flex items-center gap-1 text-[11px] font-semibold text-emerald-500 mt-3">
+                  <div className="flex items-center gap-1 text-[11px] sm:text-xs font-semibold text-emerald-500 mt-3">
                     <span>Ask Tutor</span>
                     <ArrowRight size={12} className="group-hover:translate-x-1 transition-transform" />
                   </div>
@@ -617,7 +617,7 @@ export default function ChatBot({
             </div>
           </div>
         ) : (
-          <div className="w-full max-w-4xl mx-auto flex flex-col gap-4 sm:gap-5 py-2">
+          <div className="w-full max-w-5xl xl:max-w-6xl 2xl:max-w-7xl mx-auto flex flex-col gap-3.5 sm:gap-5 py-1">
             {messages.map((msg, idx) => (
               <ChatMessageCard
                 key={msg.id || idx}

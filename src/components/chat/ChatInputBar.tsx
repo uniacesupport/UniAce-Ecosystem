@@ -132,8 +132,8 @@ export const ChatInputBar: React.FC<ChatInputBarProps> = ({
   ];
 
   return (
-    <div className="p-3 sm:p-4 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md border-t border-slate-200 dark:border-zinc-800 shrink-0">
-      <div className="max-w-4xl mx-auto space-y-2">
+    <div className="p-2 sm:p-3 md:p-4 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md border-t border-slate-200 dark:border-zinc-800 shrink-0">
+      <div className="w-full max-w-5xl xl:max-w-6xl 2xl:max-w-7xl mx-auto space-y-2 px-1 sm:px-2">
         {/* Math Palette if active */}
         <MathSymbolPalette
           isOpen={isMathPaletteOpen}

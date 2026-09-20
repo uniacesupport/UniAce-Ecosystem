@@ -1,6 +1,6 @@
 import { LogService } from '../services/logService';
 import { Module, View, CourseId } from '../types';
-import { LayoutGrid, Book, Layers, Activity, GraduationCap, X, ChevronLeft, FileText, Brain, Home, Award, Calculator as CalcIcon, Bot, Grid, LogIn, LogOut, User as UserIcon, BookOpen, Zap, BrainCircuit, Trophy, Settings, Maximize2, Calendar, Share2, Swords, Sun, Moon, Lock } from 'lucide-react';
+import { LayoutGrid, Book, Layers, Activity, GraduationCap, X, ChevronLeft, FileText, Brain, Home, Award, Calculator as CalcIcon, Bot, Grid, LogIn, LogOut, User as UserIcon, BookOpen, Zap, BrainCircuit, Trophy, Settings, Maximize2, Calendar, Share2, Swords, Sun, Moon, Lock, Video } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { UserProgress } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -330,17 +330,29 @@ export default function Sidebar({
                   </button>
 
                   {isAdmin && (
-                    <button
-                      onClick={() => onViewSelect('admin-dashboard')}
-                      className={`flex flex-col items-center justify-center gap-1.5 p-2.5 rounded-xl transition-all ${
-                        activeView === 'admin-dashboard'
-                          ? 'bg-zinc-800 text-white'
-                          : 'text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800/50'
-                      }`}
-                    >
-                      <Settings size={18} />
-                      <span className="text-[10px] font-medium">Admin</span>
-                    </button>
+                    <>
+                      <button
+                        onClick={() => onViewSelect('admin-dashboard')}
+                        className={`flex flex-col items-center justify-center gap-1.5 p-2.5 rounded-xl transition-all ${
+                          activeView === 'admin-dashboard'
+                            ? 'bg-zinc-800 text-white'
+                            : 'text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800/50'
+                        }`}
+                        title="Admin Dashboard"
+                      >
+                        <Settings size={18} />
+                        <span className="text-[10px] font-medium">Admin</span>
+                      </button>
+
+                      <button
+                        onClick={() => onViewSelect('admin-dashboard')}
+                        className={`flex flex-col items-center justify-center gap-1.5 p-2.5 rounded-xl transition-all text-rose-400 hover:text-rose-300 hover:bg-rose-950/30`}
+                        title="Marketing & Demo Studio"
+                      >
+                        <Video size={18} />
+                        <span className="text-[10px] font-medium text-rose-400">Reel Studio</span>
+                      </button>
+                    </>
                   )}
                 </div>
               </div>

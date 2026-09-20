@@ -172,8 +172,8 @@ export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSele
   }, [activeCourseId, progress.mastery, enrolledCourses.length]);
 
   return (
-    <div className="flex-1 bg-slate-50 dark:bg-zinc-950 p-4 sm:p-6 lg:p-12 pb-4 lg:pb-12 no-scrollbar">
-      <div className="max-w-6xl mx-auto space-y-8">
+    <div className="flex-1 bg-slate-50 dark:bg-zinc-950 p-3 sm:p-6 lg:p-8 pb-8 no-scrollbar">
+      <div className="w-full max-w-7xl 2xl:max-w-[1600px] mx-auto space-y-6 sm:space-y-8">
         <TrialExpirationBanner />
 
         {/* New Header Design */}

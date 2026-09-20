@@ -9,6 +9,7 @@ import { CourseProvider } from './context/CourseContext';
 import ErrorBoundary from './components/ErrorBoundary';
 
 import { ThemeProvider } from './context/ThemeContext';
+import { DemoReelProvider } from './context/DemoReelContext';
 
 // Initialize theme immediately to prevent flash
 console.log('Main.tsx: Initializing application...');
@@ -46,7 +47,9 @@ try {
       <ThemeProvider>
         <AuthProvider>
           <CourseProvider>
-            <BrowserRouter><App /></BrowserRouter>
+            <DemoReelProvider>
+              <BrowserRouter><App /></BrowserRouter>
+            </DemoReelProvider>
           </CourseProvider>
         </AuthProvider>
       </ThemeProvider>

@@ -71,8 +71,8 @@ export default function MasteryCenter({ progress, onBack, activeCourseId, syllab
   }, [activeCourseId, progress?.mastery, progress?.studyTime]);
 
   return (
-    <div className="flex-1 overflow-y-auto bg-slate-50 dark:bg-blue-950 p-4 sm:p-6 lg:p-12 pb-24 lg:pb-12 transition-colors">
-      <div className="max-w-6xl mx-auto space-y-12">
+    <div className="flex-1 overflow-y-auto bg-slate-50 dark:bg-blue-950 p-3 sm:p-6 lg:p-8 pb-16 transition-colors">
+      <div className="w-full max-w-7xl 2xl:max-w-[1600px] mx-auto space-y-8 sm:space-y-12">
         {/* Header */}
         <header className="flex flex-col md:flex-row md:items-end justify-between gap-6 lg:pl-4 xl:pl-0">
           <div className="space-y-4">

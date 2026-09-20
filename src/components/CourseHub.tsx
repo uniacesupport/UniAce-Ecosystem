@@ -149,20 +149,21 @@ export default function CourseHub({ onSelectCourse, onProfileClick, onViewSelect
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-zinc-950 flex flex-col lg:flex-row p-4 sm:p-6 lg:p-12 gap-8 lg:gap-16 relative overflow-x-hidden transition-colors">
-      {/* Configuration Warning */}
-      {!isConfigured && (
-        <div className="fixed top-0 left-0 right-0 bg-amber-500 text-white p-2 text-center text-xs font-bold z-50 shadow-lg">
-          Firebase is not configured. Please set the VITE_FIREBASE_* environment variables.
-        </div>
-      )}
+    <div className="min-h-screen bg-slate-50 dark:bg-zinc-950 transition-colors overflow-x-hidden">
+      <div className="w-full max-w-7xl 2xl:max-w-[1600px] mx-auto flex flex-col lg:flex-row p-3 sm:p-6 lg:p-8 gap-6 lg:gap-8 relative">
+        {/* Configuration Warning */}
+        {!isConfigured && (
+          <div className="fixed top-0 left-0 right-0 bg-amber-500 text-white p-2 text-center text-xs font-bold z-50 shadow-lg">
+            Firebase is not configured. Please set the VITE_FIREBASE_* environment variables.
+          </div>
+        )}
 
-      {showEditProfile && (
-        <AcademicProfileModal onClose={() => setShowEditProfile(false)} />
-      )}
+        {showEditProfile && (
+          <AcademicProfileModal onClose={() => setShowEditProfile(false)} />
+        )}
 
-      {/* Left Sidebar / Header Area */}
-      <div className="w-full lg:w-72 flex-shrink-0 flex flex-col gap-8 relative z-20">
+        {/* Left Sidebar / Header Area */}
+        <div className="w-full lg:w-72 flex-shrink-0 flex flex-col gap-6 lg:gap-8 relative z-20">
         <div className="sticky top-12 space-y-8">
           <div>
             <div className="flex items-center gap-3 mb-6">
@@ -403,6 +404,7 @@ export default function CourseHub({ onSelectCourse, onProfileClick, onViewSelect
             ))}
           </div>
         )}
+      </div>
       </div>
     </div>
   );

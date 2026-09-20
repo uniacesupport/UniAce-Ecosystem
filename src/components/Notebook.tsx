@@ -17,8 +17,8 @@ export default function Notebook({ bookmarks, onRemoveBookmark }: NotebookProps)
   const filteredBookmarks = bookmarks.filter(b => filter === 'all' || b.type === filter);
 
   return (
-    <div className="flex-1 overflow-y-auto bg-slate-50 dark:bg-zinc-900 p-4 sm:p-6 lg:p-12 pb-24 lg:pb-12 transition-colors">
-      <div className="max-w-4xl mx-auto space-y-8">
+    <div className="flex-1 overflow-y-auto bg-slate-50 dark:bg-zinc-900 p-3 sm:p-6 lg:p-8 pb-16 transition-colors">
+      <div className="w-full max-w-7xl 2xl:max-w-[1600px] mx-auto space-y-6 sm:space-y-8">
         <header className="lg:pl-4 xl:pl-0">
           <h1 className="text-3xl font-black text-slate-900 dark:text-white mb-2">My Notebook</h1>
           <p className="text-slate-500 dark:text-zinc-400">Your saved formulas and tricky questions.</p>

@@ -228,18 +228,18 @@ export const ChatMessageCard: React.FC<ChatMessageCardProps> = ({
     >
       {/* Message Specific Container */}
       <div className={`w-full flex ${isModel ? 'justify-start' : 'justify-end'}`}>
-        <div className={`flex gap-2.5 sm:gap-3 ${
+        <div className={`flex gap-2 sm:gap-3 ${
           isModel 
-            ? 'w-full max-w-[98%] sm:max-w-[88%] flex-row items-start' 
-            : 'max-w-[88%] sm:max-w-[78%] flex-row-reverse items-end'
+            ? 'w-full max-w-full sm:max-w-[96%] md:max-w-[92%] flex-row items-start' 
+            : 'max-w-[92%] sm:max-w-[85%] md:max-w-[78%] flex-row-reverse items-end'
         }`}>
           {/* Avatar Container */}
           <div className={`shrink-0 flex items-center justify-center shadow-xs select-none ${
             isModel 
-              ? 'w-8 h-8 rounded-xl bg-emerald-500 text-white mt-1' 
-              : 'w-7 h-7 rounded-lg bg-slate-800 dark:bg-zinc-700 text-white mb-0.5'
+              ? 'w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-emerald-500 text-white mt-0.5 sm:mt-1' 
+              : 'w-6 h-6 sm:w-7 sm:h-7 rounded-lg bg-slate-800 dark:bg-zinc-700 text-white mb-0.5'
           }`}>
-            {isModel ? <Bot size={18} /> : <User size={15} />}
+            {isModel ? <Bot size={16} className="sm:w-[18px] sm:h-[18px]" /> : <User size={14} className="sm:w-[15px] sm:h-[15px]" />}
           </div>
 
           {/* Message Content Stack */}
@@ -284,7 +284,7 @@ export const ChatMessageCard: React.FC<ChatMessageCardProps> = ({
             </div>
 
             {/* Message Body Card */}
-            <div className={`p-4 sm:p-5 shadow-xs text-sm transition-all select-text relative ${
+            <div className={`p-3 sm:p-5 shadow-xs text-sm transition-all select-text relative ${
               isModel
                 ? 'w-full bg-white dark:bg-zinc-900 text-slate-800 dark:text-zinc-100 rounded-2xl rounded-tl-xs border border-slate-200/85 dark:border-zinc-800'
                 : 'bg-slate-900 dark:bg-zinc-800 text-white rounded-2xl rounded-tr-xs border border-transparent'

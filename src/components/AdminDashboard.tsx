@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, FileText, Plus, CheckCircle, Loader2, BookOpen, AlertCircle, Settings, Trash2, Users, Activity, Database, Search, Zap, Trophy, Star, Bot, Shield, BarChart3, Globe, Edit2, RefreshCw, Clock, FileQuestion, MessageSquare, ArrowLeft, HeartPulse, X, ArrowRight, Layers, Key, Cpu, Share2, Download, Filter, Send, ChevronLeft, ChevronRight, Mic, Book, Terminal, Sparkles, TrendingUp, CreditCard, HelpCircle, Calculator } from 'lucide-react';
+import { Upload, FileText, Plus, CheckCircle, Loader2, BookOpen, AlertCircle, Settings, Trash2, Users, Activity, Database, Search, Zap, Trophy, Star, Bot, Shield, BarChart3, Globe, Edit2, RefreshCw, Clock, FileQuestion, MessageSquare, ArrowLeft, HeartPulse, X, ArrowRight, Layers, Key, Cpu, Share2, Download, Filter, Send, ChevronLeft, ChevronRight, Mic, Book, Terminal, Sparkles, TrendingUp, CreditCard, HelpCircle, Calculator, Video, Film } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -23,6 +23,7 @@ import SupportManagerTab from './admin/SupportManagerTab';
 import FormulasManagerTab from './admin/FormulasManagerTab';
 import MathEngineTab from './admin/MathEngineTab';
 import AcademicMCPDashboard from './admin/AcademicMCPDashboard';
+import DemoStudioTab from './admin/DemoStudioTab';
 import { AIService } from '../services/ai';
 import { generateCourseContent, generateCourseSkeleton, generateModuleContent, generateCourseFormulas } from '../services/aiCourseGenerator';
 import { CourseService, sanitizeForFirestore } from '../services/courseService';
@@ -132,7 +133,7 @@ export default function AdminDashboard() {
   const [isIngesting, setIsIngesting] = useState(false);
   const [ingestionStatus, setIngestionStatus] = useState('');
   const [kbStats, setKbStats] = useState({ totalChunks: 0 });
-  const [activeTab, setActiveTab] = useState<'overview' | 'courses' | 'users' | 'rag' | 'communications' | 'settings' | 'logs' | 'question-bank' | 'curriculum-health' | 'curriculum-manager' | 'curriculum-requests' | 'api-debugger' | 'affiliates' | 'analytics' | 'api-status' | 'pricing' | 'challenges' | 'support' | 'formulas' | 'math-engine' | 'academic-mcp'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'demo-studio' | 'courses' | 'users' | 'rag' | 'communications' | 'settings' | 'logs' | 'question-bank' | 'curriculum-health' | 'curriculum-manager' | 'curriculum-requests' | 'api-debugger' | 'affiliates' | 'analytics' | 'api-status' | 'pricing' | 'challenges' | 'support' | 'formulas' | 'math-engine' | 'academic-mcp'>('overview');
 
   useEffect(() => {
     // Redirect if current tab is not allowed for the role
@@ -2793,8 +2794,8 @@ export default function AdminDashboard() {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto bg-slate-50 dark:bg-slate-900 p-4 sm:p-6 lg:p-12 pb-24 lg:pb-12 transition-colors min-h-screen">
-      <div className="max-w-5xl mx-auto space-y-8">
+    <div className="flex-1 overflow-y-auto bg-slate-50 dark:bg-slate-900 p-3 sm:p-6 lg:p-8 pb-16 transition-colors min-h-screen">
+      <div className="w-full max-w-7xl 2xl:max-w-[1600px] mx-auto space-y-6 sm:space-y-8">
         
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -2855,6 +2856,7 @@ export default function AdminDashboard() {
         <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-hide">
           {[
             { id: 'overview', label: 'Overview', icon: Activity, show: true },
+            { id: 'demo-studio', label: '🎬 Marketing & Demo Studio', icon: Video, show: true },
             { id: 'api-status', label: 'API Status', icon: Activity, show: permissions.canManageSystem },
             { id: 'analytics', label: 'Platform Analytics', icon: BarChart3, show: true },
             { id: 'courses', label: 'Courses & AI', icon: BookOpen, show: permissions.canManageCourses },
@@ -7697,6 +7699,7 @@ export default function AdminDashboard() {
         </div>
       )}
 
+      {activeTab === 'demo-studio' && <DemoStudioTab />}
       {activeTab === 'pricing' && <PricingManagerTab />}
       {activeTab === 'challenges' && <ChallengesManagerTab />}
       {activeTab === 'support' && <SupportManagerTab />}

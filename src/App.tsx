@@ -39,13 +39,16 @@ import VoiceTutor from './components/VoiceTutor';
 
 import AcademicProfileModal from './components/AcademicProfileModal';
 import WhatsAppPromoModal from './components/WhatsAppPromoModal';
+import DemoDirectorHUD from './components/DemoDirectorHUD';
+import DemoReelPreviewModal from './components/DemoReelPreviewModal';
+import { useDemoReel } from './context/DemoReelContext';
 import { CalculatorProvider, useCalculator } from './context/CalculatorContext';
 import { useUserProgress } from './hooks/useUserProgress';
 import { useSelfHealing } from './hooks/useSelfHealing';
 import { AdaptiveRecalibratorModal } from './components/AdaptiveRecalibratorModal';
 import { useAuth } from './context/AuthContext';
 import { useCourses } from './context/CourseContext';
-import { Menu, Mic } from 'lucide-react';
+import { Menu, Mic, Video } from 'lucide-react';
 import { Toaster } from 'react-hot-toast';
 import { View, ChatMessage, CourseId, Department, Semester } from './types';
 import { generateModuleContent, generateCourseSkeleton } from './services/aiCourseGenerator';
@@ -76,6 +79,8 @@ function AppContent() {
   const [isPending, startTransition] = useTransition();
   const { courses, refreshCourses } = useCourses();
   const { progress, addXp, updateMastery, recordQuizScore, recordStudyTime, addBookmark, removeBookmark, enrollCourse, unenrollCourse, updateAIPersonality, isOnline, checkAndUpdateStreak } = useUserProgress();
+  const { isRecording, startDemoReel, stopAndSaveReel, elapsedSeconds } = useDemoReel();
+  const isAdmin = profile?.role === 'admin' || (import.meta.env.VITE_ADMIN_EMAILS || '').split(',').includes(user?.email || '');
   
   // Activate advanced self-healing for robust dynamic client-state integrity
   useSelfHealing();
@@ -418,6 +423,30 @@ function AppContent() {
               className="p-2 bg-white border border-slate-200 rounded-xl shadow-sm text-slate-600 hover:text-slate-900 transition-all hover:scale-105 active:scale-95"
             >
               <Menu size={20} />
+            </button>
+          </div>
+        )}
+
+        {/* Quick-Access Demo Reel Button for Admins */}
+        {isAdmin && (
+          <div className="absolute top-4 right-4 z-40 flex items-center gap-2">
+            <button
+              onClick={() => {
+                if (isRecording) {
+                  stopAndSaveReel();
+                } else {
+                  startDemoReel('full_ecosystem', handleViewSelect);
+                }
+              }}
+              className={`px-3.5 py-2 rounded-2xl font-black text-xs shadow-lg transition-all active:scale-95 flex items-center gap-2 ${
+                isRecording
+                  ? 'bg-rose-600 text-white animate-pulse border border-rose-400'
+                  : 'bg-slate-900/90 dark:bg-white/90 text-white dark:text-slate-900 hover:bg-slate-800 dark:hover:bg-white backdrop-blur-md border border-slate-700/50 dark:border-slate-200'
+              }`}
+              title={isRecording ? 'Click to finish and save demo reel' : 'Launch Auto Demo Reel'}
+            >
+              <Video size={15} className={isRecording ? 'text-white' : 'text-rose-400 dark:text-rose-600'} />
+              <span>{isRecording ? `🔴 REC (${elapsedSeconds}s)` : '🎬 Record Reel'}</span>
             </button>
           </div>
         )}
@@ -838,6 +867,10 @@ CRITICAL: Do NOT discuss university administration or specific regulatory agenci
 
       {/* Global Admin Alert */}
       <GlobalNotification />
+
+      {/* Floating Demo Director HUD and Export Modal */}
+      <DemoDirectorHUD />
+      <DemoReelPreviewModal />
 
       {/* Toaster for notifications */}
       <Toaster position="top-center" />

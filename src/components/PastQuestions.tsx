@@ -229,8 +229,8 @@ export default function PastQuestions({ activeCourseId }: PastQuestionsProps) {
     }
 
     return (
-      <div className="flex-1 overflow-y-auto bg-slate-50 p-4 sm:p-6 lg:p-12 pb-24 lg:pb-12 transition-colors">
-        <div className="max-w-4xl mx-auto space-y-8">
+      <div className="flex-1 overflow-y-auto bg-slate-50 p-3 sm:p-6 lg:p-8 pb-16 transition-colors">
+        <div className="w-full max-w-7xl 2xl:max-w-[1600px] mx-auto space-y-6 sm:space-y-8">
           <div className="sticky top-0 z-10 bg-slate-50/80 backdrop-blur-md py-4 -mx-4 px-4 border-b border-slate-200 mb-8">
             <div className="flex justify-between items-center mb-4">
               <button 
@@ -479,8 +479,8 @@ export default function PastQuestions({ activeCourseId }: PastQuestionsProps) {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto bg-slate-50 p-4 sm:p-6 lg:p-12 pb-24 lg:pb-12 transition-colors">
-      <div className="max-w-4xl mx-auto space-y-12">
+    <div className="flex-1 overflow-y-auto bg-slate-50 p-3 sm:p-6 lg:p-8 pb-16 transition-colors">
+      <div className="w-full max-w-7xl 2xl:max-w-[1600px] mx-auto space-y-8 sm:space-y-12">
         <header className="space-y-4 lg:pl-4 xl:pl-0">
           <div className="flex items-center gap-3 text-emerald-500 font-bold uppercase tracking-widest text-xs">
             <FileText size={16} />
