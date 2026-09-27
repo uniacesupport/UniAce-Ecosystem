@@ -55,7 +55,7 @@ export default function PushNotificationPrompt() {
               </div>
 
               <div className="space-y-2 mb-6">
-                <h3 className="text-lg font-black text-slate-900 dark:text-white">Enable Push Notifications?</h3>
+                <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">Enable Push Notifications?</h3>
                 <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
                   Get instant alerts for new course materials, quiz results, and smart missions even when you're not in the app.
                 </p>

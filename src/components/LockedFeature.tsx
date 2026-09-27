@@ -39,7 +39,7 @@ export default function LockedFeature({ feature, children, onUpgrade, message, c
           <div className="w-12 h-12 bg-amber-100 dark:bg-amber-900/50 text-amber-600 dark:text-amber-400 rounded-2xl flex items-center justify-center mx-auto mb-4">
             <Lock size={24} />
           </div>
-          <h3 className="text-lg font-black text-slate-900 dark:text-white mb-2">Locked Feature</h3>
+          <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white mb-2">Locked Feature</h3>
           <p className="text-sm text-slate-500 dark:text-blue-300 mb-6 font-medium">
             {message || `This feature is available on higher plans. Upgrade now to unlock full access!`}
           </p>

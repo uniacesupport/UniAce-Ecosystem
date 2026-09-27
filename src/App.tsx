@@ -439,7 +439,7 @@ function AppContent() {
                   startDemoReel('full_ecosystem', handleViewSelect);
                 }
               }}
-              className={`px-3.5 py-2 rounded-2xl font-black text-xs shadow-lg transition-all active:scale-95 flex items-center gap-2 ${
+              className={`px-3.5 py-2 rounded-2xl font-bold text-xs shadow-lg transition-all active:scale-95 flex items-center gap-2 ${
                 isRecording
                   ? 'bg-rose-600 text-white animate-pulse border border-rose-400'
                   : 'bg-slate-900/90 dark:bg-white/90 text-white dark:text-slate-900 hover:bg-slate-800 dark:hover:bg-white backdrop-blur-md border border-slate-700/50 dark:border-slate-200'

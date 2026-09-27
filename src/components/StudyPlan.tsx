@@ -91,11 +91,11 @@ export default function StudyPlan({ progress, syllabus }: StudyPlanProps) {
         {/* Header */}
         <header className="flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-2">
-            <div className="flex items-center gap-2 text-emerald-500 font-bold uppercase tracking-widest text-xs">
+            <div className="flex items-center gap-2 text-emerald-500 font-semibold uppercase tracking-wider text-xs">
               <Calendar size={16} />
               <span>Strategic Learning</span>
             </div>
-            <h1 className="text-4xl font-black text-zinc-900 dark:text-white tracking-tight">AI Study Architect</h1>
+            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-zinc-900 dark:text-white tracking-tight">AI Study Architect</h1>
             <p className="text-zinc-500 dark:text-zinc-400 font-medium">Data-driven study plans tailored to your mastery levels.</p>
           </div>
           
@@ -108,7 +108,7 @@ export default function StudyPlan({ progress, syllabus }: StudyPlanProps) {
                 }
                 generatePlan();
               }}
-              className="px-8 py-4 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 rounded-2xl font-black text-lg shadow-xl hover:scale-105 transition-all flex items-center gap-3 relative group"
+              className="px-6 sm:px-8 py-3.5 sm:py-4 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 rounded-2xl font-semibold text-base sm:text-lg shadow-xl hover:scale-105 transition-all flex items-center gap-3 relative group"
             >
               <Sparkles size={20} fill="currentColor" />
               GENERATE PLAN
@@ -118,12 +118,12 @@ export default function StudyPlan({ progress, syllabus }: StudyPlanProps) {
         </header>
 
         {isLoading && (
-          <div className="bg-white dark:bg-zinc-900 rounded-[2.5rem] p-12 text-center border border-zinc-100 dark:border-zinc-800 shadow-xl">
-            <div className="w-20 h-20 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-500 rounded-3xl flex items-center justify-center mx-auto mb-6 animate-pulse">
-              <Loader2 size={40} className="animate-spin" />
+          <div className="bg-white dark:bg-zinc-900 rounded-[2.5rem] p-8 sm:p-12 text-center border border-zinc-100 dark:border-zinc-800 shadow-xl">
+            <div className="w-16 h-16 sm:w-20 sm:h-20 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-500 rounded-3xl flex items-center justify-center mx-auto mb-6 animate-pulse">
+              <Loader2 size={36} className="animate-spin" />
             </div>
-            <h3 className="text-2xl font-black text-zinc-900 dark:text-white mb-2">Architecting Your Success...</h3>
-            <p className="text-zinc-500 dark:text-zinc-400 max-w-md mx-auto">Analyzing your mastery levels, streak data, and syllabus complexity to build the optimal path.</p>
+            <h3 className="text-xl sm:text-2xl font-bold text-zinc-900 dark:text-white mb-2">Architecting Your Success...</h3>
+            <p className="text-zinc-500 dark:text-zinc-400 text-sm sm:text-base max-w-md mx-auto">Analyzing your mastery levels, streak data, and syllabus complexity to build the optimal path.</p>
           </div>
         )}
 
@@ -142,12 +142,12 @@ export default function StudyPlan({ progress, syllabus }: StudyPlanProps) {
             className="space-y-8"
           >
             {/* Overview Card */}
-            <div className="bg-zinc-900 text-white rounded-[2.5rem] p-8 shadow-2xl relative overflow-hidden">
+            <div className="bg-zinc-900 text-white rounded-[2.5rem] p-6 sm:p-8 shadow-2xl relative overflow-hidden">
               <div className="absolute top-0 right-0 p-8 opacity-10">
                 <Sparkles size={120} />
               </div>
               <div className="relative z-10 space-y-4">
-                <h2 className="text-3xl font-black italic uppercase tracking-tight">{plan.title}</h2>
+                <h2 className="text-2xl sm:text-3xl font-bold uppercase tracking-tight">{plan.title}</h2>
                 <p className="text-zinc-400 font-medium text-lg leading-relaxed max-w-2xl">{plan.overview}</p>
                 <div className="flex flex-wrap gap-4 pt-4">
                   <div className="bg-white/10 px-4 py-2 rounded-xl flex items-center gap-2">
@@ -177,12 +177,12 @@ export default function StudyPlan({ progress, syllabus }: StudyPlanProps) {
                   className="bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-[2rem] p-6 shadow-xl hover:shadow-2xl transition-all group"
                 >
                   <div className="flex items-center justify-between mb-4">
-                    <span className="px-3 py-1 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-[10px] font-black uppercase tracking-widest text-zinc-500">{day.day}</span>
+                    <span className="px-3 py-1 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-[10px] font-semibold uppercase tracking-wider text-zinc-500">{day.day}</span>
                     <div className="w-8 h-8 rounded-full bg-emerald-50 dark:bg-emerald-900/20 flex items-center justify-center text-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity">
                       <CheckCircle2 size={16} />
                     </div>
                   </div>
-                  <h3 className="text-lg font-black text-zinc-900 dark:text-white mb-4">{day.focus}</h3>
+                  <h3 className="text-base sm:text-lg font-semibold text-zinc-900 dark:text-white mb-3">{day.focus}</h3>
                   <ul className="space-y-3">
                     {(day.tasks || []).map((task, tIdx) => (
                       <li key={tIdx} className="flex items-start gap-3 text-sm text-zinc-600 dark:text-zinc-400 font-medium">

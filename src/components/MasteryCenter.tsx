@@ -76,14 +76,14 @@ export default function MasteryCenter({ progress, onBack, activeCourseId, syllab
         {/* Header */}
         <header className="flex flex-col md:flex-row md:items-end justify-between gap-6 lg:pl-4 xl:pl-0">
           <div className="space-y-4">
-            <div className="flex items-center gap-3 text-emerald-500 font-bold uppercase tracking-widest text-xs">
+            <div className="flex items-center gap-3 text-emerald-600 dark:text-emerald-400 font-semibold uppercase tracking-wider text-xs">
               <Award size={16} />
               <span>Personal Mastery Center</span>
             </div>
-            <h1 className="text-4xl lg:text-5xl font-black text-slate-900 dark:text-white tracking-tight">
+            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-slate-900 dark:text-white tracking-tight">
               Your Learning Journey.
             </h1>
-            <p className="text-slate-500 dark:text-blue-300 text-lg max-w-2xl">
+            <p className="text-slate-500 dark:text-blue-300 text-sm sm:text-base max-w-2xl leading-relaxed">
               Track your progress, view your knowledge heatmap, and celebrate your achievements.
             </p>
           </div>
@@ -94,8 +94,8 @@ export default function MasteryCenter({ progress, onBack, activeCourseId, syllab
                 <Flame size={24} />
               </div>
               <div>
-                <div className="text-2xl font-black text-slate-900 dark:text-white">{progress.streak}</div>
-                <div className="text-[10px] font-bold text-slate-400 dark:text-blue-400 uppercase tracking-wider">Day Streak</div>
+                <div className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">{progress.streak}</div>
+                <div className="text-[10px] font-semibold text-slate-400 dark:text-blue-400 uppercase tracking-wider">Day Streak</div>
               </div>
             </div>
             <div className="bg-slate-900 dark:bg-blue-900 text-white p-4 rounded-3xl flex items-center gap-4 shadow-xl border dark:border-blue-800">
@@ -103,27 +103,27 @@ export default function MasteryCenter({ progress, onBack, activeCourseId, syllab
                 <Zap size={24} />
               </div>
               <div>
-                <div className="text-2xl font-black">{progress.xp}</div>
-                <div className="text-[10px] font-bold text-slate-400 dark:text-blue-400 uppercase tracking-wider">Total XP</div>
+                <div className="text-xl sm:text-2xl font-bold">{progress.xp}</div>
+                <div className="text-[10px] font-semibold text-slate-400 dark:text-blue-400 uppercase tracking-wider">Total XP</div>
               </div>
             </div>
           </div>
         </header>
 
         {/* Level Progress */}
-        <section className="bg-white dark:bg-blue-900 border border-slate-200 dark:border-blue-800 p-8 rounded-[2.5rem] shadow-sm">
+        <section className="bg-white dark:bg-blue-900 border border-slate-200 dark:border-blue-800 p-6 sm:p-8 rounded-[2.5rem] shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h2 className="text-2xl font-black text-slate-900 dark:text-white flex items-center gap-2">
+              <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
                 Level {currentLevel.level}: {currentLevel.title}
-                <Star className="text-amber-400 fill-amber-400" size={24} />
+                <Star className="text-amber-400 fill-amber-400" size={22} />
               </h2>
-              <p className="text-slate-500 dark:text-blue-300 text-sm">
+              <p className="text-slate-500 dark:text-blue-300 text-xs sm:text-sm">
                 {nextLevel ? `${Math.round(nextLevel.xp - progress.xp)} XP to Level ${nextLevel.level}` : 'Max Level Reached!'}
               </p>
             </div>
             <div className="text-right">
-              <div className="text-3xl font-black text-emerald-500">{Math.round(progressToNextLevel)}%</div>
+              <div className="text-2xl sm:text-3xl font-bold text-emerald-600 dark:text-emerald-400">{Math.round(progressToNextLevel)}%</div>
             </div>
           </div>
           <div className="h-4 bg-slate-100 dark:bg-blue-950 rounded-full overflow-hidden">
@@ -187,14 +187,14 @@ export default function MasteryCenter({ progress, onBack, activeCourseId, syllab
                           />
                         </svg>
                         <div className="absolute inset-0 flex flex-col items-center justify-center">
-                          <span className="text-4xl font-black text-slate-900 dark:text-white">{readiness.probability}%</span>
-                          <span className="text-xs font-bold text-slate-400 dark:text-blue-400 uppercase tracking-wider">Pass Prob.</span>
+                          <span className="text-3xl sm:text-4xl font-bold text-slate-900 dark:text-white">{readiness.probability}%</span>
+                          <span className="text-xs font-semibold text-slate-400 dark:text-blue-400 uppercase tracking-wider">Pass Prob.</span>
                         </div>
                       </div>
                       
                       <div className="space-y-6 flex-1">
                         <div>
-                          <h3 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Exam Readiness</h3>
+                          <h3 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white mb-2">Exam Readiness</h3>
                           <p className="text-slate-600 dark:text-blue-200 text-lg leading-relaxed">
                             {readiness.analysis}
                           </p>
@@ -229,8 +229,8 @@ export default function MasteryCenter({ progress, onBack, activeCourseId, syllab
             {/* Knowledge Heatmap */}
             <section className="space-y-6">
               <div className="flex items-center justify-between">
-                <h2 className="text-2xl font-black text-slate-900 dark:text-white">Knowledge Heatmap</h2>
-                <div className="flex items-center gap-4 text-xs font-bold text-slate-400 dark:text-blue-400">
+                <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">Knowledge Heatmap</h2>
+                <div className="flex items-center gap-4 text-xs font-semibold text-slate-400 dark:text-blue-400">
                   <div className="flex items-center gap-1"><div className="w-3 h-3 bg-slate-100 dark:bg-blue-950 rounded-sm" /> 0%</div>
                   <div className="flex items-center gap-1"><div className="w-3 h-3 bg-emerald-200 rounded-sm" /> 50%</div>
                   <div className="flex items-center gap-1"><div className="w-3 h-3 bg-emerald-500 rounded-sm" /> 100%</div>
@@ -294,7 +294,7 @@ export default function MasteryCenter({ progress, onBack, activeCourseId, syllab
                 message="Unlock deep dive analytics and learning efficiency charts with Scholar plan!"
               >
                 <section className="space-y-6">
-                  <h2 className="text-2xl font-black text-slate-900 dark:text-white">Deep Dive Analytics</h2>
+                  <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">Deep Dive Analytics</h2>
                   <AnalyticsCharts progress={progress} syllabus={syllabus} />
                 </section>
               </LockedFeature>
@@ -302,7 +302,7 @@ export default function MasteryCenter({ progress, onBack, activeCourseId, syllab
 
             {/* Badges Section */}
             <section className="space-y-6">
-              <h2 className="text-2xl font-black text-slate-900 dark:text-white">Badges & Achievements</h2>
+              <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">Badges & Achievements</h2>
               <Badges achievements={progress.achievements} />
             </section>
           </div>
@@ -318,8 +318,8 @@ export default function MasteryCenter({ progress, onBack, activeCourseId, syllab
                 <Target size={24} />
               </div>
               <div>
-                <h3 className="text-slate-400 dark:text-blue-400 text-sm font-bold uppercase tracking-wider">Course Mastery</h3>
-                <div className="text-3xl font-black text-slate-900 dark:text-white">{masteryPercentage}%</div>
+                <h3 className="text-slate-400 dark:text-blue-400 text-sm font-semibold uppercase tracking-wider">Course Mastery</h3>
+                <div className="text-3xl font-bold text-slate-900 dark:text-white">{masteryPercentage}%</div>
               </div>
               <div className="h-2 bg-slate-100 dark:bg-blue-950 rounded-full overflow-hidden">
                 <div 
@@ -334,8 +334,8 @@ export default function MasteryCenter({ progress, onBack, activeCourseId, syllab
                 <Clock size={24} />
               </div>
               <div>
-                <h3 className="text-slate-400 dark:text-blue-400 text-sm font-bold uppercase tracking-wider">Total Study Time</h3>
-                <div className="text-3xl font-black text-slate-900 dark:text-white">{hours}h {minutes}m</div>
+                <h3 className="text-slate-400 dark:text-blue-400 text-sm font-semibold uppercase tracking-wider">Total Study Time</h3>
+                <div className="text-3xl font-bold text-slate-900 dark:text-white">{hours}h {minutes}m</div>
               </div>
               <p className="text-slate-400 dark:text-blue-400 text-xs">Across all modules and subtopics.</p>
             </div>

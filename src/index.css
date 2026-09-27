@@ -25,7 +25,7 @@
 
 @layer base {
   html {
-    @apply text-[15px] sm:text-[16px] antialiased;
+    @apply text-[15px] sm:text-[16px] antialiased tracking-[-0.01em];
     -webkit-tap-highlight-color: transparent;
     text-rendering: optimizeLegibility;
   }
@@ -39,7 +39,9 @@
   }
 
   body {
-    @apply font-sans text-slate-900 dark:text-zinc-100 selection:bg-emerald-100 dark:selection:bg-emerald-900/30 leading-normal;
+    @apply font-sans font-normal text-slate-900 dark:text-zinc-100 selection:bg-emerald-100 dark:selection:bg-emerald-900/30 leading-normal tracking-[-0.01em];
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
   h1, h2, h3, h4, h5, h6 {
@@ -84,7 +86,7 @@
 }
 
 .markdown-body {
-  @apply leading-relaxed dark:text-zinc-300 overflow-x-hidden text-[15px] sm:text-base;
+  @apply leading-relaxed font-normal tracking-[-0.01em] dark:text-zinc-300 overflow-x-hidden text-[15px] sm:text-base;
 }
 
 .markdown-body > *:last-child {
@@ -95,8 +97,21 @@
   @apply my-4 overflow-x-auto overflow-y-hidden py-2 max-w-full;
 }
 
+.markdown-body h1 {
+  @apply text-xl sm:text-2xl font-bold mt-6 mb-3 text-slate-900 dark:text-white tracking-tight;
+}
+
+.markdown-body h2 {
+  @apply text-lg sm:text-xl font-semibold mt-5 mb-2.5 text-slate-900 dark:text-white tracking-tight;
+}
+
 .markdown-body h3 {
-  @apply text-xl font-bold mt-6 mb-3 dark:text-white;
+  @apply text-base sm:text-lg font-semibold mt-5 mb-2 text-slate-900 dark:text-white;
+}
+
+.markdown-body strong,
+.markdown-body b {
+  @apply font-semibold text-slate-900 dark:text-zinc-100;
 }
 
 .markdown-body p {

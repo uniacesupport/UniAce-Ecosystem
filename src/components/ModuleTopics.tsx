@@ -87,14 +87,14 @@ export default function ModuleTopics({ module, onBack, onSubTopicSelect, onTakeQ
           
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6">
             <div className="space-y-2">
-              <div className="flex items-center gap-3 text-emerald-500 font-bold uppercase tracking-widest text-xs">
+              <div className="flex items-center gap-3 text-emerald-600 dark:text-emerald-400 font-semibold uppercase tracking-wider text-xs">
                 <GraduationCap size={16} />
                 <span>Module Overview</span>
               </div>
-              <h1 className="text-4xl font-black text-slate-900 dark:text-white tracking-tight">
+              <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-slate-900 dark:text-white tracking-tight">
                 {module.title}
               </h1>
-              <p className="text-slate-500 dark:text-zinc-400 text-lg">
+              <p className="text-slate-500 dark:text-zinc-400 text-sm sm:text-base leading-relaxed">
                 Explore the fundamental concepts and principles of {module.title.split('. ')[1]?.toLowerCase() || 'this module'}.
               </p>
             </div>
@@ -102,16 +102,16 @@ export default function ModuleTopics({ module, onBack, onSubTopicSelect, onTakeQ
             <div className="flex flex-col sm:flex-row gap-3">
               <button
                 onClick={handleChatClick}
-                className="group flex items-center justify-center gap-2 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-600 hover:text-white px-6 py-4 rounded-2xl font-bold transition-all shadow-sm hover:shadow-md"
+                className="group flex items-center justify-center gap-2 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-600 hover:text-white px-5 sm:px-6 py-3 sm:py-3.5 rounded-2xl font-semibold transition-all shadow-sm hover:shadow-md text-sm sm:text-base"
               >
-                <MessageSquare size={20} />
+                <MessageSquare size={18} />
                 <span>AI Tutor</span>
               </button>
               <button
                 onClick={handleFlashcardsClick}
-                className="group flex items-center justify-center gap-2 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 hover:bg-purple-600 hover:text-white px-6 py-4 rounded-2xl font-bold transition-all shadow-sm hover:shadow-md"
+                className="group flex items-center justify-center gap-2 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 hover:bg-purple-600 hover:text-white px-5 sm:px-6 py-3 sm:py-3.5 rounded-2xl font-semibold transition-all shadow-sm hover:shadow-md text-sm sm:text-base"
               >
-                <BrainCircuit size={20} />
+                <BrainCircuit size={18} />
                 <span>SRS Flashcards</span>
                 {isLocked && <Lock size={14} className="ml-1 opacity-70" />}
               </button>
@@ -139,7 +139,7 @@ export default function ModuleTopics({ module, onBack, onSubTopicSelect, onTakeQ
                 onClick={() => handleSubTopicClick(topic.id, i)}
               >
                 <div className="relative">
-                  <div className={`w-12 h-12 rounded-2xl bg-slate-100 dark:bg-blue-950 flex items-center justify-center text-slate-900 dark:text-white font-black text-sm group-hover:bg-slate-900 dark:group-hover:bg-blue-700 group-hover:text-white transition-colors ${isLockedTopic ? 'bg-slate-200 text-slate-400' : ''}`}>
+                  <div className={`w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-slate-100 dark:bg-blue-950 flex items-center justify-center text-slate-900 dark:text-white font-semibold text-sm group-hover:bg-slate-900 dark:group-hover:bg-blue-700 group-hover:text-white transition-colors ${isLockedTopic ? 'bg-slate-200 text-slate-400' : ''}`}>
                     {isLockedTopic ? <Lock size={18} /> : (i + 1)}
                   </div>
                   {masteryPercent >= 100 && (
@@ -150,17 +150,17 @@ export default function ModuleTopics({ module, onBack, onSubTopicSelect, onTakeQ
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                    <h3 className="text-base sm:text-lg font-semibold text-slate-900 dark:text-white leading-snug">
                       {topic.title}
                     </h3>
                     {!isLockedTopic && masteryPercent > 0 && (
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${mastery.bg} ${mastery.color} uppercase tracking-wider`}>
+                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${mastery.bg} ${mastery.color} uppercase tracking-wider`}>
                         {mastery.label}
                       </span>
                     )}
                   </div>
                   <div className="flex items-center gap-3 mt-1">
-                    <p className="text-slate-400 dark:text-blue-400 text-[10px] font-bold uppercase tracking-wider">Topic {i + 1}</p>
+                    <p className="text-slate-400 dark:text-blue-400 text-[10px] font-medium uppercase tracking-wider">Topic {i + 1}</p>
                     {masteryPercent > 0 && (
                       <div className="flex items-center gap-1.5">
                         <div className="w-20 h-1 bg-slate-100 dark:bg-blue-950 rounded-full overflow-hidden">
@@ -169,19 +169,19 @@ export default function ModuleTopics({ module, onBack, onSubTopicSelect, onTakeQ
                             style={{ width: `${masteryPercent}%` }}
                           />
                         </div>
-                        <span className="text-[10px] font-bold text-emerald-500">{masteryPercent}%</span>
+                        <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">{masteryPercent}%</span>
                       </div>
                     )}
                   </div>
                 </div>
               </div>
               
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 sm:gap-3">
                 <button
                   onClick={(e) => handleQuizClick(e, topic.id, i)}
-                  className="p-2 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-xl hover:bg-emerald-500 hover:text-white transition-all flex items-center gap-2 text-xs font-bold uppercase tracking-wider px-4"
+                  className="p-2 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-xl hover:bg-emerald-500 hover:text-white transition-all flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider px-3 sm:px-4"
                 >
-                  <Book size={16} />
+                  <Book size={15} />
                   <span>Take Quiz</span>
                 </button>
                 <button 

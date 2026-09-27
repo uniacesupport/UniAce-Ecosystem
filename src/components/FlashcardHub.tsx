@@ -57,14 +57,14 @@ export default function FlashcardHub({ syllabus }: FlashcardHubProps) {
         {/* Header */}
         <header className="space-y-4 lg:pl-4 xl:pl-0 flex flex-col md:flex-row md:items-end justify-between gap-6">
           <div>
-            <div className="flex items-center gap-3 text-purple-500 font-bold uppercase tracking-widest text-xs">
+            <div className="flex items-center gap-3 text-purple-600 dark:text-purple-400 font-semibold uppercase tracking-wider text-xs">
               <BrainCircuit size={16} />
               <span>Spaced Repetition</span>
             </div>
-            <h1 className="text-4xl font-black text-slate-900 dark:text-white tracking-tight">
+            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-slate-900 dark:text-white tracking-tight">
               Flashcard Hub
             </h1>
-            <p className="text-slate-500 dark:text-blue-300 text-lg max-w-2xl mt-4">
+            <p className="text-slate-500 dark:text-blue-300 text-sm sm:text-base max-w-2xl mt-2 leading-relaxed">
               Review key concepts and formulas using spaced repetition to ensure long-term retention.
             </p>
           </div>
@@ -73,11 +73,11 @@ export default function FlashcardHub({ syllabus }: FlashcardHubProps) {
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={() => setIsGlobalReview(true)}
-            className="flex items-center gap-3 px-8 py-4 bg-purple-600 hover:bg-purple-700 text-white rounded-3xl font-bold shadow-xl shadow-purple-500/20 transition-colors shrink-0"
+            className="flex items-center gap-3 px-6 sm:px-8 py-3.5 sm:py-4 bg-purple-600 hover:bg-purple-700 text-white rounded-3xl font-semibold shadow-xl shadow-purple-500/20 transition-colors shrink-0"
           >
             <PlayCircle size={24} />
             <div className="text-left">
-              <div className="font-bold leading-tight">Daily Global Review</div>
+              <div className="font-semibold leading-tight">Daily Global Review</div>
               <div className="text-xs text-purple-200 font-medium">{stats.totalDue > 0 ? `${stats.totalDue} cards due` : 'All caught up!'}</div>
             </div>
           </motion.button>
@@ -85,33 +85,33 @@ export default function FlashcardHub({ syllabus }: FlashcardHubProps) {
 
         {/* Stats Row */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="bg-white dark:bg-blue-900 border border-slate-200 dark:border-blue-800 rounded-3xl p-6 flex flex-col items-center justify-center text-center">
-             <div className="w-12 h-12 bg-orange-100 text-orange-500 rounded-full flex items-center justify-center mb-3">
-               <Flame size={24} />
+          <div className="bg-white dark:bg-blue-900 border border-slate-200 dark:border-blue-800 rounded-3xl p-5 sm:p-6 flex flex-col items-center justify-center text-center">
+             <div className="w-11 h-11 sm:w-12 sm:h-12 bg-orange-100 text-orange-500 rounded-full flex items-center justify-center mb-3">
+               <Flame size={22} />
              </div>
-             <div className="text-3xl font-black text-slate-900 dark:text-white">{stats.streak}</div>
-             <div className="text-sm font-bold text-slate-500 dark:text-blue-300 uppercase tracking-widest mt-1">Day Streak</div>
+             <div className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white">{stats.streak}</div>
+             <div className="text-xs font-semibold text-slate-500 dark:text-blue-300 uppercase tracking-wider mt-1">Day Streak</div>
           </div>
-          <div className="bg-white dark:bg-blue-900 border border-slate-200 dark:border-blue-800 rounded-3xl p-6 flex flex-col items-center justify-center text-center">
-             <div className="w-12 h-12 bg-blue-100 text-blue-500 rounded-full flex items-center justify-center mb-3">
-               <Target size={24} />
+          <div className="bg-white dark:bg-blue-900 border border-slate-200 dark:border-blue-800 rounded-3xl p-5 sm:p-6 flex flex-col items-center justify-center text-center">
+             <div className="w-11 h-11 sm:w-12 sm:h-12 bg-blue-100 text-blue-500 rounded-full flex items-center justify-center mb-3">
+               <Target size={22} />
              </div>
-             <div className="text-3xl font-black text-slate-900 dark:text-white">{stats.totalDue}</div>
-             <div className="text-sm font-bold text-slate-500 dark:text-blue-300 uppercase tracking-widest mt-1">Due Today</div>
+             <div className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white">{stats.totalDue}</div>
+             <div className="text-xs font-semibold text-slate-500 dark:text-blue-300 uppercase tracking-wider mt-1">Due Today</div>
           </div>
-          <div className="bg-white dark:bg-blue-900 border border-slate-200 dark:border-blue-800 rounded-3xl p-6 flex flex-col items-center justify-center text-center">
-             <div className="w-12 h-12 bg-purple-100 text-purple-500 rounded-full flex items-center justify-center mb-3">
-               <BrainCircuit size={24} />
+          <div className="bg-white dark:bg-blue-900 border border-slate-200 dark:border-blue-800 rounded-3xl p-5 sm:p-6 flex flex-col items-center justify-center text-center">
+             <div className="w-11 h-11 sm:w-12 sm:h-12 bg-purple-100 text-purple-500 rounded-full flex items-center justify-center mb-3">
+               <BrainCircuit size={22} />
              </div>
-             <div className="text-3xl font-black text-slate-900 dark:text-white">{stats.learning}</div>
-             <div className="text-sm font-bold text-slate-500 dark:text-blue-300 uppercase tracking-widest mt-1">Learning</div>
+             <div className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white">{stats.learning}</div>
+             <div className="text-xs font-semibold text-slate-500 dark:text-blue-300 uppercase tracking-wider mt-1">Learning</div>
           </div>
-          <div className="bg-white dark:bg-blue-900 border border-slate-200 dark:border-blue-800 rounded-3xl p-6 flex flex-col items-center justify-center text-center">
-             <div className="w-12 h-12 bg-emerald-100 text-emerald-500 rounded-full flex items-center justify-center mb-3">
-               <Trophy size={24} />
+          <div className="bg-white dark:bg-blue-900 border border-slate-200 dark:border-blue-800 rounded-3xl p-5 sm:p-6 flex flex-col items-center justify-center text-center">
+             <div className="w-11 h-11 sm:w-12 sm:h-12 bg-emerald-100 text-emerald-500 rounded-full flex items-center justify-center mb-3">
+               <Trophy size={22} />
              </div>
-             <div className="text-3xl font-black text-slate-900 dark:text-white">{stats.mastered}</div>
-             <div className="text-sm font-bold text-slate-500 dark:text-blue-300 uppercase tracking-widest mt-1">Mastered</div>
+             <div className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white">{stats.mastered}</div>
+             <div className="text-xs font-semibold text-slate-500 dark:text-blue-300 uppercase tracking-wider mt-1">Mastered</div>
           </div>
         </div>
 

@@ -184,7 +184,7 @@ export default function ConceptMap({ syllabus, onSubTopicSelect, onClose }: Conc
             <Maximize2 size={20} />
           </div>
           <div>
-            <h2 className="text-xl font-black text-zinc-900 dark:text-white tracking-tight">Interactive Concept Map</h2>
+            <h2 className="text-lg sm:text-xl font-bold text-zinc-900 dark:text-white tracking-tight">Interactive Concept Map</h2>
             <p className="text-xs text-zinc-500 font-medium uppercase tracking-wider">Visualizing Biological Relationships</p>
           </div>
         </div>
@@ -242,7 +242,7 @@ export default function ConceptMap({ syllabus, onSubTopicSelect, onClose }: Conc
                       <BookOpen size={10} />
                       <span>{selectedNode.moduleTitle}</span>
                     </div>
-                    <h3 className="text-xl font-black text-zinc-900 dark:text-white leading-tight">
+                    <h3 className="text-base sm:text-lg font-semibold text-zinc-900 dark:text-white leading-snug">
                       {selectedNode.title}
                     </h3>
                   </div>

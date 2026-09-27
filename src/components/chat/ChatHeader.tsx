@@ -76,7 +76,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
             {onToggleFullPage && (
               <button
                 onClick={onToggleFullPage}
-                className="p-1.5 sm:p-2 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 hover:text-emerald-100 rounded-xl transition-all flex items-center gap-1.5 text-xs font-extrabold border border-emerald-500/40 shrink-0 shadow-sm"
+                className="p-1.5 sm:p-2 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 hover:text-emerald-100 rounded-xl transition-all flex items-center gap-1.5 text-xs font-semibold border border-emerald-500/40 shrink-0 shadow-sm"
                 title="Return to Main Dashboard / Course Hub"
               >
                 <ArrowLeft size={16} />

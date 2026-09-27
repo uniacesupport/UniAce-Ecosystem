@@ -466,14 +466,14 @@ export default function ContentArea({
             transition={{ duration: 0.3 }}
             className="bg-white dark:bg-zinc-900 rounded-xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-8 lg:p-10 text-zinc-800 dark:text-zinc-200"
           >
-            <div className="flex items-center gap-2 text-zinc-400 dark:text-zinc-500 text-[10px] font-bold uppercase tracking-widest mb-4">
+            <div className="flex items-center gap-2 text-zinc-400 dark:text-zinc-500 text-[10px] font-semibold uppercase tracking-wider mb-3 sm:mb-4">
               <BookOpen size={12} />
               <span>{module.title}</span>
               <ChevronRight size={12} />
               <span className="text-zinc-900 dark:text-zinc-100">{activeSubTopic.title}</span>
             </div>
 
-            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-zinc-950 dark:text-white mb-6 sm:mb-8 tracking-tight">{activeSubTopic.title}</h1>
+            <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-zinc-950 dark:text-white mb-5 sm:mb-7 tracking-tight leading-snug">{activeSubTopic.title}</h1>
 
             {isGenerating ? (
               <div className="flex flex-col items-center justify-center py-20 space-y-6 text-center">
@@ -488,7 +488,7 @@ export default function ContentArea({
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <h3 className="text-xl font-bold text-zinc-900 dark:text-white flex items-center justify-center gap-2">
+                  <h3 className="text-lg sm:text-xl font-semibold text-zinc-900 dark:text-white flex items-center justify-center gap-2">
                     <Sparkles size={20} className="text-amber-500" />
                     Infinite Lesson Engine
                   </h3>
@@ -519,7 +519,7 @@ export default function ContentArea({
                 <p className="text-zinc-500 dark:text-zinc-400">This lesson is currently empty.</p>
                 <button 
                   onClick={handleGenerateLesson}
-                  className="bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 px-6 py-2 rounded-xl font-bold hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-all"
+                  className="bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 px-6 py-2 rounded-xl font-semibold hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-all text-sm"
                 >
                   Generate Content Now
                 </button>
@@ -545,8 +545,8 @@ export default function ContentArea({
                 onClick={() => onSubTopicSelect(prevSubTopic.id)}
                 className="group flex flex-col items-start gap-1 p-5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl hover:border-zinc-900 dark:hover:border-zinc-100 transition-all text-left"
               >
-                <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest">Previous Topic</span>
-                <span className="text-zinc-900 dark:text-zinc-100 font-semibold group-hover:text-emerald-600 transition-colors">{prevSubTopic.title}</span>
+                <span className="text-[10px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider">Previous Topic</span>
+                <span className="text-zinc-900 dark:text-zinc-100 font-semibold group-hover:text-emerald-600 transition-colors text-sm sm:text-base">{prevSubTopic.title}</span>
               </button>
             ) : <div />}
 
@@ -563,11 +563,11 @@ export default function ContentArea({
                 onClick={handleNextTopicClick}
                 className="group flex flex-col items-end gap-1 p-5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl hover:border-zinc-900 dark:hover:border-zinc-100 transition-all text-right"
               >
-                <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest flex items-center gap-1">
+                <span className="text-[10px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider flex items-center gap-1">
                   {isLocked && activeSubTopicIndex + 1 > 0 && <Lock size={10} className="text-amber-500" />}
                   Next Topic
                 </span>
-                <span className="text-zinc-900 dark:text-zinc-100 font-semibold group-hover:text-emerald-600 transition-colors">{nextSubTopic.title}</span>
+                <span className="text-zinc-900 dark:text-zinc-100 font-semibold group-hover:text-emerald-600 transition-colors text-sm sm:text-base">{nextSubTopic.title}</span>
               </button>
             ) : <div />}
           </div>

@@ -337,23 +337,23 @@ export default function Arena({ activeCourseId }: ArenaProps) {
             <div className="space-y-8">
               {/* Stats Card */}
               <div className="bg-slate-900 border border-slate-800 rounded-[2.5rem] p-8 shadow-2xl">
-                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-6">Combat Stats</h3>
+                <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-6">Combat Stats</h3>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800">
-                    <div className="text-2xl font-black text-white">0</div>
-                    <div className="text-[10px] font-bold text-slate-500 uppercase">Wins</div>
+                    <div className="text-xl sm:text-2xl font-bold text-white">0</div>
+                    <div className="text-[10px] font-semibold text-slate-500 uppercase">Wins</div>
                   </div>
                   <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800">
-                    <div className="text-2xl font-black text-white">0</div>
-                    <div className="text-[10px] font-bold text-slate-500 uppercase">Losses</div>
+                    <div className="text-xl sm:text-2xl font-bold text-white">0</div>
+                    <div className="text-[10px] font-semibold text-slate-500 uppercase">Losses</div>
                   </div>
                   <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800">
-                    <div className="text-2xl font-black text-purple-400">0%</div>
-                    <div className="text-[10px] font-bold text-slate-500 uppercase">Win Rate</div>
+                    <div className="text-xl sm:text-2xl font-bold text-purple-400">0%</div>
+                    <div className="text-[10px] font-semibold text-slate-500 uppercase">Win Rate</div>
                   </div>
                   <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800">
-                    <div className="text-2xl font-black text-amber-400">0</div>
-                    <div className="text-[10px] font-bold text-slate-500 uppercase">Streak</div>
+                    <div className="text-xl sm:text-2xl font-bold text-amber-400">0</div>
+                    <div className="text-[10px] font-semibold text-slate-500 uppercase">Streak</div>
                   </div>
                 </div>
               </div>
@@ -456,10 +456,10 @@ export default function Arena({ activeCourseId }: ArenaProps) {
 
           {/* Timer */}
           <div className="flex flex-col items-center">
-            <div className="text-4xl font-black text-white tracking-widest tabular-nums">
+            <div className="text-3xl sm:text-4xl font-bold text-white tracking-widest tabular-nums">
               {timeLeft}
             </div>
-            <div className="text-[10px] text-slate-500 uppercase font-bold tracking-widest">Seconds</div>
+            <div className="text-[10px] text-slate-500 uppercase font-semibold tracking-wider">Seconds</div>
           </div>
 
           {/* Opponent */}
@@ -581,7 +581,7 @@ export default function Arena({ activeCourseId }: ArenaProps) {
             )}
           </div>
 
-          <h1 className="text-3xl sm:text-4xl font-black text-white mb-2">
+          <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-white mb-2">
             {isWinner ? 'VICTORY!' : isDraw ? 'DRAW!' : 'DEFEAT'}
           </h1>
           <p className="text-slate-400 mb-8 font-medium">
@@ -590,14 +590,14 @@ export default function Arena({ activeCourseId }: ArenaProps) {
 
           <div className="grid grid-cols-2 gap-4 mb-8">
             <div className="bg-slate-900 p-4 rounded-2xl border border-slate-700">
-              <div className="text-xs text-slate-500 uppercase font-bold mb-1">Your Score</div>
-              <div className="text-2xl font-black text-white">
+              <div className="text-xs text-slate-500 uppercase font-semibold mb-1">Your Score</div>
+              <div className="text-xl sm:text-2xl font-bold text-white">
                 {battleData.player1.uid === user?.uid ? battleData.player1.score : battleData.player2?.score}
               </div>
             </div>
             <div className="bg-slate-900 p-4 rounded-2xl border border-slate-700">
-              <div className="text-xs text-slate-500 uppercase font-bold mb-1">Enemy Score</div>
-              <div className="text-2xl font-black text-white">
+              <div className="text-xs text-slate-500 uppercase font-semibold mb-1">Enemy Score</div>
+              <div className="text-xl sm:text-2xl font-bold text-white">
                 {battleData.player1.uid !== user?.uid ? battleData.player1.score : battleData.player2?.score}
               </div>
             </div>

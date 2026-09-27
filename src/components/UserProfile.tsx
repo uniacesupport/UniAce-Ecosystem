@@ -517,8 +517,8 @@ export default function UserProfile({ onBack, onNavigate }: UserProfileProps) {
             </div>
             {profile?.referral_count !== undefined && (
               <div className="text-right">
-                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Friends Joined</div>
-                <div className="text-xl font-black text-indigo-600 dark:text-indigo-400">{profile.referral_count || 0}</div>
+                <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Friends Joined</div>
+                <div className="text-xl font-bold text-indigo-600 dark:text-indigo-400">{profile.referral_count || 0}</div>
               </div>
             )}
           </div>
@@ -577,7 +577,7 @@ export default function UserProfile({ onBack, onNavigate }: UserProfileProps) {
             {isTutor && (
               <button
                 onClick={() => onNavigate('tutor-dashboard')}
-                className="w-full py-4 bg-gradient-to-r from-emerald-600 to-teal-700 text-white rounded-2xl font-black text-sm uppercase tracking-widest flex items-center justify-center gap-3 shadow-lg shadow-emerald-200 dark:shadow-emerald-900/30 group/btn transition-all hover:scale-[1.02] active:scale-95"
+                className="w-full py-4 bg-gradient-to-r from-emerald-600 to-teal-700 text-white rounded-2xl font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-3 shadow-lg shadow-emerald-200 dark:shadow-emerald-900/30 group/btn transition-all hover:scale-[1.02] active:scale-95"
               >
                 <TrendingUp size={20} className="group-hover/btn:translate-x-1 group-hover/btn:-translate-y-1 transition-transform" />
                 Switch to Tutor Dashboard
@@ -615,7 +615,7 @@ export default function UserProfile({ onBack, onNavigate }: UserProfileProps) {
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm font-black text-slate-900 dark:text-white">₦{payment.amount.toLocaleString()}</p>
+                    <p className="text-sm font-bold text-slate-900 dark:text-white">₦{payment.amount.toLocaleString()}</p>
                     <p className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">+{payment.sparks_added} Sparks</p>
                   </div>
                 </div>

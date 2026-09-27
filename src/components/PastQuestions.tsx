@@ -198,8 +198,8 @@ export default function PastQuestions({ activeCourseId }: PastQuestionsProps) {
                 <Brain size={48} />
               </div>
               <div className="space-y-4">
-                <h2 className="text-3xl font-black text-slate-900">{selectedPaper.title}</h2>
-                <p className="text-slate-500 text-lg">
+                <h2 className="text-2xl sm:text-3xl font-bold text-slate-900">{selectedPaper.title}</h2>
+                <p className="text-slate-500 text-base sm:text-lg">
                   You are about to start a practice session for {selectedPaper.courseCode}. 
                   This session includes {totalQuestions} questions with hints and detailed explanations.
                 </p>
@@ -207,11 +207,11 @@ export default function PastQuestions({ activeCourseId }: PastQuestionsProps) {
               
               <div className="grid grid-cols-2 gap-4 text-left">
                 <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                  <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Duration</div>
+                  <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Duration</div>
                   <div className="font-bold text-slate-900">Untimed Practice</div>
                 </div>
                 <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                  <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Questions</div>
+                  <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Questions</div>
                   <div className="font-bold text-slate-900">{totalQuestions} MCQs</div>
                 </div>
               </div>
@@ -276,10 +276,10 @@ export default function PastQuestions({ activeCourseId }: PastQuestionsProps) {
               >
                 <Trophy size={64} className="mx-auto text-emerald-400" />
                 <div className="space-y-2">
-                  <h2 className="text-3xl font-black">Quiz Complete!</h2>
+                  <h2 className="text-2xl sm:text-3xl font-bold">Quiz Complete!</h2>
                   <p className="text-slate-400">You scored {score} out of {totalQuestions}</p>
                 </div>
-                <div className="text-6xl font-black text-emerald-400">{percentage}%</div>
+                <div className="text-4xl sm:text-5xl font-bold text-emerald-400">{percentage}%</div>
                 <div className="flex justify-center gap-4">
                   <button 
                     onClick={resetQuiz}
@@ -315,7 +315,7 @@ export default function PastQuestions({ activeCourseId }: PastQuestionsProps) {
                   }`}
                 >
                   <div className="flex justify-between items-start">
-                    <span className="bg-slate-100 text-slate-500 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest">
+                    <span className="bg-slate-100 text-slate-500 px-3 py-1 rounded-full text-[10px] font-semibold uppercase tracking-wider">
                       Question {idx + 1}
                     </span>
                     {!isSubmitted && (
@@ -401,7 +401,7 @@ export default function PastQuestions({ activeCourseId }: PastQuestionsProps) {
                             onClick={() => handleOptionSelect(q.id, opt)}
                             className={`p-4 rounded-2xl border text-left font-medium flex items-center gap-3 transition-all ${optionStyles} ${!isSubmitted && !isEliminated && 'hover:border-slate-400'}`}
                           >
-                            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black ${
+                            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${
                               isSelected ? 'bg-white text-slate-900' : 'bg-white border border-slate-200 text-slate-400'
                             }`}>
                               {String.fromCharCode(65 + i)}
@@ -409,7 +409,7 @@ export default function PastQuestions({ activeCourseId }: PastQuestionsProps) {
                             <div className="markdown-body text-inherit flex-1 flex items-center justify-between gap-2">
                               <MarkdownRenderer content={opt} />
                               {isEliminated && (
-                                <span className="text-[9px] font-extrabold uppercase tracking-widest bg-red-500/10 text-red-500 px-2 py-0.5 rounded-full select-none shrink-0 border border-red-500/15 line-through">
+                                <span className="text-[9px] font-semibold uppercase tracking-wider bg-red-500/10 text-red-500 px-2 py-0.5 rounded-full select-none shrink-0 border border-red-500/15 line-through">
                                   Eliminated
                                 </span>
                               )}
@@ -439,7 +439,7 @@ export default function PastQuestions({ activeCourseId }: PastQuestionsProps) {
                         </div>
                         <div className="p-6 bg-slate-50 rounded-2xl border border-slate-200 space-y-4">
                           <div>
-                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 block mb-1">Explanation</span>
+                            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 block mb-1">Explanation</span>
                             {isLocked ? (
                               <div className="mt-2">
                                 <button 
@@ -482,11 +482,11 @@ export default function PastQuestions({ activeCourseId }: PastQuestionsProps) {
     <div className="flex-1 overflow-y-auto bg-slate-50 p-3 sm:p-6 lg:p-8 pb-16 transition-colors">
       <div className="w-full max-w-7xl 2xl:max-w-[1600px] mx-auto space-y-8 sm:space-y-12">
         <header className="space-y-4 lg:pl-4 xl:pl-0">
-          <div className="flex items-center gap-3 text-emerald-500 font-bold uppercase tracking-widest text-xs">
+          <div className="flex items-center gap-3 text-emerald-600 dark:text-emerald-400 font-semibold uppercase tracking-wider text-xs">
             <FileText size={16} />
             <span>Repository</span>
           </div>
-          <h1 className="text-4xl font-black text-slate-900 tracking-tight">
+          <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-slate-900 tracking-tight">
             Past Questions.
           </h1>
           <p className="text-slate-500 text-lg">

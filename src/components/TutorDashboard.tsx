@@ -205,7 +205,7 @@ export default function TutorDashboard({ onBack }: TutorDashboardProps) {
           <ArrowLeft size={24} className="text-slate-700 dark:text-slate-200" />
         </button>
         <div>
-          <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">Tutor Dashboard</h2>
+          <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white tracking-tight">Tutor Dashboard</h2>
           <p className="text-slate-500 font-medium">Track your referrals and earnings</p>
         </div>
       </div>
@@ -245,8 +245,8 @@ export default function TutorDashboard({ onBack }: TutorDashboardProps) {
                   <MousePointerClick size={24} />
                 </div>
                 <div>
-                  <div className="text-sm font-bold text-slate-500 uppercase tracking-wider">Link Clicks</div>
-                  <div className="text-3xl font-black text-slate-900 dark:text-white">{affiliateData?.clicks || 0}</div>
+                  <div className="text-sm font-semibold text-slate-500 uppercase tracking-wider">Link Clicks</div>
+                  <div className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white">{affiliateData?.clicks || 0}</div>
                 </div>
               </div>
             </div>
@@ -256,8 +256,8 @@ export default function TutorDashboard({ onBack }: TutorDashboardProps) {
                   <Users size={24} />
                 </div>
                 <div>
-                  <div className="text-sm font-bold text-slate-500 uppercase tracking-wider">Signups</div>
-                  <div className="text-3xl font-black text-slate-900 dark:text-white">{affiliateData?.signups || 0}</div>
+                  <div className="text-sm font-semibold text-slate-500 uppercase tracking-wider">Signups</div>
+                  <div className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white">{affiliateData?.signups || 0}</div>
                 </div>
               </div>
             </div>
@@ -267,8 +267,8 @@ export default function TutorDashboard({ onBack }: TutorDashboardProps) {
                   <TrendingUp size={24} />
                 </div>
                 <div>
-                  <div className="text-sm font-bold text-emerald-600 dark:text-emerald-500 uppercase tracking-wider">Paid Users</div>
-                  <div className="text-3xl font-black text-emerald-700 dark:text-emerald-400">{affiliateData?.paidConversions || 0}</div>
+                  <div className="text-sm font-semibold text-emerald-600 dark:text-emerald-500 uppercase tracking-wider">Paid Users</div>
+                  <div className="text-2xl sm:text-3xl font-bold text-emerald-700 dark:text-emerald-400">{affiliateData?.paidConversions || 0}</div>
                 </div>
               </div>
             </div>
@@ -281,8 +281,8 @@ export default function TutorDashboard({ onBack }: TutorDashboardProps) {
                   <span className="text-[10px] font-bold bg-emerald-400 text-emerald-900 px-2 py-0.5 rounded-full uppercase tracking-tighter">Balance</span>
                 </div>
                 <div className="mt-auto">
-                  <div className="text-xs font-bold text-indigo-100 uppercase tracking-wider mb-1">Pending Payout</div>
-                  <div className="text-3xl font-black">₦{(affiliateData?.pendingBalance || 0).toLocaleString()}</div>
+                  <div className="text-xs font-semibold text-indigo-100 uppercase tracking-wider mb-1">Pending Payout</div>
+                  <div className="text-2xl sm:text-3xl font-bold">₦{(affiliateData?.pendingBalance || 0).toLocaleString()}</div>
                   <div className="text-[10px] text-indigo-100 mt-2 font-medium">Total Earned: ₦{(affiliateData?.totalEarned || 0).toLocaleString()}</div>
                 </div>
               </div>
@@ -330,12 +330,12 @@ export default function TutorDashboard({ onBack }: TutorDashboardProps) {
                 <div className="bg-white dark:bg-zinc-800/80 p-3 rounded-2xl border border-slate-100 dark:border-zinc-700/50">
                   <div className="text-slate-500 font-medium">Monthly Scholar Plan</div>
                   <div className="text-slate-900 dark:text-white font-bold text-sm mt-0.5">Student pays ₦1,500</div>
-                  <div className="text-emerald-600 dark:text-emerald-400 font-black mt-1">Tutor gets ₦450 (30%)</div>
+                  <div className="text-emerald-600 dark:text-emerald-400 font-bold mt-1">Tutor gets ₦450 (30%)</div>
                 </div>
                 <div className="bg-white dark:bg-zinc-800/80 p-3 rounded-2xl border border-slate-100 dark:border-zinc-700/50">
                   <div className="text-slate-500 font-medium">Semester Bundle</div>
                   <div className="text-slate-900 dark:text-white font-bold text-sm mt-0.5">Student pays ₦4,500</div>
-                  <div className="text-emerald-600 dark:text-emerald-400 font-black mt-1">Tutor gets ₦1,350 (30%)</div>
+                  <div className="text-emerald-600 dark:text-emerald-400 font-bold mt-1">Tutor gets ₦1,350 (30%)</div>
                 </div>
               </div>
             </div>
@@ -404,8 +404,8 @@ export default function TutorDashboard({ onBack }: TutorDashboardProps) {
               
               <div className="flex-1 flex flex-col justify-center gap-6">
                   <div className="text-center">
-                      <div className="text-sm font-bold text-slate-500 mb-2 uppercase tracking-wider">Available for Payout</div>
-                      <div className="text-5xl font-black text-slate-900 dark:text-white">₦{(affiliateData?.pendingBalance || 0).toLocaleString()}</div>
+                      <div className="text-sm font-semibold text-slate-500 mb-2 uppercase tracking-wider">Available for Payout</div>
+                      <div className="text-3xl sm:text-4xl lg:text-5xl font-bold text-slate-900 dark:text-white">₦{(affiliateData?.pendingBalance || 0).toLocaleString()}</div>
                       <p className="text-sm text-slate-500 dark:text-zinc-400 mt-4 px-6">
                           Minimum payout threshold is ₦5,000. Payouts are usually processed within 2-3 business days.
                       </p>

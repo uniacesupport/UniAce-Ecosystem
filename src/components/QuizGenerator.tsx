@@ -943,7 +943,7 @@ export default function QuizGenerator({
                               <div className="flex-1 flex items-center justify-between gap-3">
                                 <MarkdownRenderer content={opt} />
                                 {isEliminated && (
-                                  <span className="text-[9px] font-extrabold uppercase tracking-widest bg-red-500/10 text-red-500 px-2.5 py-1 rounded-full select-none shrink-0 border border-red-500/20">
+                                  <span className="text-[9px] font-semibold uppercase tracking-wider bg-red-500/10 text-red-500 px-2.5 py-1 rounded-full select-none shrink-0 border border-red-500/20">
                                     Eliminated
                                   </span>
                                 )}
@@ -999,7 +999,7 @@ export default function QuizGenerator({
                                     )}
                                     <span className="font-bold text-slate-900 dark:text-white">Grading Result</span>
                                   </div>
-                                  <span className={`text-xl font-extrabold px-3 py-1 rounded-xl ${
+                                  <span className={`text-base sm:text-lg font-bold px-3 py-1 rounded-xl ${
                                     writtenEvaluations[questions[currentQuestionIndex].id].isCorrect
                                       ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
                                       : 'bg-red-500/10 text-red-600 dark:text-red-400'
@@ -1092,9 +1092,9 @@ export default function QuizGenerator({
                   className="text-center space-y-8 max-w-2xl mx-auto"
                 >
                   <div className="relative inline-block">
-                    <div className="w-48 h-48 rounded-full border-8 border-slate-100 dark:border-zinc-800 flex flex-col items-center justify-center">
-                      <span className="text-5xl font-black text-slate-900 dark:text-white">{calculateScore()}</span>
-                      <span className="text-slate-400 dark:text-zinc-500 font-bold uppercase tracking-widest text-xs">of {questions.length}</span>
+                    <div className="w-44 h-44 sm:w-48 sm:h-48 rounded-full border-8 border-slate-100 dark:border-zinc-800 flex flex-col items-center justify-center">
+                      <span className="text-4xl sm:text-5xl font-bold text-slate-900 dark:text-white">{calculateScore()}</span>
+                      <span className="text-slate-400 dark:text-zinc-500 font-semibold uppercase tracking-wider text-xs">of {questions.length}</span>
                     </div>
                     <div className="absolute -bottom-2 -right-2 bg-emerald-500 text-white p-3 rounded-2xl shadow-lg">
                       <CheckCircle2 size={32} />

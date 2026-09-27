@@ -167,20 +167,20 @@ export default function CourseHub({ onSelectCourse, onProfileClick, onViewSelect
         <div className="sticky top-12 space-y-8">
           <div>
             <div className="flex items-center gap-3 mb-6">
-              <h1 className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white tracking-tight">
+              <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-slate-900 dark:text-white tracking-tight">
                 {profile?.displayName ? `Hello, ${profile.displayName.split(' ')[0]}` : 'Welcome back'}
               </h1>
-              <span className="text-3xl sm:text-4xl origin-bottom-right hover:animate-wave cursor-default">👋</span>
+              <span className="text-2xl sm:text-3xl origin-bottom-right hover:animate-wave cursor-default">👋</span>
             </div>
             
             {profile?.department && profile?.academic_level && profile?.semester ? (
               <div className="group relative bg-white/50 dark:bg-zinc-900/50 backdrop-blur-sm border border-slate-200/60 dark:border-zinc-800/60 p-4 rounded-2xl shadow-sm hover:shadow-md transition-all duration-300">
                 <div className="flex items-start justify-between gap-4 mb-3">
                   <div>
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-zinc-500 mb-1">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-zinc-500 mb-1">
                       Current Program
                     </p>
-                    <h2 className="text-lg font-bold text-slate-800 dark:text-zinc-100 leading-tight">
+                    <h2 className="text-base sm:text-lg font-semibold text-slate-800 dark:text-zinc-100 leading-tight">
                       {profile.department}
                     </h2>
                   </div>
@@ -325,38 +325,38 @@ export default function CourseHub({ onSelectCourse, onProfileClick, onViewSelect
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.05 }}
-                className="bg-white dark:bg-zinc-900 rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-zinc-800 flex flex-col h-full hover:shadow-xl hover:border-slate-300 dark:hover:border-zinc-700 transition-all group"
+                className="bg-white dark:bg-zinc-900 rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200 dark:border-zinc-800 flex flex-col h-full hover:shadow-xl hover:border-slate-300 dark:hover:border-zinc-700 transition-all group"
               >
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex flex-col gap-1">
-                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-zinc-400">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-zinc-400">
                       {course.scope === 'GLOBAL' ? 'Global Course' : 
                        course.scope === 'FACULTY' ? `${course.faculties?.join(', ')} Faculty` :
                        course.departments?.length === 1 ? course.departments[0] : 
                        `${course.departments?.length || 0} Departments`}
                     </span>
                   </div>
-                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-zinc-400 bg-slate-100 dark:bg-zinc-800 px-2.5 py-1 rounded-md">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-600 dark:text-zinc-300 bg-slate-100 dark:bg-zinc-800 px-2.5 py-1 rounded-md">
                     {course.id}
                   </span>
                 </div>
                 
-                <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-3 group-hover:text-slate-700 dark:group-hover:text-slate-300 transition-colors">
+                <h3 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white mb-2.5 group-hover:text-slate-700 dark:group-hover:text-slate-300 transition-colors leading-snug">
                   {course.title}
                 </h3>
                 
-                <p className="text-sm text-slate-500 dark:text-zinc-400 mb-8 flex-grow line-clamp-3">
+                <p className="text-sm text-slate-500 dark:text-zinc-400 mb-8 flex-grow line-clamp-3 leading-relaxed">
                   {course.description}
                 </p>
                 
                 <div className="flex items-center justify-between mt-auto pt-6 border-t border-slate-100 dark:border-zinc-800/50">
                   <div className="flex flex-col gap-2">
                     <div className="flex items-center gap-4">
-                      <div className="flex items-center gap-1.5 text-xs font-bold text-slate-500 dark:text-zinc-400">
+                      <div className="flex items-center gap-1.5 text-xs font-medium text-slate-500 dark:text-zinc-400">
                         <Users size={14} />
                         {course.level ? `L ${course.level}` : 'L 100'}
                       </div>
-                      <div className="flex items-center gap-1.5 text-xs font-bold text-slate-500 dark:text-zinc-400">
+                      <div className="flex items-center gap-1.5 text-xs font-medium text-slate-500 dark:text-zinc-400">
                         <Calendar size={14} />
                         {course.semester === '2nd Semester' ? 'Sem 2' : 'Sem 1'}
                       </div>
@@ -383,7 +383,7 @@ export default function CourseHub({ onSelectCourse, onProfileClick, onViewSelect
                       addLastAccessedCourse(course.id);
                       onSelectCourse(course.id as CourseId);
                     }}
-                    className="bg-slate-900 text-white dark:bg-white dark:text-slate-900 px-6 py-2.5 rounded-xl font-bold text-sm hover:scale-105 active:scale-95 transition-transform flex items-center gap-2"
+                    className="bg-slate-900 text-white dark:bg-white dark:text-slate-900 px-5 sm:px-6 py-2.5 rounded-xl font-semibold text-sm hover:scale-105 active:scale-95 transition-transform flex items-center gap-2"
                   >
                     {(() => {
                       const isEnrolled = activeTab === 'your-courses' || enrolledCourses.includes(course.id as CourseId);

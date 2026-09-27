@@ -398,7 +398,7 @@ export default function MarkdownRenderer({ content = '', className = '' }: Markd
               <tr className="hover:bg-slate-50/50 dark:hover:bg-zinc-800/10 transition-colors" {...props} />
             ),
             th: ({ node, ...props }) => (
-              <th className="px-5 py-3.5 font-black text-slate-700 dark:text-zinc-200" {...props} />
+              <th className="px-5 py-3.5 font-semibold text-slate-800 dark:text-zinc-200" {...props} />
             ),
             td: ({ node, ...props }) => (
               <td className="px-5 py-3.5 text-slate-600 dark:text-zinc-400 font-medium" {...props} />

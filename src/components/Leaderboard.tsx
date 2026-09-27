@@ -79,13 +79,13 @@ export default function Leaderboard() {
             <Trophy size={24} />
           </div>
           <div>
-            <h2 className="text-xl sm:text-2xl font-black text-zinc-900 dark:text-white tracking-tight">Global Hall of Fame</h2>
-            <p className="text-xs text-zinc-500 font-bold uppercase tracking-widest">Top 10 Gladiators</p>
+            <h2 className="text-lg sm:text-xl font-bold text-zinc-900 dark:text-white tracking-tight">Global Hall of Fame</h2>
+            <p className="text-xs text-zinc-500 font-semibold uppercase tracking-wider">Top 10 Gladiators</p>
           </div>
         </div>
-        <div className="flex items-center gap-2 bg-zinc-100 dark:bg-zinc-800 px-4 py-2 rounded-xl">
+        <div className="flex items-center gap-2 bg-zinc-100 dark:bg-zinc-800 px-3.5 py-1.5 rounded-xl">
           <Star size={16} className="text-amber-400" fill="currentColor" />
-          <span className="text-sm font-black text-zinc-900 dark:text-white">Season 1</span>
+          <span className="text-xs sm:text-sm font-semibold text-zinc-900 dark:text-white">Season 1</span>
         </div>
       </div>
 
@@ -115,7 +115,7 @@ export default function Leaderboard() {
                     {index === 0 ? <Crown className="text-yellow-500" size={20} /> :
                      index === 1 ? <Medal className="text-zinc-400" size={20} /> :
                      index === 2 ? <Medal className="text-amber-600" size={20} /> :
-                     <span className="text-sm font-black text-zinc-400">#{index + 1}</span>}
+                     <span className="text-sm font-bold text-zinc-400">#{index + 1}</span>}
                   </div>
                   
                   <div className="relative">

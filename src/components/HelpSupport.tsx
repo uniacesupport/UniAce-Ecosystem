@@ -184,7 +184,7 @@ export default function HelpSupport({ onBack }: HelpSupportProps) {
               <ArrowLeft size={20} />
               <span>Back to Profile</span>
             </button>
-            <h1 className="text-4xl font-black text-slate-900 dark:text-white tracking-tight">Help & Support</h1>
+            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-slate-900 dark:text-white tracking-tight">Help & Support</h1>
             <p className="text-slate-500 dark:text-slate-400">Everything you need to master your learning journey.</p>
           </div>
           
@@ -225,7 +225,7 @@ export default function HelpSupport({ onBack }: HelpSupportProps) {
 
         {/* FAQs Section */}
         <section className="space-y-6">
-          <h2 className="text-2xl font-black text-slate-900 dark:text-white flex items-center gap-3">
+          <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-3">
             <div className="w-2 h-8 bg-blue-500 rounded-full" />
             Frequently Asked Questions
           </h2>
@@ -245,10 +245,10 @@ export default function HelpSupport({ onBack }: HelpSupportProps) {
                 <AnimatePresence>
                   {openFaq === index && (
                     <motion.div 
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: 'auto', opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      className="px-6 pb-4 text-slate-600 dark:text-slate-400 text-sm leading-relaxed"
+                       initial={{ height: 0, opacity: 0 }}
+                       animate={{ height: 'auto', opacity: 1 }}
+                       exit={{ height: 0, opacity: 0 }}
+                       className="px-6 pb-4 text-slate-600 dark:text-slate-400 text-sm leading-relaxed"
                     >
                       {faq.answer}
                     </motion.div>
@@ -262,7 +262,7 @@ export default function HelpSupport({ onBack }: HelpSupportProps) {
         {/* Tutorials Section */}
         <section className="space-y-6">
           <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-black text-slate-900 dark:text-white flex items-center gap-3">
+            <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-3">
               <div className="w-2 h-8 bg-purple-500 rounded-full" />
               Video Tutorials
             </h2>
@@ -313,14 +313,14 @@ export default function HelpSupport({ onBack }: HelpSupportProps) {
 
         {/* Contact Form Section */}
         <section className="space-y-6">
-          <h2 className="text-2xl font-black text-slate-900 dark:text-white flex items-center gap-3">
+          <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-3">
             <div className="w-2 h-8 bg-emerald-500 rounded-full" />
             Still need help?
           </h2>
           <div className="bg-white dark:bg-slate-800 rounded-[3rem] p-8 md:p-12 border border-slate-100 dark:border-slate-700 shadow-sm">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
               <div className="space-y-6">
-                <h3 className="text-3xl font-black text-slate-900 dark:text-white">Send us a message</h3>
+                <h3 className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white">Send us a message</h3>
                 <p className="text-slate-500 dark:text-slate-400">Our support team typically responds within 2-4 hours. We're here to help you succeed!</p>
                 
                 <div className="space-y-4 pt-4">

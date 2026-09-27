@@ -313,7 +313,7 @@ Return JSON in this format:
                   </button>
                 ) : (
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-extrabold text-emerald-600 dark:text-emerald-400 font-mono">
+                    <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 font-mono">
                       Score: {calculateScore()}%
                     </span>
                     <button

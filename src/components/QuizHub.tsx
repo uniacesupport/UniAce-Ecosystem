@@ -20,14 +20,14 @@ export default function QuizHub({ courseId, onQuizComplete, syllabus }: QuizHubP
     <div className="flex-1 overflow-y-auto bg-slate-50 dark:bg-zinc-950 p-4 sm:p-6 lg:p-12 pb-24 lg:pb-12 transition-colors">
       <div className="w-full space-y-12">
         <header className="space-y-4 lg:pl-4 xl:pl-0">
-          <div className="flex items-center gap-3 text-emerald-500 font-bold uppercase tracking-widest text-xs">
+          <div className="flex items-center gap-3 text-emerald-600 dark:text-emerald-400 font-semibold uppercase tracking-wider text-xs">
             <Brain size={16} />
             <span>Quiz Center</span>
           </div>
-          <h1 className="text-4xl font-black text-slate-900 dark:text-white tracking-tight">
+          <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-slate-900 dark:text-white tracking-tight">
             Master the Material.
           </h1>
-          <p className="text-slate-500 dark:text-zinc-400 text-lg">
+          <p className="text-slate-500 dark:text-zinc-400 text-sm sm:text-base leading-relaxed">
             Select a module to generate a custom quiz. Test your understanding of the course concepts.
           </p>
         </header>

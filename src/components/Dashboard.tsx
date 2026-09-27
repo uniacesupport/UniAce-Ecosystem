@@ -179,7 +179,7 @@ export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSele
         {/* New Header Design */}
         <header className="flex items-center justify-between mb-8 lg:pl-4 xl:pl-0">
           <div className="space-y-1">
-            <h1 className="text-xl sm:text-3xl lg:text-4xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-3 flex-wrap">
+            <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-slate-900 dark:text-white tracking-tight flex items-center gap-3 flex-wrap">
               🎓 Hi {user?.displayName?.split(' ')[0] || 'Scholar'}
               <div className="flex items-center gap-2">
                 <span className="text-sm sm:text-lg bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 px-3 py-1 rounded-full border border-emerald-200 dark:border-emerald-800 whitespace-nowrap">
@@ -311,7 +311,7 @@ export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSele
                       <span className="ml-2 pl-2 border-l border-white/30 text-[10px] opacity-80">Powered by Cohere AI</span>
                     </div>
                     <div className="space-y-2">
-                      <h3 className="text-xl sm:text-3xl font-black leading-tight">{dailyMission.title}</h3>
+                      <h3 className="text-xl sm:text-2xl lg:text-3xl font-bold leading-tight">{dailyMission.title}</h3>
                       <p className="text-blue-100 text-base sm:text-lg leading-relaxed opacity-90">
                         {dailyMission.reason}
                       </p>
@@ -329,7 +329,7 @@ export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSele
                           }
                         }, 50);
                       }}
-                      className="group flex items-center gap-3 bg-white text-blue-600 px-8 py-4 rounded-2xl font-black text-base sm:text-lg hover:bg-blue-50 transition-all shadow-xl active:scale-95"
+                      className="group flex items-center gap-3 bg-white text-blue-600 px-6 sm:px-8 py-3.5 sm:py-4 rounded-2xl font-bold text-base sm:text-lg hover:bg-blue-50 transition-all shadow-xl active:scale-95"
                     >
                       Accept Mission
                       <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform" />
@@ -489,8 +489,8 @@ export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSele
                     </div>
                   </div>
                   <div className="text-right">
-                    <div className="text-lg font-black text-slate-900 dark:text-white">{grade.grade}%</div>
-                    <div className="text-[10px] font-bold text-emerald-500 uppercase">Passed</div>
+                    <div className="text-lg font-bold text-slate-900 dark:text-white">{grade.grade}%</div>
+                    <div className="text-[10px] font-semibold text-emerald-500 uppercase tracking-wider">Passed</div>
                   </div>
                 </div>
               )) : (
@@ -511,8 +511,8 @@ export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSele
               <Flame size={32} />
             </div>
             <div>
-              <div className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white">{progress.streak}</div>
-              <div className="text-xs font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-wider">Day Streak</div>
+              <div className="text-3xl sm:text-4xl font-bold text-slate-900 dark:text-white">{progress.streak}</div>
+              <div className="text-xs font-semibold text-slate-400 dark:text-zinc-500 uppercase tracking-wider">Day Streak</div>
             </div>
           </div>
           <div className="bg-slate-900 dark:bg-zinc-900 text-white p-8 rounded-[2.5rem] flex items-center gap-6 shadow-xl shadow-slate-900/10 border border-slate-800 dark:border-zinc-800">
@@ -520,8 +520,8 @@ export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSele
               <Zap size={32} />
             </div>
             <div>
-              <div className="text-3xl sm:text-4xl font-black">{progress.xp}</div>
-              <div className="text-xs font-bold text-slate-500 dark:text-zinc-500 uppercase tracking-wider">Total XP</div>
+              <div className="text-3xl sm:text-4xl font-bold">{progress.xp}</div>
+              <div className="text-xs font-semibold text-slate-500 dark:text-zinc-500 uppercase tracking-wider">Total XP</div>
             </div>
           </div>
         </div>

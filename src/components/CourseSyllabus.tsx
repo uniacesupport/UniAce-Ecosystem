@@ -90,14 +90,14 @@ export default function CourseSyllabus({
 
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6">
             <div className="space-y-3 sm:space-y-4">
-              <div className="flex items-center gap-3 text-emerald-500 font-bold uppercase tracking-widest text-[10px] sm:text-xs">
+              <div className="flex items-center gap-3 text-emerald-600 dark:text-emerald-400 font-semibold uppercase tracking-wider text-[10px] sm:text-xs">
                 <GraduationCap size={16} />
                 <span>Full Course Syllabus</span>
               </div>
-              <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black text-slate-900 dark:text-white tracking-tight leading-tight">
+              <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-slate-900 dark:text-white tracking-tight leading-snug">
                 {activeCourseId} Syllabus.
               </h1>
-              <p className="text-slate-500 dark:text-zinc-400 text-base sm:text-lg max-w-2xl">
+              <p className="text-slate-500 dark:text-zinc-400 text-sm sm:text-base max-w-2xl leading-relaxed">
                 A comprehensive breakdown of the course modules. Select a module to explore its topics and start studying.
               </p>
             </div>
@@ -110,7 +110,7 @@ export default function CourseSyllabus({
                       setShowUnenrollConfirm(true);
                     }
                   }}
-                  className="inline-flex items-center gap-2 px-6 py-3 rounded-2xl bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-900/30 dark:hover:text-red-400 font-bold border border-emerald-200 dark:border-emerald-800 hover:border-red-200 dark:hover:border-red-800 transition-colors group"
+                  className="inline-flex items-center gap-2 px-6 py-3 rounded-2xl bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-900/30 dark:hover:text-red-400 font-semibold border border-emerald-200 dark:border-emerald-800 hover:border-red-200 dark:hover:border-red-800 transition-colors group"
                 >
                   <Activity size={20} className="group-hover:hidden" />
                   <span className="group-hover:hidden">Enrolled</span>
@@ -119,7 +119,7 @@ export default function CourseSyllabus({
               ) : (
                 <button
                   onClick={onEnroll}
-                  className="inline-flex items-center gap-2 px-8 py-4 rounded-2xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold shadow-lg shadow-emerald-500/30 hover:shadow-xl hover:shadow-emerald-500/40 transition-all hover:scale-105 active:scale-95"
+                  className="inline-flex items-center gap-2 px-7 py-3.5 rounded-2xl bg-emerald-500 hover:bg-emerald-600 text-white font-semibold shadow-lg shadow-emerald-500/30 hover:shadow-xl hover:shadow-emerald-500/40 transition-all hover:scale-105 active:scale-95 text-sm sm:text-base"
                 >
                   <Book size={20} />
                   <span>Enroll Now</span>
@@ -167,11 +167,11 @@ export default function CourseSyllabus({
                       {isLockedModule ? <Lock size={20} className="sm:w-6 sm:h-6" /> : <Icon size={20} className="sm:w-6 sm:h-6" />}
                     </div>
                     <div className="flex-1 flex flex-col">
-                      <h3 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white mb-2 break-words leading-tight pr-4">{module.title}</h3>
+                      <h3 className="text-base sm:text-lg font-semibold text-slate-900 dark:text-white mb-1.5 break-words leading-snug pr-4">{module.title}</h3>
                       <p className="text-slate-500 dark:text-blue-300 text-xs sm:text-sm leading-relaxed mb-6 flex-1">
                         Explore {(module?.subTopics || []).length} key topics including {(module?.subTopics?.[0]?.title || 'core concepts').toLowerCase()}.
                       </p>
-                      <div className={`flex items-center gap-2 font-bold text-xs sm:text-sm mt-auto ${
+                      <div className={`flex items-center gap-2 font-semibold text-xs sm:text-sm mt-auto ${
                         isEnrolled && !isLockedModule ? 'text-slate-900 dark:text-blue-100' : 'text-slate-400 dark:text-slate-500'
                       }`}>
                         <span>{isLockedModule ? 'Upgrade to Unlock' : isEnrolled ? 'Explore Module' : 'Locked'}</span>

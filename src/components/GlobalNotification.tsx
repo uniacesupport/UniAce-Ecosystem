@@ -60,7 +60,7 @@ export default function GlobalNotification() {
                 <Zap size={20} className="text-slate-900" fill="currentColor" />
               </div>
               <div className="flex-1">
-                <p className="text-xs font-black text-amber-500 uppercase tracking-widest mb-0.5">Global Announcement</p>
+                <p className="text-xs font-semibold text-amber-500 uppercase tracking-wider mb-0.5">Global Announcement</p>
                 <p className="text-sm font-bold text-white leading-tight">{notification.message}</p>
               </div>
             </div>
@@ -71,7 +71,7 @@ export default function GlobalNotification() {
                   href={notification.whatsappLink}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-xl text-xs font-black transition-all active:scale-95 shadow-lg shadow-emerald-500/20 whitespace-nowrap"
+                  className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all active:scale-95 shadow-lg shadow-emerald-500/20 whitespace-nowrap"
                 >
                   <MessageCircle size={16} />
                   JOIN WHATSAPP
