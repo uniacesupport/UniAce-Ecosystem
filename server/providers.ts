@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import admin from 'firebase-admin';
+import { getAdminApp } from './firebaseAdmin';
 import { GoogleGenAI } from "@google/genai";
 import Groq from "groq-sdk";
 import { Mistral } from '@mistralai/mistralai';
@@ -123,7 +124,9 @@ export class DynamicKeyRotator {
       return;
     }
     try {
-      const docRef = admin.firestore().collection('system_settings').doc('api_keys');
+      const app = getAdminApp();
+      if (!app) return;
+      const docRef = app.firestore().collection('system_settings').doc('api_keys');
       const doc = await docRef.get();
       if (doc.exists) {
         const data = doc.data();
@@ -250,7 +253,9 @@ export class DynamicKeyRotator {
     
     // Update Firestore to mark key as exhausted
     try {
-      const docRef = admin.firestore().collection('system_settings').doc('api_keys');
+      const app = getAdminApp();
+      if (!app) return;
+      const docRef = app.firestore().collection('system_settings').doc('api_keys');
       const docSnap = await docRef.get();
       if (docSnap.exists) {
         const data = docSnap.data();

@@ -254,6 +254,11 @@ async function callGenerateAPI(prompt: string, type: 'skeleton' | 'module' | 'le
       throw new Error(data.error || 'Failed to generate course content');
     }
 
+    // If server already returned validated structured data, return it directly
+    if (data.data && typeof data.data === 'object') {
+      return data.data;
+    }
+
     const rawContent = data.text;
 
     // Log AI success
@@ -265,19 +270,21 @@ async function callGenerateAPI(prompt: string, type: 'skeleton' | 'module' | 'le
       throw new Error("Failed to generate course content");
     }
 
-    // Strip markdown code block wrappers if the AI incorrectly wrapped the response
-    let content = rawContent.trim();
-    if (content.startsWith('```json')) {
-      content = content.substring(7);
-    } else if (content.startsWith('```')) {
-      content = content.substring(3);
+    // 1. Strip internal reasoning <think>...</think>
+    let content = rawContent.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+
+    // 2. Strip markdown code block wrappers if present
+    const mdMatch = content.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    if (mdMatch && mdMatch[1].trim()) {
+      content = mdMatch[1].trim();
     }
-    if (content.endsWith('```')) {
-      content = content.substring(0, content.length - 3);
-    }
-    content = content.trim();
 
     try {
+      // Try direct JSON.parse first
+      try {
+        return JSON.parse(content);
+      } catch (_) {}
+
       // Find the first JSON-like character
       const startBracket = content.indexOf('[');
       const startBrace = content.indexOf('{');
@@ -311,28 +318,21 @@ async function callGenerateAPI(prompt: string, type: 'skeleton' | 'module' | 'le
         let endIndex = content.lastIndexOf(closingChar);
         
         if (endIndex !== -1 && endIndex > currentIndex) {
-          const tail = content.substring(endIndex + 1).trim();
-          if (tail.length > 0 && /^[a-zA-Z]{2,}/.test(tail)) {
-            jsonToRepair = content.substring(currentIndex, endIndex + 1).trim();
-          }
+          jsonToRepair = content.substring(currentIndex, endIndex + 1).trim();
         }
         
         // Pre-process to fix common unescaped LaTeX commands and characters in JSON
-        // This prevents jsonrepair from stripping backslashes from invalid escape sequences
         try {
           jsonToRepair = jsonToRepair.replace(/(?<!\\)\\(.)/g, (match, char, offset, fullString) => {
-            // Leave valid JSON escape sequences untouched: \", \\, \/, \b, \f, \n, \r, \t
             if (char === '"' || char === '\\' || char === '/' || char === 'b' || char === 'f' || char === 'n' || char === 'r' || char === 't') {
               return match;
             }
             if (char === 'u') {
-              // Check if followed by 4 hex digits (unicode escape)
-              const remaining = fullString.substring(offset + 2); // 2 is length of '\\u'
+              const remaining = fullString.substring(offset + 2);
               if (/^[0-9a-fA-F]{4}/.test(remaining)) {
                 return match;
               }
             }
-            // Double escape any other character (LaTeX commands, math characters, etc.)
             return '\\\\' + char;
           });
         } catch (e) {
@@ -344,7 +344,6 @@ async function callGenerateAPI(prompt: string, type: 'skeleton' | 'module' | 'le
           parsedData = JSON.parse(repaired);
         } catch (e) {
           lastError = e;
-          // Find the next possible start character
           const nextBracket = content.indexOf('[', currentIndex + 1);
           const nextBrace = content.indexOf('{', currentIndex + 1);
           
