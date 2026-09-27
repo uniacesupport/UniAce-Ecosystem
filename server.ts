@@ -1278,7 +1278,7 @@ const getAndValidateSparks = async (uid: string, email: string | undefined): Pro
         console.log(`Creating new user document for: ${uid}`);
         const initialData = {
           uid,
-          ai_sparks: 50,
+          ai_sparks: 20,
           plan_type: 'free',
           role: (isAdminEmail(email)) ? 'admin' : 'student',
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -1288,11 +1288,11 @@ const getAndValidateSparks = async (uid: string, email: string | undefined): Pro
         
         isNewUser = true;
 
-        return { sparks: 50, plan: 'free', role: initialData.role };
+        return { sparks: 20, plan: 'free', role: initialData.role };
       }
 
       const userData = doc.data()!;
-      let sparks = userData.ai_sparks ?? 50;
+      let sparks = userData.ai_sparks ?? 20;
       let plan = userData.plan_type || 'free';
       let role = userData.role || 'student';
       let lastReset = userData.last_spark_reset;
@@ -1307,7 +1307,8 @@ const getAndValidateSparks = async (uid: string, email: string | undefined): Pro
       const trialStartDate = createdAt < TRIAL_SYSTEM_START_DATE ? TRIAL_SYSTEM_START_DATE : createdAt;
       
       const isTrialActive = (now.getTime() - trialStartDate.getTime()) < (7 * 24 * 60 * 60 * 1000);
-      const dailyLimit = isTrialActive ? 999999 : 10;
+      const DAILY_FREE_SPARKS = 20;
+      const dailyLimit = isTrialActive ? 999999 : DAILY_FREE_SPARKS;
 
       // Trial Logic: If trial is active, they are a Scholar
       if (isTrialActive && plan === 'free' && role !== 'admin') {
@@ -1347,11 +1348,11 @@ const getAndValidateSparks = async (uid: string, email: string | undefined): Pro
         };
       }
 
-      // Daily reset logic
+      // Daily reset logic: Protect top-ups and earned sparks; only refill if balance is below daily limit
       if (lastReset !== todayStr) {
-        sparks = dailyLimit;
+        sparks = Math.max(sparks, dailyLimit);
         t.update(userRef, { 
-          ai_sparks: dailyLimit, 
+          ai_sparks: sparks, 
           last_spark_reset: todayStr 
         });
       }
@@ -1986,11 +1987,12 @@ app.post('/api/chat', verifyAuth, async (req, res) => {
   const W_model = complexity === 'high' ? 40 : 1; // Pro = 40x cost
   
   // Maximum theoretical costs for escrow (The "Gas Station" Pre-Auth)
-  const MAX_PRE_AUTH = complexity === 'high' ? 100 : 10; 
+  const MAX_PRE_AUTH = complexity === 'high' ? 100 : 3; 
+  const DAILY_FREE_SPARKS = 20;
   const RATE_LIMIT_SECONDS = 5;
 
   try {
-    let preAuthResult = { sparks: 50, plan: 'free', role: 'student' };
+    let preAuthResult: any = { sparks: 20, plan: 'free', role: 'student', preAuthDeduction: 0 };
     let app: admin.app.App | null = null;
     let userRef: admin.firestore.DocumentReference | null = null;
 
@@ -2010,7 +2012,7 @@ app.post('/api/chat', verifyAuth, async (req, res) => {
         // Auto-create user if missing
         const initialData = {
           uid,
-          ai_sparks: 50,
+          ai_sparks: DAILY_FREE_SPARKS,
           plan_type: 'free',
           role: 'student',
           last_request_at: admin.firestore.FieldValue.serverTimestamp(),
@@ -2018,14 +2020,19 @@ app.post('/api/chat', verifyAuth, async (req, res) => {
           last_spark_reset: todayStr
         };
         
-        if (50 < MAX_PRE_AUTH) throw new Error('Insufficient sparks for pre-authorization');
-        
-        t.set(userRef, { ...initialData, ai_sparks: 50 - MAX_PRE_AUTH });
-        return { sparks: 50 - MAX_PRE_AUTH, plan: 'free', role: 'student' };
+        if (DAILY_FREE_SPARKS < (complexity === 'high' ? 100 : 1)) {
+          throw new Error(complexity === 'high' 
+            ? 'Insufficient sparks. Pro Mode requires at least 100 sparks.' 
+            : 'Insufficient sparks for pre-authorization');
+        }
+
+        const preAuthDeduction = Math.min(DAILY_FREE_SPARKS, MAX_PRE_AUTH);
+        t.set(userRef, { ...initialData, ai_sparks: DAILY_FREE_SPARKS - preAuthDeduction });
+        return { sparks: DAILY_FREE_SPARKS - preAuthDeduction, plan: 'free', role: 'student', preAuthDeduction };
       }
 
       const data = doc.data()!;
-      let sparks = data.ai_sparks ?? 50;
+      let sparks = data.ai_sparks ?? DAILY_FREE_SPARKS;
       const plan = data.plan_type || 'free';
       const role = data.role || 'student';
       const learningProfile = data.learningProfile;
@@ -2034,11 +2041,11 @@ app.post('/api/chat', verifyAuth, async (req, res) => {
       
       let updates: any = {};
 
-      // Daily Spark Refill Logic
+      // Daily Spark Refill Logic: Protect top-ups, only refill if below daily allowance
       if (lastReset !== todayStr && role !== 'admin' && plan === 'free') {
-        sparks = dailyLimit;
+        sparks = Math.max(sparks, DAILY_FREE_SPARKS);
         updates.last_spark_reset = todayStr;
-        updates.ai_sparks = dailyLimit;
+        updates.ai_sparks = sparks;
       }
       
       const isFreeUser = plan === 'free' && role !== 'admin';
@@ -2049,16 +2056,20 @@ app.post('/api/chat', verifyAuth, async (req, res) => {
         throw new Error('Rate limit exceeded. Please wait a few seconds.');
       }
 
-      if (isFreeUser && sparks < MAX_PRE_AUTH) {
-        throw new Error(`Insufficient sparks. This query requires a ${MAX_PRE_AUTH} spark pre-authorization.`);
+      if (isFreeUser && sparks < (complexity === 'high' ? 100 : 1)) {
+        throw new Error(complexity === 'high' 
+          ? `Insufficient sparks. Pro Mode requires at least 100 sparks.` 
+          : `Insufficient sparks. You need at least 1 spark to start a query.`);
       }
 
-      // Deduct maximum cost immediately (Escrow)
+      const preAuthDeduction = isFreeUser ? Math.min(sparks, MAX_PRE_AUTH) : 0;
+
+      // Deduct escrow cost immediately
       if (isFreeUser) {
-        updates.ai_sparks = sparks - MAX_PRE_AUTH;
+        updates.ai_sparks = sparks - preAuthDeduction;
         updates.last_request_at = admin.firestore.FieldValue.serverTimestamp();
         t.set(userRef, updates, { merge: true });
-        return { sparks: sparks - MAX_PRE_AUTH, plan, role };
+        return { sparks: sparks - preAuthDeduction, plan, role, learningProfile, preAuthDeduction };
       }
       
       if (Object.keys(updates).length > 0) {
@@ -2068,7 +2079,7 @@ app.post('/api/chat', verifyAuth, async (req, res) => {
         t.set(userRef, { last_request_at: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
       }
       
-      return { sparks: role === 'admin' || plan !== 'free' ? 999999 : sparks, plan, role, learningProfile };
+      return { sparks: role === 'admin' || plan !== 'free' ? 999999 : sparks, plan, role, learningProfile, preAuthDeduction: 0 };
     });
     
     const learningProfile = preAuthResult.learningProfile;
@@ -2262,7 +2273,8 @@ app.post('/api/chat', verifyAuth, async (req, res) => {
     // STEP 3: The Settlement/Refund (Atomic Transaction)
     // Formula: ceil(C_base + (Tokens / K) * W)
     const actualCost = Math.ceil(C_base + (totalTokens / K_constant) * W_model);
-    const refundAmount = MAX_PRE_AUTH - actualCost;
+    const preAuthDeduction = preAuthResult?.preAuthDeduction ?? MAX_PRE_AUTH;
+    const refundAmount = preAuthDeduction - actualCost;
     
     let finalSparks = preAuthResult.sparks;
 
@@ -2270,9 +2282,12 @@ app.post('/api/chat', verifyAuth, async (req, res) => {
       finalSparks = await app.firestore().runTransaction(async (t) => {
         const doc = await t.get(userRef);
         const currentSparks = doc.data()?.ai_sparks ?? 0;
-        // Refund the difference
-        const newBalance = currentSparks + refundAmount;
-        t.set(userRef, { ai_sparks: newBalance }, { merge: true });
+        // Refund the difference (guarding against negative balance)
+        const newBalance = Math.max(0, currentSparks + refundAmount);
+        t.set(userRef, { 
+          ai_sparks: newBalance,
+          total_sparks_used: admin.firestore.FieldValue.increment(actualCost)
+        }, { merge: true });
         return newBalance;
       });
     }
@@ -2282,6 +2297,7 @@ app.post('/api/chat', verifyAuth, async (req, res) => {
     res.json({ 
       response: responseText, 
       sparksRemaining: isFreeUser ? finalSparks : 999999,
+      sparksCost: isFreeUser ? actualCost : 0,
       meta: {
         providerUsed: successfulProviderName,
         providerLabel: PROVIDER_DISPLAY_NAMES[successfulProviderName] || successfulProviderName,
@@ -2304,9 +2320,13 @@ app.post('/api/chat', verifyAuth, async (req, res) => {
         const app = getAdminApp();
         if (app) {
           const userRef = app.firestore().collection('users').doc(uid);
-          await userRef.set({ 
-            ai_sparks: admin.firestore.FieldValue.increment(MAX_PRE_AUTH - 1) // Keep 1 spark for the attempt
-          }, { merge: true });
+          const preAuthDeduction = (preAuthResult as any)?.preAuthDeduction ?? MAX_PRE_AUTH;
+          const refundBack = Math.max(0, preAuthDeduction - 1); // Keep 1 spark for the attempt
+          if (refundBack > 0) {
+            await userRef.set({ 
+              ai_sparks: admin.firestore.FieldValue.increment(refundBack)
+            }, { merge: true });
+          }
         }
       } catch (refundErr) {
         console.error('Failed to refund after error:', refundErr);
@@ -6566,7 +6586,8 @@ async function startServer() {
         const C_base = 1; // Fixed infrastructure tax
         const K_constant = 1000; // Token normalization factor
         const W_model = complexity === 'high' ? 40 : 1; // Pro = 40x cost
-        const MAX_PRE_AUTH = complexity === 'high' ? 100 : 10; 
+        const MAX_PRE_AUTH = complexity === 'high' ? 100 : 3; 
+        const DAILY_FREE_SPARKS = 20;
         const RATE_LIMIT_SECONDS = 5;
 
         const app = getAdminApp();
@@ -6574,7 +6595,7 @@ async function startServer() {
         let sparksRemaining = currentSparks;
         let learningProfile: any = null;
         let studentName = user.name || user.displayName || 'Student';
-        let preAuthResult = { sparks: 50, plan: 'free', role: 'student', isFreeUser: true };
+        let preAuthResult: any = { sparks: 20, plan: 'free', role: 'student', isFreeUser: true, preAuthDeduction: 0 };
 
         if (app && userRef) {
           try {
@@ -6589,7 +6610,7 @@ async function startServer() {
                  // Auto-create user if missing
                  const initialData = {
                    uid: user.uid,
-                   ai_sparks: 50,
+                   ai_sparks: DAILY_FREE_SPARKS,
                    plan_type: 'free',
                    role: (isAdminEmail(user.email)) ? 'admin' : 'student',
                    last_request_at: admin.firestore.FieldValue.serverTimestamp(),
@@ -6597,19 +6618,22 @@ async function startServer() {
                    last_spark_reset: todayStr
                  };
 
-                 if (50 < MAX_PRE_AUTH) {
-                   throw new Error(`Insufficient sparks. This query requires a ${MAX_PRE_AUTH} spark pre-authorization.`);
+                 if (DAILY_FREE_SPARKS < (complexity === 'high' ? 100 : 1)) {
+                   throw new Error(complexity === 'high' 
+                     ? 'Insufficient sparks. Pro Mode requires at least 100 sparks.' 
+                     : 'Insufficient sparks. You need at least 1 spark to start a query.');
                  }
 
-                 t.set(userRef, { ...initialData, ai_sparks: 50 - MAX_PRE_AUTH });
+                 const preAuthDeduction = Math.min(DAILY_FREE_SPARKS, MAX_PRE_AUTH);
+                 t.set(userRef, { ...initialData, ai_sparks: DAILY_FREE_SPARKS - preAuthDeduction });
                  isNewUser = true;
-                 return { sparks: 50 - MAX_PRE_AUTH, plan: 'free', role: 'student', displayName: 'Student', learningProfile: null, isFreeUser: true };
+                 return { sparks: DAILY_FREE_SPARKS - preAuthDeduction, plan: 'free', role: 'student', displayName: 'Student', learningProfile: null, isFreeUser: true, preAuthDeduction };
               }
 
               const userData = doc.data();
               const displayName = userData?.displayName || user.name || user.displayName || 'Student';
               const userLearningProfile = userData?.learningProfile;
-              let sparks = userData?.ai_sparks ?? 50;
+              let sparks = userData?.ai_sparks ?? DAILY_FREE_SPARKS;
               let role = userData?.role || 'student';
               const plan = userData?.plan_type || 'free';
               const lastRequestAt = userData?.last_request_at?.toDate() || new Date(0);
@@ -6624,11 +6648,11 @@ async function startServer() {
                   console.log(`Auto-promoted ${user.email} to admin (WS).`);
               }
 
-              // Daily reset logic
+              // Daily reset logic: Protect top-ups, only refill if below daily allowance
               if (lastReset !== todayStr && role !== 'admin' && plan === 'free') {
-                sparks = 50;
+                sparks = Math.max(sparks, DAILY_FREE_SPARKS);
                 updates.last_spark_reset = todayStr;
-                updates.ai_sparks = 50;
+                updates.ai_sparks = sparks;
               }
 
               const isFreeUser = plan === 'free' && role !== 'admin';
@@ -6639,15 +6663,19 @@ async function startServer() {
                 throw new Error('Rate limit exceeded. Please wait a few seconds.');
               }
 
-              if (isFreeUser && sparks < MAX_PRE_AUTH) {
-                 throw new Error(`Insufficient sparks. This query requires a ${MAX_PRE_AUTH} spark pre-authorization.`);
+              if (isFreeUser && sparks < (complexity === 'high' ? 100 : 1)) {
+                 throw new Error(complexity === 'high' 
+                   ? `Insufficient sparks. Pro Mode requires at least 100 sparks.` 
+                   : `Insufficient sparks. You need at least 1 spark to start a query.`);
               }
 
+              const preAuthDeduction = isFreeUser ? Math.min(sparks, MAX_PRE_AUTH) : 0;
+
               if (isFreeUser) {
-                updates.ai_sparks = sparks - MAX_PRE_AUTH;
+                updates.ai_sparks = sparks - preAuthDeduction;
                 updates.last_request_at = admin.firestore.FieldValue.serverTimestamp();
                 t.set(userRef, updates, { merge: true });
-                return { sparks: sparks - MAX_PRE_AUTH, plan, role, displayName, learningProfile: userLearningProfile, isFreeUser: true };
+                return { sparks: sparks - preAuthDeduction, plan, role, displayName, learningProfile: userLearningProfile, isFreeUser: true, preAuthDeduction };
               }
               
               if (Object.keys(updates).length > 0) {
@@ -6657,7 +6685,7 @@ async function startServer() {
                 t.set(userRef, { last_request_at: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
               }
               
-              return { sparks: 999999, plan, role, displayName, learningProfile: userLearningProfile, isFreeUser: false };
+              return { sparks: 999999, plan, role, displayName, learningProfile: userLearningProfile, isFreeUser: false, preAuthDeduction: 0 };
             });
 
             preAuthResult = result;
@@ -6871,7 +6899,8 @@ async function startServer() {
         // STEP 3: The Settlement/Refund (Atomic Transaction)
         // Formula: ceil(C_base + (Tokens / K) * W)
         const actualCost = Math.ceil(C_base + (totalTokens / K_constant) * W_model);
-        const refundAmount = MAX_PRE_AUTH - actualCost;
+        const preAuthDeduction = (preAuthResult as any)?.preAuthDeduction ?? MAX_PRE_AUTH;
+        const refundAmount = preAuthDeduction - actualCost;
 
         let finalSparks = preAuthResult.sparks;
 
@@ -6879,7 +6908,7 @@ async function startServer() {
           finalSparks = await app.firestore().runTransaction(async (t) => {
             const doc = await t.get(userRef);
             const currentSparks = doc.data()?.ai_sparks ?? 0;
-            // Refund the difference
+            // Refund the difference (guarding against negative balance)
             const newBalance = Math.max(0, currentSparks + refundAmount);
             t.set(userRef, { 
               ai_sparks: newBalance,
@@ -6914,9 +6943,13 @@ async function startServer() {
 
         if (!isInsufficientSparks && !isRateLimit && preAuthResult?.isFreeUser && app && userRef) {
           try {
-            await userRef.set({ 
-              ai_sparks: admin.firestore.FieldValue.increment(MAX_PRE_AUTH - 1) // Keep 1 spark for the attempt
-            }, { merge: true });
+            const preAuthDeduction = (preAuthResult as any)?.preAuthDeduction ?? MAX_PRE_AUTH;
+            const refundBack = Math.max(0, preAuthDeduction - 1); // Keep 1 spark for the attempt
+            if (refundBack > 0) {
+              await userRef.set({ 
+                ai_sparks: admin.firestore.FieldValue.increment(refundBack)
+              }, { merge: true });
+            }
           } catch (refundErr) {
             console.error('Failed to refund after WS error:', refundErr);
           }

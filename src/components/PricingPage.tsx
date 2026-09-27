@@ -193,7 +193,7 @@ export default function PricingPage() {
             <div>
               <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-1">How Sparks Work</h3>
               <p className="text-slate-600 dark:text-zinc-400 text-sm leading-relaxed">
-                Sparks fuel UniAce AI. Costs are dynamic based on query complexity. Standard queries start at ~2 Sparks; Deep Analysis starts at ~15 Sparks. Micro-dose: Free users get 10 daily!
+                Sparks fuel UniAce AI. Costs are dynamic based on query complexity. Standard queries start at ~2 Sparks; Deep Analysis starts at ~15 Sparks. Daily allowance: Free users receive 20 Sparks daily!
               </p>
             </div>
           </div>
