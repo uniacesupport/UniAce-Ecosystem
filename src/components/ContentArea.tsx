@@ -80,8 +80,9 @@ export default function ContentArea({
   const isAdmin = profile?.role === 'admin' || (user?.email && adminEmails.includes(user.email.toLowerCase()));
   const isLocked = !isPremium && !isAdmin;
 
-  const activeSubTopicIndex = module.subTopics.findIndex(st => st.id === activeSubTopicId);
-  const activeSubTopic = module.subTopics[activeSubTopicIndex] || module.subTopics[0];
+  const subTopics = module?.subTopics || [];
+  const activeSubTopicIndex = subTopics.findIndex(st => st.id === activeSubTopicId);
+  const activeSubTopic = subTopics[activeSubTopicIndex] || subTopics[0];
 
   const generationSteps = [
     "AI is brainstorming the lesson structure...",

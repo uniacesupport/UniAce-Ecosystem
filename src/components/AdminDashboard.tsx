@@ -999,6 +999,10 @@ export default function AdminDashboard() {
       showToast('Please provide both course code and name', 'error');
       return;
     }
+    if (!quickDepartment) {
+      showToast('Please select a target Department for course generation', 'error');
+      return;
+    }
 
     setIsGeneratingSkeleton(true);
     setStatusMessage('AI is brainstorming the course structure...');
@@ -1057,6 +1061,10 @@ export default function AdminDashboard() {
 
   const handleFinalizeGeneration = async () => {
     if (!courseSkeleton) return;
+    if (!quickDepartment) {
+      showToast('Please select a target Department before generating full content', 'error');
+      return;
+    }
 
     setIsGeneratingQuick(true);
     isCancelledRef.current = false;

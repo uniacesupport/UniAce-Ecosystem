@@ -204,14 +204,23 @@ function AppContent() {
   }, [activeSubTopicId]);
 
   const activeModule = syllabus.find(m => m.id === activeModuleId) || syllabus[0];
-  const activeSubTopicContent = activeModule?.subTopics.find(s => s.id === activeSubTopicId)?.content;
+  const activeSubTopicContent = activeModule?.subTopics?.find(s => s.id === activeSubTopicId)?.content;
 
   const handleCourseSelect = (id: CourseId) => {
     startTransition(() => {
       setActiveCourseId(id);
       const course = courses[id];
-      setActiveModuleId(course.syllabus[0].id);
-      setActiveSubTopicId(course.syllabus[0].subTopics[0].id);
+      if (course?.syllabus?.[0]) {
+        setActiveModuleId(course.syllabus[0].id || '');
+        if (course.syllabus[0].subTopics?.[0]) {
+          setActiveSubTopicId(course.syllabus[0].subTopics[0].id || '');
+        } else {
+          setActiveSubTopicId('');
+        }
+      } else {
+        setActiveModuleId('');
+        setActiveSubTopicId('');
+      }
       setActiveView('course-syllabus');
     });
   };
@@ -220,8 +229,10 @@ function AppContent() {
     startTransition(() => {
       setActiveModuleId(id);
       const module = syllabus.find(m => m.id === id);
-      if (module && module.subTopics.length > 0) {
+      if (module && module.subTopics && module.subTopics.length > 0) {
         setActiveSubTopicId(module.subTopics[0].id);
+      } else {
+        setActiveSubTopicId('');
       }
       setActiveView('module-topics');
     });
@@ -393,7 +404,11 @@ function AppContent() {
             setActiveModuleId(id);
             setActiveView('study');
             const module = syllabus.find(m => m.id === id);
-            if (module) setActiveSubTopicId(module.subTopics[0].id);
+            if (module && module.subTopics && module.subTopics.length > 0) {
+              setActiveSubTopicId(module.subTopics[0].id);
+            } else {
+              setActiveSubTopicId('');
+            }
           });
           if (window.innerWidth < 1024) setIsSidebarOpen(false);
         }} 
@@ -776,7 +791,7 @@ function AppContent() {
             setMessages={setChatMessages}
             activeCourseId={activeCourseId}
             activeModule={activeModule?.title}
-            activeSubTopic={activeModule?.subTopics.find(s => s.id === activeSubTopicId)?.title}
+            activeSubTopic={activeModule?.subTopics?.find(s => s.id === activeSubTopicId)?.title}
             subTopicContent={activeLessonContent || activeSubTopicContent}
             progress={progress}
             profile={profile}
@@ -802,7 +817,7 @@ function AppContent() {
             setMessages={setChatMessages}
             activeCourseId={activeCourseId}
             activeModule={activeModule?.title}
-            activeSubTopic={activeModule?.subTopics.find(s => s.id === activeSubTopicId)?.title}
+            activeSubTopic={activeModule?.subTopics?.find(s => s.id === activeSubTopicId)?.title}
             subTopicContent={activeLessonContent || activeSubTopicContent}
             progress={progress}
             profile={profile}

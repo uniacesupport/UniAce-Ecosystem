@@ -203,7 +203,11 @@ export default function ModuleTopics({ module, onBack, onSubTopicSelect, onTakeQ
               Each topic contains detailed explanations, mathematical proofs, and solved examples to help you master the material.
             </p>
             <button 
-              onClick={() => onSubTopicSelect(module.subTopics[0].id)}
+              onClick={() => {
+                if (module?.subTopics?.[0]?.id) {
+                  onSubTopicSelect(module.subTopics[0].id);
+                }
+              }}
               className="bg-emerald-500 text-white px-6 py-3 rounded-2xl font-bold text-sm hover:bg-emerald-600 transition-colors flex items-center gap-2"
             >
               Start from Topic 1

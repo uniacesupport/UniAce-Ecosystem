@@ -17,7 +17,7 @@ export default function CourseCreateModal({ onClose, onSave }: CourseCreateModal
   const [id, setId] = useState('');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [department, setDepartment] = useState<Department>('');
+  const [department, setDepartment] = useState<Department | ''>('');
   const [level, setLevel] = useState<Level>('100');
   const [semester, setSemester] = useState<Semester>('1st Semester');
   const [scope, setScope] = useState<CourseScope>('GLOBAL');
@@ -28,16 +28,10 @@ export default function CourseCreateModal({ onClose, onSave }: CourseCreateModal
   const [modules, setModules] = useState<Module[]>([]);
   const [isSaving, setIsSaving] = useState(false);
 
-  useEffect(() => {
-    if (DEPARTMENTS.length > 0 && !department) {
-      setDepartment(DEPARTMENTS[0]);
-    }
-  }, [DEPARTMENTS, department]);
-
   const handleSave = async () => {
     const sanitizedId = id.replace(/\s+/g, '').toUpperCase();
-    if (!sanitizedId || !title) {
-      alert("Please provide at least a Course ID and Title.");
+    if (!sanitizedId || !title || !department) {
+      alert("Please provide Course ID, Title, and select a Department.");
       return;
     }
     setIsSaving(true);
@@ -120,6 +114,7 @@ export default function CourseCreateModal({ onClose, onSave }: CourseCreateModal
                 onChange={(e) => setDepartment(e.target.value as Department)}
                 className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-slate-900 dark:text-white"
               >
+                <option value="">-- Select Department --</option>
                 {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
               </select>
             </div>

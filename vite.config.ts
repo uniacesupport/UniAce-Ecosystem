@@ -123,6 +123,19 @@ export default defineConfig(({mode}) => {
       alias: {
         '@': path.resolve(__dirname, '.'),
       },
+      dedupe: ['react', 'react-dom', 'react/jsx-runtime', 'react/jsx-dev-runtime'],
+    },
+    optimizeDeps: {
+      include: [
+        'react',
+        'react-dom',
+        'react/jsx-runtime',
+        'react/jsx-dev-runtime',
+        '@tanstack/react-query',
+        'react-router-dom',
+        'lucide-react',
+        'react-hot-toast'
+      ],
     },
     server: {
       port,

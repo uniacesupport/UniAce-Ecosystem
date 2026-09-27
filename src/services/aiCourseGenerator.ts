@@ -33,6 +33,45 @@ const getAuthToken = async () => {
   }
 };
 
+const OFF_TOPIC_MATERIALS_MARKERS = [
+  'material science',
+  'materials science',
+  'metallurgy',
+  'metallurgical',
+  'crystal lattice',
+  'crystalline structure',
+  'grain boundary',
+  'grain boundaries',
+  'fracture toughness',
+  'tensile yield strength',
+  'austenite',
+  'martensite',
+  'alloy composition',
+  'polymer degradation'
+];
+
+export function flagOffTopicDrift(content: string, courseName: string, department?: string): { hasDrift: boolean; hits: string[] } {
+  const normDept = (department || '').toLowerCase();
+  const normCourse = (courseName || '').toLowerCase();
+  
+  // If the course or department is genuinely materials science, metallurgy, or material engineering, this is legitimate domain content
+  if (
+    normDept.includes('material') || 
+    normDept.includes('metallurg') || 
+    normCourse.includes('material') || 
+    normCourse.includes('metallurg')
+  ) {
+    return { hasDrift: false, hits: [] };
+  }
+
+  const lowerContent = (content || '').toLowerCase();
+  const hits = OFF_TOPIC_MATERIALS_MARKERS.filter(marker => lowerContent.includes(marker));
+  return {
+    hasDrift: hits.length > 0,
+    hits
+  };
+}
+
 export function sanitizeLatex(content: any): any {
   if (content === null || content === undefined) return content;
   if (typeof content !== 'string') return content;
@@ -464,15 +503,24 @@ export async function generateCourseSkeleton(
     `;
   }
 
+  const targetDept = department?.trim() || 'the specified discipline';
+  const dynamicDomainConstraint = `
+    CRITICAL DOMAIN FIDELITY & EXPLICIT NEGATIVE CONSTRAINT:
+    - All suggested modules, lessons, and topics MUST belong strictly and exclusively to "${courseName}" within the discipline of "${targetDept}".
+    - Do NOT reference, inject, or borrow concepts, terminology, or modules from unrelated disciplines (e.g., do NOT mention materials science, material properties, crystalline structures, metallurgical processes, or mechanical failure analysis unless "${targetDept}" or "${courseName}" is explicitly Materials Science or Metallurgy).
+  `;
+
   const skeletonPrompt = `
     ${promptContext}
     Generate a comprehensive course skeleton for a university-level course.
     
+    ${dynamicDomainConstraint}
+
     CRITICAL: You MUST use a dynamically adaptive global academic framework to ensure the course is both exam-relevant and deeply educational, providing a world-class academic experience:
-    1. Structure: Follow an accredited university curriculum outline (weeks, logical progression, learning objectives) dynamically adapted to the academic standard "${academicStandard}" in ${department || 'this discipline'} to ensure comprehensive mastery, exam readiness, and regulatory excellence.
+    1. Structure: Follow an accredited university curriculum outline (weeks, logical progression, learning objectives) dynamically adapted to the academic standard "${academicStandard}" in "${targetDept}" to ensure comprehensive mastery, exam readiness, and regulatory excellence.
     2. Depth: Grounded in world-class university depth (top-tier global standards such as MIT, Stanford, Oxford, Cambridge aligned with ${academicStandard}) for the content breakdown. Provide step-by-step teaching methodologies, advanced conceptual mappings, and comprehensive thematic breakdowns to ensure true mastery.
     3. Pedagogical Framework: Apply Bloom's Taxonomy aligned with "${academicStandard}". Ensure the progression moves from "Remembering" to "Creating", with clear learning pathways.
-    4. Adaptive Context: Dynamically adapt the curriculum to reflect current global best practices in ${department || 'this discipline'} under the standard: "${academicStandard}".
+    4. Adaptive Context: Dynamically adapt the curriculum to reflect current global best practices in "${targetDept}" under the standard: "${academicStandard}".
     
     Target: ${courseName}
     Academic Standard: ${academicStandard}
@@ -589,23 +637,35 @@ export async function generateLessonContent(
   sourceContext?: string,
   academicStandard: string = 'Globally Adaptive (Universal University Standard)'
 ): Promise<{ title: string, content: string, metadata: PipelineMetadata }> {
+  const targetDept = department?.trim() || 'the specified academic discipline';
+
+  const comparisonInstruction = `Enforce Comparative and Multi-Dimensional Explanations: You MUST structure complex topics using clear Comparison Tables relevant specifically to "${targetDept}" and "${courseName}" — for example, compare the core theoretical models, methodologies, classifications, structural frameworks, or empirical systems that an accredited university student of "${courseName}" under "${academicStandard}" must contrast, using ONLY "${targetDept}" terminology and relevant domain frameworks. Ensure all Markdown tables follow standard GFM format with a proper header row, separator row (|---|), and data rows. Never compress tables into a single line.`;
+
+  const caseStudyInstruction = `Incorporate Domain-Specific Case Studies: You MUST inject at least one comprehensive case study, empirical/clinical scenario, laboratory derivation, or concrete real-world application strictly native to "${courseName}" within "${targetDept}" (anchoring only the theory of this specific academic discipline).`;
+
+  const negativeConstraintInstruction = `CRITICAL DISCIPLINE FIDELITY & EXPLICIT NEGATIVE CONSTRAINTS:
+  - You MUST strictly use terminology, derivations, proofs, and case studies belonging exclusively to "${courseName}" within the discipline of "${targetDept}".
+  - Do NOT reference, inject, or borrow unrelated engineering or material paradigms (e.g., do NOT mention materials science, material properties, crystalline lattices, engineering failure analysis, alloys, polymers, or industrial manufacturing failures UNLESS "${targetDept}" or "${courseName}" is explicitly Materials Science, Metallurgy, or Materials Engineering).`;
+
   const lessonPrompt = `
     You are an expert university professor. Your task is to write an extremely comprehensive, long-form academic lesson for the topic "${lessonTitle}" which is part of the module "${moduleTitle}" in the university course "${courseName}".
     
     ACADEMIC STANDARD & CURRICULUM BENCHMARK:
     Calibrate all content, pedagogical depth, vocabulary, and assessment criteria to the academic standard: "${academicStandard}".
     
+    ${negativeConstraintInstruction}
+
     CRITICAL LECTURER GUIDELINES & GLOBALLY ADAPTIVE FRAMEWORK:
     You MUST dynamically adapt the content to ensure it is deeply educational, blending world-class university standards with rigorous accreditation criteria under "${academicStandard}":
-    1. Structure: Follow an accredited university curriculum outline for the topic, dynamically adapted to "${academicStandard}" in ${department || 'this discipline'} to ensure absolute exam relevance, professional depth, and international applicability.
+    1. Structure: Follow an accredited university curriculum outline for the topic, dynamically adapted to "${academicStandard}" in "${targetDept}" to ensure absolute exam relevance, professional depth, and international applicability.
     2. Depth: Calibrated to "${academicStandard}", use top-tier international depth (top-tier global standards such as MIT, Stanford, Oxford, Cambridge) with step-by-step teaching, rigorous derivations, and extensive conceptual breakdowns to ensure true mastery.
     3. Pedagogical Framework: Apply Bloom's Taxonomy aligned with "${academicStandard}". Every lesson MUST include:
        - Learning Objectives (What will the student know?)
-       - The "Why" Before the "How" Introduction: Introduce this chapter by stating why understanding these concepts and interrelationships is essential for professionals in the field, moving away from dry definitions to practical importance.
+       - The "Why" Before the "How" Introduction: Introduce this chapter by stating why understanding these concepts and interrelationships is essential for professionals and scholars in "${targetDept}", moving away from dry definitions to practical importance.
        - Key Vocabulary (In-depth definitions of core terms aligned with "${academicStandard}").
        - Detailed Lesson Body: Break down key concepts with deep, thoughtful explanations.
-       - Enforce Comparative and Multi-Dimensional Explanations: You MUST structure complex topics using clear Comparison Tables (e.g., comparing material properties, contrasting theories, comparing algorithmic structures). Ensure all Markdown tables follow the standard GFM format with a proper header row, separator row (|---|), and data rows. Never compress tables into a single line.
-       - Incorporate Structured Case Studies: You MUST inject at least one comprehensive real-world failure, standard case study, or concrete industry/field application related to this module/lesson (e.g., specific material classes, industrial failures, industrial processes, mathematical proofs) to anchor the theory.
+       - ${comparisonInstruction}
+       - ${caseStudyInstruction}
        - Active Learning: Conclude with a thorough summary and 3 high-quality "Quick Check" review questions.
     
     [IF PROVIDED] RELEVANT COURSE CONTEXT/OUTLINE TO FOLLOW: 
@@ -618,14 +678,14 @@ export async function generateLessonContent(
     Tone: ${tone}
     Depth: ${depth}
     Level: ${level || 'University Undergraduate'}
-    ${department ? `Department: ${department}` : ''}
+    Department: ${targetDept}
     
     Requirements:
     1. Write in DETAILED Markdown format. Do NOT hold back on length; make it as thorough as a university lecture transcript.
-    2. Target length: 1200-2000+ words. Focus on core concepts, deep-dive qualitative explanations, structured study notes, case studies, and practical examples.
+    2. Target length: 1200-2000+ words. Focus on core concepts, deep-dive qualitative explanations, structured study notes, case studies, and practical examples strictly within ${targetDept}.
     3. Use a professional, academic tone suitable for a top-tier university, adapted to the requested Tone: ${tone} and Academic Standard: ${academicStandard}.
     4. Ensure all concepts are explained clearly and logically, using step-by-step breakdowns and multiple real-world examples to ensure deep understanding.
-    5. Prioritize qualitative descriptions, conceptual definitions, and highly descriptive explanatory text. Avoid over-cluttering the lesson notes with unnecessary or excessive mathematical formulas, unless the topic is specifically and strictly quantitative or mathematical. For general science or engineering topics, balance mathematical equations with detailed qualitative "why" and "how" study notes.
+    5. Prioritize qualitative descriptions, conceptual definitions, and highly descriptive explanatory text. Avoid over-cluttering the lesson notes with unnecessary or excessive mathematical formulas, unless the topic is specifically and strictly quantitative or mathematical. For general science or humanities topics, balance mathematical equations with detailed qualitative "why" and "how" study notes.
     6. Use LaTeX only where absolutely necessary for core mathematical equations, variables, or scientific notation, and make sure every formula is accompanied by full text-based explanation.
     
     CRITICAL LATEX & CLEAN FORMATTING SAFETY INSTRUCTIONS:
@@ -653,9 +713,18 @@ export async function generateLessonContent(
   `;
 
   const result = await callGenerateAPI(lessonPrompt, 'lesson', provider);
+
+  const sanitizedContent = sanitizeLatex(result.content);
+
+  // Post-generation off-topic drift check
+  const driftCheck = flagOffTopicDrift(sanitizedContent, courseName, targetDept);
+  if (driftCheck.hasDrift) {
+    console.warn(`[AI Course Generator] Potential off-topic drift detected in lesson "${lessonTitle}" for course "${courseName}" (${targetDept}):`, driftCheck.hits);
+  }
+
   return {
     title: lessonTitle,
-    content: sanitizeLatex(result.content),
+    content: sanitizedContent,
     metadata: result.metadata
   };
 }
