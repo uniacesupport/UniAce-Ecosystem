@@ -207,6 +207,7 @@ function AppContent() {
   const activeSubTopicContent = activeModule?.subTopics?.find(s => s.id === activeSubTopicId)?.content;
 
   const handleCourseSelect = (id: CourseId) => {
+    setActiveLessonContent(null);
     startTransition(() => {
       setActiveCourseId(id);
       const course = courses[id];
@@ -226,6 +227,7 @@ function AppContent() {
   };
 
   const handleModuleSelect = (id: string) => {
+    setActiveLessonContent(null);
     startTransition(() => {
       setActiveModuleId(id);
       const module = syllabus.find(m => m.id === id);
@@ -242,6 +244,12 @@ function AppContent() {
   };
 
   const handleSubTopicSelect = (subTopicId: string) => {
+    // Reset lesson content state immediately before transition render to prevent stale content flicker
+    setActiveLessonContent(null);
+    window.scrollTo({ top: 0, behavior: 'instant' });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+
     startTransition(() => {
       setActiveSubTopicId(subTopicId);
       setActiveView('study');
@@ -253,6 +261,11 @@ function AppContent() {
   };
 
   const handleTakeQuiz = (subTopicId: string) => {
+    setActiveLessonContent(null);
+    window.scrollTo({ top: 0, behavior: 'instant' });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+
     startTransition(() => {
       setActiveSubTopicId(subTopicId);
       setActiveView('study');

@@ -4698,9 +4698,35 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
           console.warn('[Coordinated Gen] Formula generation error:', fErr);
         }
 
+        // Compile full syllabus array for main course document compatibility
+        let compiledSyllabus: any[] = [];
+        try {
+          const modSnap = await db.collection('courses').doc(courseId).collection('modules').get();
+          for (const mDoc of modSnap.docs) {
+            const mData = mDoc.data();
+            const lesSnap = await mDoc.ref.collection('lessons').get();
+            const subTopics = lesSnap.docs.map(lDoc => {
+              const lData = lDoc.data();
+              return {
+                id: lDoc.id,
+                title: lData.title || 'Lesson',
+                content: lData.content || ''
+              };
+            });
+            compiledSyllabus.push({
+              id: mDoc.id,
+              title: mData.title || 'Module',
+              subTopics
+            });
+          }
+        } catch (sErr) {
+          console.warn('[Coordinated Gen] Failed compiling syllabus array for main doc:', sErr);
+        }
+
         // STEP 4: Generation Complete
         console.log(`[Coordinated Gen] Finished background worker for course ${courseId}!`);
         await db.collection('courses').doc(courseId).update({
+          syllabus: compiledSyllabus,
           generationStatus: 'completed',
           generationProgress: 100,
           statusMessage: 'Course generated successfully!',

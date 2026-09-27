@@ -93,39 +93,58 @@ export function CourseProvider({ children }: { children: React.ReactNode }) {
           setCourses({});
         } else {
           const firestoreCourses: Record<string, Course> = {};
-          querySnapshot.forEach((doc: any) => {
-            const data = doc.data() as Course & { deleted?: boolean; department?: string };
-            // Use doc.id as the source of truth for the course ID
-            const courseId = doc.id;
+          const hydrationPromises: Promise<void>[] = [];
+
+          querySnapshot.forEach((docSnap: any) => {
+            const data = docSnap.data() as Course & { deleted?: boolean; department?: string };
+            const courseId = docSnap.id;
             data.id = courseId as CourseId;
 
             if (!data.deleted) {
-              // Migration: Ensure scope, faculties, and departments are initialized
-              if (!data.scope) {
-                data.scope = 'DEPARTMENT';
-              }
-              if (!data.faculties) {
-                data.faculties = [];
-              }
+              if (!data.scope) data.scope = 'DEPARTMENT';
+              if (!data.faculties) data.faculties = [];
               if (!data.departments || data.departments.length === 0) {
-                if ((data as any).department) {
-                  data.departments = [(data as any).department as any];
-                } else {
-                  data.departments = [];
-                }
+                data.departments = (data as any).department ? [(data as any).department as any] : [];
               }
-              
-              // Migration: Ensure level and semester are strings and have defaults
-              if (!data.level) {
-                data.level = '100';
-              }
-              if (!data.semester) {
-                data.semester = '1st Semester';
-              }
+              if (!data.level) data.level = '100';
+              if (!data.semester) data.semester = '1st Semester';
               
               firestoreCourses[courseId] = data;
+
+              // Fallback: If syllabus is missing or empty, hydrate from subcollections
+              if (!data.syllabus || data.syllabus.length === 0) {
+                const promise = (async () => {
+                  try {
+                    const { CourseService } = await import('../services/courseService');
+                    const modules = await CourseService.getModules(courseId);
+                    if (modules && modules.length > 0) {
+                      const populatedModules = await Promise.all(
+                        modules.map(async (mod) => {
+                          const lessons = await CourseService.getLessons(courseId, mod.id);
+                          return {
+                            id: mod.id,
+                            title: mod.title,
+                            subTopics: lessons || []
+                          };
+                        })
+                      );
+                      firestoreCourses[courseId].syllabus = populatedModules;
+                    }
+                  } catch (hErr) {
+                    console.warn(`Failed hydrating subcollection syllabus for ${courseId}:`, hErr);
+                  }
+                })();
+                hydrationPromises.push(promise);
+              }
             }
           });
+
+          if (hydrationPromises.length > 0) {
+            Promise.all(hydrationPromises).then(() => {
+              setCourses({ ...firestoreCourses });
+            });
+          }
+
           setCourses(firestoreCourses);
           console.log("CourseContext: Courses synced successfully");
         }
