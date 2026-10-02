@@ -4670,7 +4670,7 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
     // 3. Fire the asynchronous background generation worker
     (async () => {
       try {
-        console.log(`[Coordinated Gen] Starting background worker for course ${courseId} (${targetDept})...`);
+        console.log(`[Coordinated Gen] Starting background worker for course ${courseId} (${rawDept})...`);
 
         // Purge any stale subcollections from previous runs on this course ID
         await purgeCourseSubcollections(db, courseId);
@@ -4709,6 +4709,16 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
 
         console.log(`[Coordinated Gen] Domain inferred: ${domainInference.primaryDomain}. Grounded via: ${domainInference.groundingReferences.join(', ')}`);
 
+        let routingConfig: any = {};
+        try {
+          const routingDoc = await db.collection('system_config').doc('routing').get();
+          if (routingDoc.exists) {
+            routingConfig = routingDoc.data() || {};
+          }
+        } catch (rErr) {
+          console.warn('[Coordinated Gen] Could not load routing config, using defaults:', rErr);
+        }
+
         // STEP 1: Generate & Verify Course Skeleton with Multi-Agent Pipeline & Self-Consistency (or honor Human-in-the-Loop Approved Skeleton)
         let skeleton: any = null;
 
@@ -4727,6 +4737,7 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
           };
         } else {
           let attempts = 0;
+          let feedbackCritique = '';
           const MAX_ATTEMPTS = 3;
 
           while (attempts < MAX_ATTEMPTS) {
@@ -4961,7 +4972,7 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
               ${scopeDirective}
               TARGET LEARNING OUTCOMES: ${moduleSkeleton.learningOutcomeIds?.map((id: string) => skeleton.learningOutcomes[parseInt(id)]?.outcome).filter(Boolean).join('; ') || 'General Domain Mastery'}
               
-              Target Audience / Department: ${targetDept}
+              Target Audience / Department: ${rawDept || 'Departmental Majors'}
               Level: ${level}
               Tone: ${tone}
               Depth: ${depth}
