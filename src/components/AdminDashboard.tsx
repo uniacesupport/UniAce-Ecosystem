@@ -281,7 +281,15 @@ export default function AdminDashboard() {
   const isCancelledRef = useRef(false);
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [generationStep, setGenerationStep] = useState<'input' | 'skeleton' | 'generating' | 'error'>('input');
-  const [courseSkeleton, setCourseSkeleton] = useState<{ description?: string, modules: any[] } | null>(null);
+  const [courseSkeleton, setCourseSkeleton] = useState<{
+    description?: string;
+    modules: any[];
+    domainBrief?: any;
+    coverageScore?: number;
+    confidenceState?: string;
+    groundingReferences?: string[];
+    learningOutcomes?: any[];
+  } | null>(null);
   const [quickCourseName, setQuickCourseName] = useState('');
   const [quickCourseCode, setQuickCourseCode] = useState('');
   const [quickSubject, setQuickSubject] = useState<Subject>('Mathematics');
@@ -623,7 +631,7 @@ export default function AdminDashboard() {
       const res = await fetch('/api/admin/ai-mode', {
         headers: { 'Authorization': `Bearer ${idToken}` }
       });
-      if (res.ok) {
+      if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
         const data = await res.json();
         setGlobalAiMode(data.mode || 'normal');
       }
@@ -705,7 +713,7 @@ export default function AdminDashboard() {
       const res = await fetch('/api/admin/config', {
         headers: { 'Authorization': `Bearer ${idToken}` }
       });
-      if (res.ok) {
+      if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
         const data = await res.json();
         setSystemConfig(data);
       }
@@ -761,7 +769,7 @@ export default function AdminDashboard() {
         }
       });
       
-      if (res.ok) {
+      if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
         const data = await res.json();
         if (data.status) {
           setAiProviderStatus(data.status);
@@ -804,7 +812,7 @@ export default function AdminDashboard() {
           ...(idToken ? { 'Authorization': `Bearer ${idToken}` } : {})
         }
       });
-      if (res.ok) {
+      if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
         const data = await res.json();
         setSystemHealth(data);
       }
@@ -824,7 +832,7 @@ export default function AdminDashboard() {
           ...(idToken ? { 'Authorization': `Bearer ${idToken}` } : {})
         }
       });
-      if (res.ok) {
+      if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
         const data = await res.json();
         setBroadcastHistory(data.history || []);
       }
@@ -877,7 +885,7 @@ export default function AdminDashboard() {
           ...(idToken ? { 'Authorization': `Bearer ${idToken}` } : {})
         }
       });
-      if (res.ok) {
+      if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
         const data = await res.json();
         setSystemAlerts(data.alerts || []);
       }
@@ -1030,7 +1038,10 @@ export default function AdminDashboard() {
             quickTone,
             quickDepth,
             sourceText,
-            activeAcademicStandard
+            activeAcademicStandard,
+            courseScope,
+            courseScope === 'FACULTY' ? selectedFaculties : [],
+            courseScope === 'DEPARTMENT' ? selectedDepartments : []
           );
         } catch (err) {
           retries--;
@@ -1106,7 +1117,11 @@ export default function AdminDashboard() {
           subject: quickSubject,
           scope: courseScope,
           selectedFaculties: courseScope === 'FACULTY' ? selectedFaculties : [],
-          selectedDepartments: courseScope === 'DEPARTMENT' ? selectedDepartments : []
+          selectedDepartments: courseScope === 'DEPARTMENT' ? selectedDepartments : [],
+          approvedModules: courseSkeleton.modules,
+          domainBrief: courseSkeleton.domainBrief,
+          coverageScore: courseSkeleton.coverageScore,
+          groundingReferences: courseSkeleton.groundingReferences
         })
       });
 

@@ -1179,7 +1179,11 @@ Generate a university-level quiz for ${subTopic ? 'the specific subtopic' : 'the
           ...(token ? { 'Authorization': `Bearer ${token}` } : {})
         }
       });
-      if (!response.ok) throw new Error('Failed to fetch analytics');
+      if (!response.ok) throw new Error(`Failed to fetch analytics (${response.status})`);
+      const ct = response.headers.get('content-type');
+      if (!ct || !ct.includes('application/json')) {
+        throw new Error(`Expected JSON response, got ${ct || 'unknown'}`);
+      }
       const data = await response.json();
       return Array.isArray(data.analytics) ? data.analytics : [];
     } catch (error) {
@@ -1196,7 +1200,11 @@ Generate a university-level quiz for ${subTopic ? 'the specific subtopic' : 'the
           ...(token ? { 'Authorization': `Bearer ${token}` } : {})
         }
       });
-      if (!response.ok) throw new Error('Failed to fetch chat analytics');
+      if (!response.ok) throw new Error(`Failed to fetch chat analytics (${response.status})`);
+      const ct = response.headers.get('content-type');
+      if (!ct || !ct.includes('application/json')) {
+        throw new Error(`Expected JSON response, got ${ct || 'unknown'}`);
+      }
       const data = await response.json();
       return { topTopics: data.topTopics || [], recentQueries: data.recentQueries || [] };
     } catch (error) {

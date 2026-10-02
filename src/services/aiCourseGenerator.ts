@@ -33,42 +33,20 @@ const getAuthToken = async () => {
   }
 };
 
-const OFF_TOPIC_MATERIALS_MARKERS = [
-  'material science',
-  'materials science',
-  'metallurgy',
-  'metallurgical',
-  'crystal lattice',
-  'crystalline structure',
-  'grain boundary',
-  'grain boundaries',
-  'fracture toughness',
-  'tensile yield strength',
-  'austenite',
-  'martensite',
-  'alloy composition',
-  'polymer degradation'
-];
-
 export function flagOffTopicDrift(content: string, courseName: string, department?: string): { hasDrift: boolean; hits: string[] } {
-  const normDept = (department || '').toLowerCase();
+  // Positive domain fidelity: check that the content contains vocabulary relevant to the course
   const normCourse = (courseName || '').toLowerCase();
-  
-  // If the course or department is genuinely materials science, metallurgy, or material engineering, this is legitimate domain content
-  if (
-    normDept.includes('material') || 
-    normDept.includes('metallurg') || 
-    normCourse.includes('material') || 
-    normCourse.includes('metallurg')
-  ) {
-    return { hasDrift: false, hits: [] };
-  }
-
   const lowerContent = (content || '').toLowerCase();
-  const hits = OFF_TOPIC_MATERIALS_MARKERS.filter(marker => lowerContent.includes(marker));
+  const stopWords = new Set(['and', 'the', 'of', 'in', 'to', 'for', 'with', 'a', 'an', 'introduction', 'introductory', 'fundamentals', 'principles']);
+  const tokens = normCourse.split(/[^a-z0-9]+/).filter(t => t.length > 2 && !stopWords.has(t));
+  
+  if (tokens.length === 0) return { hasDrift: false, hits: [] };
+  const matches = tokens.filter(t => lowerContent.includes(t));
+  const hasDrift = matches.length === 0 && lowerContent.length > 500;
+
   return {
-    hasDrift: hits.length > 0,
-    hits
+    hasDrift,
+    hits: hasDrift ? ['Missing core course title vocabulary'] : []
   };
 }
 
@@ -481,148 +459,54 @@ export async function generateCourseSkeleton(
   tone: string = 'academic',
   depth: string = 'standard',
   sourceContext?: string,
-  academicStandard: string = 'Globally Adaptive (Universal University Standard)'
+  academicStandard: string = 'Globally Adaptive (Universal University Standard)',
+  scope?: string,
+  selectedFaculties: string[] = [],
+  selectedDepartments: string[] = []
 ): Promise<any> {
-  // Robust regex to detect if the target is a specific course code (e.g., MAT 101, PHY102, GNS 111)
-  const isCourseCode = courseName.trim().match(/^[A-Z]{2,4}\s?\d{3}[A-Z]?$/i);
-  const isCurriculumGen = !isCourseCode;
-  
-  let promptContext = "";
-  if (curriculumBenchmark && isCurriculumGen) {
-    const coreList = (curriculumBenchmark.coreCourses || []).map((c: any) => `${c.code}: ${c.title} (${c.units || c.credits || 3} units)`).join(', ');
-    promptContext = `
-      This is an accredited, globally adaptive curriculum generation for ${curriculumBenchmark.discipline || department || 'this discipline'} at ${level || 'Undergraduate'} Level.
-      The Core Courses are defined: ${coreList}.
-      ${curriculumBenchmark.totalCoreUnits ? `Total Core Units: ${curriculumBenchmark.totalCoreUnits}.` : ''}
-      
-      Your task is to generate complementary elective and specialized courses aligned with global university standards.
-      Requirements for Electives & Specializations:
-      1. Suggest 3-5 modern elective courses that complement the core academic structure.
-      2. Ensure courses reflect leading global standards and practical industry demands.
-      3. Tailor these electives to modern research frontiers, emerging technology, or field specializations.
-    `;
+  const token = await getAuthToken();
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 600000); // 10 minutes for multi-agent audit
+
+  try {
+    const res = await fetch('/api/course/generate-skeleton', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+      },
+      body: JSON.stringify({
+        courseName,
+        courseCode: courseName,
+        department,
+        scope,
+        level,
+        semester,
+        tone,
+        depth,
+        outline,
+        sourceText: sourceContext,
+        academicStandard,
+        provider,
+        selectedFaculties,
+        selectedDepartments
+      }),
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || `Server failed to generate course structure (${res.status}).`);
+    }
+
+    const data = await res.json();
+    return data;
+  } catch (err: any) {
+    clearTimeout(timeoutId);
+    console.error('generateCourseSkeleton error:', err);
+    throw err;
   }
-
-  const targetDept = department?.trim() || 'the specified discipline';
-  const dynamicDomainConstraint = `
-    CRITICAL DOMAIN FIDELITY & EXPLICIT NEGATIVE CONSTRAINT:
-    - All suggested modules, lessons, and topics MUST belong strictly and exclusively to "${courseName}" within the discipline of "${targetDept}".
-    - Do NOT reference, inject, or borrow concepts, terminology, or modules from unrelated disciplines (e.g., do NOT mention materials science, material properties, crystalline structures, metallurgical processes, or mechanical failure analysis unless "${targetDept}" or "${courseName}" is explicitly Materials Science or Metallurgy).
-  `;
-
-  const skeletonPrompt = `
-    ${promptContext}
-    Generate a comprehensive course skeleton for a university-level course.
-    
-    ${dynamicDomainConstraint}
-
-    CRITICAL: You MUST use a dynamically adaptive global academic framework to ensure the course is both exam-relevant and deeply educational, providing a world-class academic experience:
-    1. Structure: Follow an accredited university curriculum outline (weeks, logical progression, learning objectives) dynamically adapted to the academic standard "${academicStandard}" in "${targetDept}" to ensure comprehensive mastery, exam readiness, and regulatory excellence.
-    2. Depth: Grounded in world-class university depth (top-tier global standards such as MIT, Stanford, Oxford, Cambridge aligned with ${academicStandard}) for the content breakdown. Provide step-by-step teaching methodologies, advanced conceptual mappings, and comprehensive thematic breakdowns to ensure true mastery.
-    3. Pedagogical Framework: Apply Bloom's Taxonomy aligned with "${academicStandard}". Ensure the progression moves from "Remembering" to "Creating", with clear learning pathways.
-    4. Adaptive Context: Dynamically adapt the curriculum to reflect current global best practices in "${targetDept}" under the standard: "${academicStandard}".
-    
-    Target: ${courseName}
-    Academic Standard: ${academicStandard}
-    Description: ${courseDescription}
-    Tone: ${tone} (e.g., academic, engaging, technical)
-    Depth: ${depth} (e.g., introductory, standard, deep-dive)
-    ${level ? `Level: ${level}` : ''}
-    ${semester ? `Semester: ${semester}` : ''}
-    ${department ? `Department: ${department}` : ''}
-    ${outline ? `Course Outline / Syllabus:\n${outline}` : ''}
-    ${sourceContext ? `Source Context (Prioritize this information for the structure):\n${sourceContext}` : ''}
-    ${existingModuleTitles.length > 0 ? `Current Existing Modules: ${existingModuleTitles.join(', ')}` : ''}
-    
-    The output must be a detailed JSON object containing:
-    1. A "description" field which is a concise summary of the course content (1-2 sentences), ensuring it aligns with modern global curriculum objectives.
-    2. An appropriate number of modules (typically 6-12) based on the course complexity and the provided outline, structured according to accredited global university curriculum standards.
-    ${curriculumBenchmark && isCurriculumGen ? '3. Since this is a curriculum generation, the "modules" should represent the ELECTIVE COURSES you are suggesting.' : '3. Each module should have 4 to 6 lesson titles (no content yet, just titles), structured for step-by-step learning.'}
-    4. Each module should have a list of topics that will be covered in the quiz.
-    
-    CRITICAL: You must return ONLY valid JSON.
-    CRITICAL LATEX INSTRUCTIONS:
-    1. You MUST use LaTeX for ALL mathematical formulas, variables, and equations.
-    2. Use $ ... $ for inline math and $$ ... $$ for block math.
-    3. You are outputting data to a JSON parser. You MUST double-escape all LaTeX backslashes. 
-       For example, output \\\\frac instead of \\frac, and \\\\begin instead of \\begin.
-    4. Do NOT use \\label{...} as it is not supported. Use \\tag{...} for equation numbering if needed.
-    5. Ensure all LaTeX environments (like align, matrix, etc.) are wrapped in $$ ... $$ delimiters.
-    6. Double check that every backslash in your LaTeX is escaped with another backslash (e.g., \\\\alpha, \\\\beta).
-    CRITICAL: Ensure all double quotes inside strings are properly escaped (e.g., \\"word\\").
-    CRITICAL: If generating electives for a curriculum, ensure they do not overlap with the core courses: ${(curriculumBenchmark?.coreCourses || []).map((c: any) => c.code).join(', ') || 'None'}.
-    CRITICAL: Ensure the curriculum is robust, academically rigorous, and follows a globally adaptive framework with international depth.
-    {
-      "description": "A concise summary...",
-      "modules": [
-        {
-          "title": "Module/Course Title",
-          "lessonTitles": ["Lesson 1 Title", "Lesson 2 Title", "Lesson 3 Title", "Lesson 4 Title"],
-          "quizTopics": ["Topic 1", "Topic 2", "Topic 3"]
-        }
-      ]
-    }
-  `;
-
-  const result = await callGenerateAPI(skeletonPrompt, 'skeleton', provider);
-  
-  let normalizedSkeleton: any = null;
-
-  // Normalize skeleton output: ensure it's an object with a 'modules' array
-  if (Array.isArray(result)) {
-    normalizedSkeleton = { modules: result };
-  } else if (result && result.modules && Array.isArray(result.modules)) {
-    normalizedSkeleton = result;
-  } else if (result && typeof result === 'object') {
-    // If it's an object but doesn't have 'modules', try to find any array property
-    const possibleArray = Object.values(result).find(val => Array.isArray(val));
-    if (possibleArray) {
-      normalizedSkeleton = { modules: possibleArray };
-    }
-  }
-
-  if (!normalizedSkeleton || !Array.isArray(normalizedSkeleton.modules) || normalizedSkeleton.modules.length === 0) {
-    console.error("Failed to normalize AI skeleton response:", result);
-    throw new Error("The AI failed to generate a valid course structure. Please try again or try a different AI provider.");
-  }
-
-  // Normalize each module to ensure it has the expected properties
-  normalizedSkeleton.modules = normalizedSkeleton.modules.map((mod: any) => {
-    if (typeof mod !== 'object' || mod === null) return mod;
-
-    const normalizedMod = { ...mod };
-
-    // Ensure title exists
-    if (!normalizedMod.title && normalizedMod.name) {
-      normalizedMod.title = normalizedMod.name;
-    }
-
-    // Ensure lessonTitles exists
-    if (!normalizedMod.lessonTitles) {
-      // Try common variations
-      const lessons = normalizedMod.lessons || normalizedMod.lesson_titles || normalizedMod.topics;
-      if (Array.isArray(lessons)) {
-        normalizedMod.lessonTitles = lessons.map((l: any) => typeof l === 'string' ? l : (l.title || l.name || String(l)));
-      } else {
-        normalizedMod.lessonTitles = [];
-      }
-    }
-
-    // Ensure quizTopics exists
-    if (!normalizedMod.quizTopics) {
-      const topics = normalizedMod.topics || normalizedMod.quiz_topics || normalizedMod.learning_objectives;
-      if (Array.isArray(topics)) {
-        normalizedMod.quizTopics = topics.map((t: any) => typeof t === 'string' ? t : (t.title || t.name || String(t)));
-      } else {
-        // Use lesson titles as fallback for quiz topics if missing
-        normalizedMod.quizTopics = [...normalizedMod.lessonTitles];
-      }
-    }
-
-    return normalizedMod;
-  });
-  
-  return normalizedSkeleton;
 }
 
 export async function generateLessonContent(
@@ -643,17 +527,18 @@ export async function generateLessonContent(
 
   const caseStudyInstruction = `Incorporate Domain-Specific Case Studies: You MUST inject at least one comprehensive case study, empirical/clinical scenario, laboratory derivation, or concrete real-world application strictly native to "${courseName}" within "${targetDept}" (anchoring only the theory of this specific academic discipline).`;
 
-  const negativeConstraintInstruction = `CRITICAL DISCIPLINE FIDELITY & EXPLICIT NEGATIVE CONSTRAINTS:
-  - You MUST strictly use terminology, derivations, proofs, and case studies belonging exclusively to "${courseName}" within the discipline of "${targetDept}".
-  - Do NOT reference, inject, or borrow unrelated engineering or material paradigms (e.g., do NOT mention materials science, material properties, crystalline lattices, engineering failure analysis, alloys, polymers, or industrial manufacturing failures UNLESS "${targetDept}" or "${courseName}" is explicitly Materials Science, Metallurgy, or Materials Engineering).`;
+  const positiveFidelityInstruction = `AUTHORITATIVE SUBJECT & DOMAIN FIDELITY:
+  - The subject matter of "${courseName}" is authoritative and non-negotiable.
+  - You MUST teach the authentic core principles, terminology, theories, derivations, and case studies belonging directly to "${courseName}".
+  - Tailor your explanations, pacing, and relatable examples for students in "${targetDept}", but NEVER dilute, evade, or substitute the real disciplinary content of "${courseName}".`;
 
   const lessonPrompt = `
-    You are an expert university professor. Your task is to write an extremely comprehensive, long-form academic lesson for the topic "${lessonTitle}" which is part of the module "${moduleTitle}" in the university course "${courseName}".
+    You are an expert university professor in the domain of "${courseName}". Your task is to write an extremely comprehensive, long-form academic lesson for the topic "${lessonTitle}" which is part of the module "${moduleTitle}" in the university course "${courseName}".
     
     ACADEMIC STANDARD & CURRICULUM BENCHMARK:
     Calibrate all content, pedagogical depth, vocabulary, and assessment criteria to the academic standard: "${academicStandard}".
     
-    ${negativeConstraintInstruction}
+    ${positiveFidelityInstruction}
 
     CRITICAL LECTURER GUIDELINES & GLOBALLY ADAPTIVE FRAMEWORK:
     You MUST dynamically adapt the content to ensure it is deeply educational, blending world-class university standards with rigorous accreditation criteria under "${academicStandard}":

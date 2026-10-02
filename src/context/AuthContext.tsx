@@ -121,14 +121,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           clearTimeout(timeoutId);
 
           if (response.ok) {
-            const data = await response.json();
-            ai_sparks = data.sparks;
-            plan_type = data.plan;
-            userRole = data.role;
-            if (data.subscription_expiry) subscription_expiry = data.subscription_expiry;
-            if (data.subscription_status) subscription_status = data.subscription_status;
-            if (data.subscription_start_date) subscription_start_date = data.subscription_start_date;
-            return true;
+            const contentType = response.headers.get('content-type');
+            if (contentType && contentType.includes('application/json')) {
+              const data = await response.json();
+              ai_sparks = data.sparks;
+              plan_type = data.plan;
+              userRole = data.role;
+              if (data.subscription_expiry) subscription_expiry = data.subscription_expiry;
+              if (data.subscription_status) subscription_status = data.subscription_status;
+              if (data.subscription_start_date) subscription_start_date = data.subscription_start_date;
+              return true;
+            } else {
+              throw new Error(`Server returned non-JSON response (${contentType || 'unknown'})`);
+            }
           } else if (retries > 0) {
             console.warn(`Quota fetch failed with status ${response.status}, retrying...`);
             await new Promise(resolve => setTimeout(resolve, 1000));
