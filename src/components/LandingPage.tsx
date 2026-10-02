@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
+import { UniAceLogo } from './UniAceLogo';
 
 export default function LandingPage() {
   const { signInWithGoogle, signInWithEmail, signUpWithEmail } = useAuth();
@@ -105,15 +106,7 @@ export default function LandingPage() {
       {/* Navigation */}
       <nav className="fixed w-full bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md z-50 border-b border-slate-100 dark:border-zinc-800">
         <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-200 dark:shadow-none text-2xl">
-              🎓
-            </div>
-            <div>
-              <span className="text-xl font-black text-slate-900 dark:text-white tracking-tight">UniAce</span>
-              <span className="hidden sm:inline-block ml-2 text-xs font-semibold px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/40">Mastery Hub</span>
-            </div>
-          </div>
+          <UniAceLogo size="md" showText={true} />
           <div className="flex items-center gap-3">
             <button 
               onClick={() => openAuthModal(false)}
@@ -454,12 +447,7 @@ export default function LandingPage() {
       {/* Footer */}
       <footer className="py-10 border-t border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 transition-colors">
         <div className="max-w-7xl mx-auto px-6 flex flex-col sm:flex-row justify-between items-center gap-4">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 bg-emerald-500 rounded-lg flex items-center justify-center text-white text-base">
-              🎓
-            </div>
-            <span className="font-bold text-slate-900 dark:text-white">UniAce Mastery Hub</span>
-          </div>
+          <UniAceLogo size="sm" showText={true} />
           <p className="text-slate-500 dark:text-zinc-500 text-xs sm:text-sm">
             © {new Date().getFullYear()} UniAce Mastery Hub. Built for university academic excellence.
           </p>
@@ -489,8 +477,8 @@ export default function LandingPage() {
               </button>
 
               <div className="text-center mb-6">
-                <div className="w-12 h-12 bg-emerald-500 rounded-2xl flex items-center justify-center text-2xl mx-auto mb-4 shadow-lg shadow-emerald-500/20">
-                  🎓
+                <div className="flex justify-center mb-4">
+                  <UniAceLogo size="xl" />
                 </div>
                 <h3 className="text-2xl font-bold text-slate-900 dark:text-white">
                   {isSignUp ? 'Create Your Account' : 'Welcome to UniAce'}

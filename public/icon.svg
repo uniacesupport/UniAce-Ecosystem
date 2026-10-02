@@ -1,4 +1,108 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <rect width="100" height="100" rx="22.5" fill="#10b981"/>
-  <text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" font-size="60">🎓</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- Emerald Radial Gradient -->
+    <radialGradient id="emeraldBg" cx="50%" cy="45%" r="55%">
+      <stop offset="0%" stop-color="#145a38"/>
+      <stop offset="65%" stop-color="#0a321f"/>
+      <stop offset="100%" stop-color="#051f13"/>
+    </radialGradient>
+
+    <!-- Metallic Gold Ring Gradient -->
+    <linearGradient id="goldRing" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fae29c"/>
+      <stop offset="25%" stop-color="#d4af37"/>
+      <stop offset="50%" stop-color="#aa7c11"/>
+      <stop offset="75%" stop-color="#f5d77f"/>
+      <stop offset="100%" stop-color="#8a6108"/>
+    </linearGradient>
+
+    <!-- Inner Gold Accent -->
+    <linearGradient id="innerGold" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffd97d"/>
+      <stop offset="50%" stop-color="#b8860b"/>
+      <stop offset="100%" stop-color="#fae29c"/>
+    </linearGradient>
+
+    <!-- Mortarboard Diamond Highlight & Shadow -->
+    <linearGradient id="capTopLeft" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#f0f3f6"/>
+    </linearGradient>
+
+    <linearGradient id="capTopRight" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f8fafc"/>
+      <stop offset="100%" stop-color="#d9e2ec"/>
+    </linearGradient>
+
+    <linearGradient id="capBottom" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#c8d3e0"/>
+    </linearGradient>
+
+    <!-- Drop Shadows -->
+    <filter id="shadowDepth" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#000000" flood-opacity="0.65"/>
+    </filter>
+
+    <filter id="capShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#02140a" flood-opacity="0.8"/>
+    </filter>
+  </defs>
+
+  <!-- Background Base Circle -->
+  <circle cx="256" cy="256" r="248" fill="url(#emeraldBg)"/>
+
+  <!-- Outer Metallic Gold Bezel -->
+  <circle cx="256" cy="256" r="244" fill="none" stroke="url(#goldRing)" stroke-width="8"/>
+  <!-- Thin Inner Accent Gold Ring -->
+  <circle cx="256" cy="256" r="236" fill="none" stroke="url(#innerGold)" stroke-width="2.5" opacity="0.85"/>
+
+  <!-- 3D Mortarboard Cap Assembly -->
+  <g filter="url(#capShadow)">
+    <!-- Cap Skull Band Base / Understructure -->
+    <path d="M 180 252 L 256 295 L 332 252 L 332 290 Q 256 340 180 290 Z" fill="url(#capBottom)" stroke="#bac7d5" stroke-width="2"/>
+    
+    <!-- Central Diamond Gem Emblem on Skull Band -->
+    <polygon points="256,260 270,274 256,288 242,274" fill="#0d472c" stroke="url(#goldRing)" stroke-width="2"/>
+    <polygon points="256,263 267,274 256,285 245,274" fill="#ffffff" opacity="0.9"/>
+
+    <!-- 3D Mortarboard Diamond Top (Faceted) -->
+    <!-- Left Facet -->
+    <polygon points="256,155 120,225 256,275 256,155" fill="url(#capTopLeft)" stroke="#e2e8f0" stroke-width="1.5"/>
+    <!-- Right Facet -->
+    <polygon points="256,155 392,225 256,275 256,155" fill="url(#capTopRight)" stroke="#cbd5e1" stroke-width="1.5"/>
+    
+    <!-- Morterboard Thickness Rim -->
+    <polygon points="120,225 256,275 256,285 120,235" fill="#bccadc"/>
+    <polygon points="256,275 392,225 392,235 256,285" fill="#9aaec4"/>
+
+    <!-- Center Gold Button -->
+    <ellipse cx="256" cy="216" rx="9" ry="8" fill="url(#goldRing)" filter="url(#shadowDepth)"/>
+    <ellipse cx="256" cy="214" rx="5" ry="4" fill="#fff5d1"/>
+
+    <!-- Draped Gold Tassel -->
+    <!-- Tassel Cord -->
+    <path d="M 256 216 Q 320 220 342 245 Q 355 260 354 285" fill="none" stroke="url(#goldRing)" stroke-width="5" stroke-linecap="round"/>
+    
+    <!-- Tassel Ring Connector -->
+    <ellipse cx="354" cy="288" rx="6" ry="5" fill="url(#goldRing)"/>
+    
+    <!-- Tassel Skirt / Fringe -->
+    <path d="M 348 292 C 342 320 340 345 344 358 C 347 362 361 362 364 358 C 368 345 366 320 360 292 Z" fill="url(#goldRing)" filter="url(#shadowDepth)"/>
+    <!-- Tassel Gold Highlight Streaks -->
+    <path d="M 351 296 C 348 322 346 345 350 356" stroke="#fff1b8" stroke-width="2" fill="none"/>
+    <path d="M 355 296 C 354 322 354 345 356 356" stroke="#fae29c" stroke-width="1.5" fill="none"/>
+  </g>
+
+  <!-- Luxury "UniAce" Typography at Bottom -->
+  <text x="256" y="415" 
+        font-family="'Cinzel', 'Times New Roman', 'Playfair Display', serif" 
+        font-size="44" 
+        font-weight="bold" 
+        text-anchor="middle" 
+        fill="url(#goldRing)" 
+        letter-spacing="2"
+        filter="url(#shadowDepth)">
+    UniAce
+  </text>
 </svg>

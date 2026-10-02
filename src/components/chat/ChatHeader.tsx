@@ -1,6 +1,7 @@
 import React from 'react';
 import { Bot, Zap, Calculator, Settings, X, BookOpen, RotateCcw, ChevronDown, Sparkles, CheckCircle2, ArrowLeft, LayoutGrid } from 'lucide-react';
 import { CourseId, AIPersonality, UserProgress } from '../../types';
+import { UniAceLogo } from '../UniAceLogo';
 
 interface ChatHeaderProps {
   activeCourseId: CourseId | null;
@@ -84,9 +85,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
               </button>
             )}
 
-            <div className="w-8 h-8 sm:w-10 sm:h-10 bg-emerald-500 rounded-xl sm:rounded-2xl flex items-center justify-center shrink-0 shadow-md shadow-emerald-500/20">
-              <Bot size={18} className="text-white sm:w-5 sm:h-5" />
-            </div>
+            <UniAceLogo size="sm" badgeClassName="w-8 h-8 sm:w-10 sm:h-10" />
 
             <div className="min-w-0">
               <div className="flex items-center gap-2">

@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sparkles, Cpu, Award, BookOpen, CheckCircle2, AlertCircle, Loader2, ArrowRight, Zap, RefreshCw } from 'lucide-react';
+import { Sparkles, Award, CheckCircle2, Loader2, ArrowRight, Zap, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { AIService } from '../services/ai';
 import { db } from '../firebase';
@@ -17,6 +17,12 @@ interface AdaptiveRecalibratorModalProps {
   onViewStudyPlan?: () => void;
 }
 
+/**
+ * AdaptiveRecalibratorModal — Non-Blocking Study Toast / Banner (Option 1)
+ * Enforces Zero Distraction during active study.
+ * Operates as a floating corner banner with pointer-events-none on backdrop,
+ * leaving the lesson text, notes, and navigation 100% interactive and unobstructed.
+ */
 export const AdaptiveRecalibratorModal: React.FC<AdaptiveRecalibratorModalProps> = ({
   topicId,
   score,
@@ -31,48 +37,67 @@ export const AdaptiveRecalibratorModal: React.FC<AdaptiveRecalibratorModalProps>
   const [step, setStep] = useState<'idle' | 'generating' | 'success_booster' | 'fast_track_offer' | 'fast_track_success' | 'no_plan'>('idle');
   const [boosterData, setBoosterData] = useState<{ focus: string; tasks: string[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const autoCloseTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const topic = syllabus.flatMap(m => m.subTopics).find(st => st.id === topicId);
   const topicTitle = topic?.title || topicId;
+
+  // Auto-dismiss after 8 seconds on success states so reading flow is never interrupted
+  useEffect(() => {
+    if (step === 'success_booster' || step === 'fast_track_success') {
+      autoCloseTimerRef.current = setTimeout(() => {
+        onClose();
+      }, 8000);
+    }
+    return () => {
+      if (autoCloseTimerRef.current) {
+        clearTimeout(autoCloseTimerRef.current);
+      }
+    };
+  }, [step, onClose]);
 
   useEffect(() => {
     if (isOpen) {
       evaluatePerformance();
     } else {
-      // Reset state on close
       setStep('idle');
       setBoosterData(null);
       setError(null);
+      if (autoCloseTimerRef.current) {
+        clearTimeout(autoCloseTimerRef.current);
+      }
     }
   }, [isOpen]);
 
   const evaluatePerformance = async () => {
-    if (!user) return;
+    if (!user) {
+      onClose();
+      return;
+    }
     
     try {
-      // Check if they have an active study plan first
+      // Check if they have an active study plan first in Firestore
       const docRef = doc(db, 'study_plans', user.uid);
       const docSnap = await getDoc(docRef);
       if (!docSnap.exists()) {
-        setStep('no_plan');
+        // Silently close without interrupting study if no plan exists yet
+        onClose();
         return;
       }
 
       if (score < 60) {
-        // Trigger Booster Lesson Injection automatically
+        // Trigger Booster Lesson Injection automatically in background
         triggerBoosterInjection();
       } else if (score === 100) {
-        // Offer Fast Track
+        // Offer Fast Track via non-intrusive corner toast
         setStep('fast_track_offer');
       } else {
-        // Decent score, no major remediation or fast-track needed
+        // Decent score, close silently
         onClose();
       }
     } catch (err) {
-      console.error('Error evaluating performance or fetching study plan:', err);
-      // Fallback gracefully so we don't block the UI with an unhandled exception
-      setError('Could not verify study plan. Please make sure you are online.');
-      setStep('no_plan');
+      console.error('Error evaluating study plan performance:', err);
+      onClose();
     }
   };
 
@@ -110,12 +135,11 @@ export const AdaptiveRecalibratorModal: React.FC<AdaptiveRecalibratorModalProps>
         });
         setStep('success_booster');
       } else {
-        setStep('no_plan');
+        onClose();
       }
     } catch (err) {
       console.error('Booster Injection failed:', err);
-      setError('Failed to generate booster lesson. Your plan remains intact.');
-      setStep('idle');
+      onClose();
     } finally {
       setLoading(false);
     }
@@ -136,128 +160,125 @@ export const AdaptiveRecalibratorModal: React.FC<AdaptiveRecalibratorModalProps>
       setStep('fast_track_success');
     } catch (err) {
       console.error('Fast-track generation failed:', err);
-      setError('Failed to transition to advanced track. Please try again.');
+      setError('Could not update study plan. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  if (!isOpen) return null;
+  if (!isOpen || step === 'idle' || step === 'no_plan') return null;
 
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-50 flex items-center justify-center p-4">
+    <div className="fixed bottom-5 right-5 z-50 max-w-sm sm:max-w-md w-[calc(100vw-2.5rem)] pointer-events-none">
       <AnimatePresence mode="wait">
         <motion.div
-          initial={{ opacity: 0, scale: 0.95, y: 20 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.95, y: 20 }}
-          className="bg-white dark:bg-zinc-900 w-full max-w-xl rounded-[2.5rem] shadow-2xl overflow-hidden border border-slate-100 dark:border-zinc-800 flex flex-col p-8"
+          key={step}
+          initial={{ opacity: 0, y: 25, scale: 0.95 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 15, scale: 0.95 }}
+          transition={{ type: "spring", damping: 26, stiffness: 320 }}
+          className="pointer-events-auto bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-slate-200/90 dark:border-zinc-800 p-4 sm:p-5 overflow-hidden ring-1 ring-black/5"
         >
+          {/* Close button in corner */}
+          <button
+            onClick={onClose}
+            aria-label="Dismiss notification"
+            className="absolute top-3 right-3 text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
+          >
+            <X size={16} />
+          </button>
+
+          {/* Background generating indicator */}
           {step === 'generating' && (
-            <div className="text-center py-8 space-y-6">
-              <div className="w-16 h-16 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-500 rounded-3xl flex items-center justify-center mx-auto animate-pulse">
-                <Cpu size={32} className="animate-spin" />
+            <div className="flex items-center gap-3 pr-6">
+              <div className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-500 flex items-center justify-center shrink-0">
+                <Loader2 size={18} className="animate-spin" />
               </div>
-              <div className="space-y-2">
-                <h3 className="text-2xl font-black text-slate-900 dark:text-white">Analyzing Weak Spots...</h3>
-                <p className="text-slate-500 dark:text-zinc-400 text-sm max-w-sm mx-auto">
-                  We noticed a mastery score of <span className="font-bold text-red-500">{score}%</span> on <span className="font-semibold text-slate-800 dark:text-slate-200">"{topicTitle}"</span>. The AI is dynamically engineering a custom foundational booster lesson to update your active Study Plan.
-                </p>
+              <div className="min-w-0">
+                <p className="text-xs font-bold text-slate-900 dark:text-white truncate">Optimizing Study Plan...</p>
+                <p className="text-[11px] text-slate-500 dark:text-zinc-400 truncate">Synthesizing booster review for "{topicTitle}"</p>
               </div>
             </div>
           )}
 
+          {/* Booster Success Toast */}
           {step === 'success_booster' && boosterData && (
-            <div className="space-y-6">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-500 rounded-xl flex items-center justify-center">
-                  <CheckCircle2 size={24} />
+            <div className="space-y-3 pr-6">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-xl bg-emerald-100 dark:bg-emerald-950/50 text-emerald-500 flex items-center justify-center shrink-0 mt-0.5">
+                  <CheckCircle2 size={18} />
                 </div>
-                <div>
-                  <h3 className="text-xl font-black text-slate-900 dark:text-white">Study Plan Recalibrated!</h3>
-                  <p className="text-xs font-bold text-emerald-500 dark:text-emerald-400 uppercase tracking-wider">Booster Lesson Injected</p>
-                </div>
-              </div>
-
-              <div className="bg-slate-50 dark:bg-zinc-800/50 p-6 rounded-3xl border border-slate-100 dark:border-zinc-800 space-y-4">
-                <div className="flex items-center gap-2">
-                  <Zap size={16} className="text-amber-500" />
-                  <span className="text-sm font-bold text-slate-700 dark:text-zinc-300">{boosterData.focus}</span>
-                </div>
-                <ul className="space-y-3">
-                  {(boosterData?.tasks || []).map((task, idx) => (
-                    <li key={idx} className="flex items-start gap-3 text-sm text-slate-600 dark:text-zinc-400 font-medium">
-                      <div className="mt-1.5 w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />
-                      {task}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              <p className="text-xs text-slate-400 dark:text-zinc-500 leading-relaxed text-center">
-                This personalized booster session has been seamlessly inserted at the top of your **AI Study Plan** on your dashboard to help reinforce your understanding before you tackle tougher modules.
-              </p>
-
-              <button
-                onClick={() => {
-                  if (onViewStudyPlan) {
-                    onViewStudyPlan();
-                  } else {
-                    onClose();
-                  }
-                }}
-                className="w-full py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl font-black text-sm hover:scale-[1.02] transition-transform shadow-lg shadow-slate-100 dark:shadow-none"
-              >
-                VIEW STUDY PLAN
-              </button>
-            </div>
-          )}
-
-          {step === 'fast_track_offer' && (
-            <div className="space-y-6">
-              <div className="text-center space-y-4">
-                <div className="w-16 h-16 bg-amber-50 dark:bg-amber-950/40 text-amber-500 rounded-3xl flex items-center justify-center mx-auto shadow-lg shadow-amber-100 dark:shadow-none">
-                  <Award size={32} />
-                </div>
-                <div className="space-y-1">
-                  <h3 className="text-2xl font-black text-slate-900 dark:text-white">Perfect Mastery Unlocked! 🏆</h3>
-                  <p className="text-slate-500 dark:text-zinc-400 text-sm">
-                    Amazing job! You scored a flawless <span className="font-bold text-emerald-500">100%</span> on <span className="font-semibold text-slate-800 dark:text-slate-200">"{topicTitle}"</span>.
+                <div className="min-w-0">
+                  <h4 className="text-xs font-bold text-slate-900 dark:text-white">Study Plan Recalibrated</h4>
+                  <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-0.5 line-clamp-2">
+                    Booster session inserted for <span className="font-semibold text-slate-700 dark:text-zinc-200">"{topicTitle}"</span> to reinforce foundations.
                   </p>
                 </div>
               </div>
 
-              <div className="bg-slate-50 dark:bg-zinc-800/50 p-6 rounded-3xl border border-slate-100 dark:border-zinc-800 text-center space-y-3">
-                <h4 className="font-black text-slate-800 dark:text-zinc-200 text-sm">Fast-Track Academic Offer</h4>
-                <p className="text-xs text-slate-500 dark:text-zinc-400 leading-relaxed">
-                  Would you like the AI Study Architect to dynamically recalibrate your entire Study Plan? We will fast-track you past basic introductory lessons and inject challenging, advanced topics to keep your learning curve optimized!
-                </p>
+              <div className="flex items-center justify-end gap-2 pt-1 border-t border-slate-100 dark:border-zinc-800/80">
+                <button
+                  onClick={onClose}
+                  className="px-2.5 py-1 text-[11px] font-semibold text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-white"
+                >
+                  Dismiss
+                </button>
+                <button
+                  onClick={() => {
+                    onClose();
+                    onViewStudyPlan?.();
+                  }}
+                  className="px-3 py-1 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-lg text-[11px] font-bold hover:opacity-90 transition-opacity flex items-center gap-1"
+                >
+                  View Plan <ArrowRight size={12} />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Fast-Track Offer Toast (Non-blocking) */}
+          {step === 'fast_track_offer' && (
+            <div className="space-y-3 pr-6">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-500 flex items-center justify-center shrink-0 mt-0.5">
+                  <Award size={18} />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <h4 className="text-xs font-bold text-slate-900 dark:text-white">Perfect Mastery! 🏆</h4>
+                    <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded">100%</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-0.5 line-clamp-2">
+                    Fast-track your study plan past introductory modules for <span className="font-semibold text-slate-700 dark:text-zinc-200">"{topicTitle}"</span>?
+                  </p>
+                </div>
               </div>
 
               {error && (
-                <div className="text-red-500 text-xs font-bold text-center">
-                  {error}
-                </div>
+                <p className="text-[11px] text-red-500 font-medium">{error}</p>
               )}
 
-              <div className="flex flex-col sm:flex-row gap-3">
+              <div className="flex items-center justify-end gap-2 pt-1 border-t border-slate-100 dark:border-zinc-800/80">
                 <button
                   onClick={onClose}
-                  className="flex-1 py-4 bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 rounded-2xl font-bold text-sm hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors"
+                  className="px-2.5 py-1 text-[11px] font-semibold text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-white"
                 >
-                  Keep Current Plan
+                  Keep Plan
                 </button>
                 <button
                   onClick={acceptFastTrack}
                   disabled={loading}
-                  className="flex-1 py-4 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 rounded-2xl font-black text-sm hover:scale-[1.02] transition-transform shadow-lg flex items-center justify-center gap-2"
+                  className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[11px] font-bold transition-colors flex items-center gap-1.5 shadow-sm shadow-amber-200 dark:shadow-none disabled:opacity-50"
                 >
                   {loading ? (
-                    <Loader2 size={18} className="animate-spin" />
+                    <>
+                      <Loader2 size={12} className="animate-spin" />
+                      <span>Optimizing...</span>
+                    </>
                   ) : (
                     <>
-                      <Sparkles size={16} fill="currentColor" />
-                      YES, FAST-TRACK ME!
+                      <Zap size={12} fill="currentColor" />
+                      <span>Fast-Track</span>
                     </>
                   )}
                 </button>
@@ -265,51 +286,38 @@ export const AdaptiveRecalibratorModal: React.FC<AdaptiveRecalibratorModalProps>
             </div>
           )}
 
+          {/* Fast-Track Success Toast */}
           {step === 'fast_track_success' && (
-            <div className="text-center py-6 space-y-6">
-              <div className="w-16 h-16 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-500 rounded-3xl flex items-center justify-center mx-auto">
-                <Sparkles size={32} fill="currentColor" />
-              </div>
-              <div className="space-y-2">
-                <h3 className="text-2xl font-black text-slate-900 dark:text-white">Academic Path Advanced!</h3>
-                <p className="text-slate-500 dark:text-zinc-400 text-sm max-w-sm mx-auto">
-                  Your AI Study Architect has successfully fast-tracked your plan. Introductory modules for <span className="font-semibold text-slate-800 dark:text-slate-200">"{topicTitle}"</span> have been replaced with advanced tracks and high-intensity exercises!
-                </p>
+            <div className="space-y-3 pr-6">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-500 flex items-center justify-center shrink-0 mt-0.5">
+                  <Sparkles size={18} fill="currentColor" />
+                </div>
+                <div className="min-w-0">
+                  <h4 className="text-xs font-bold text-slate-900 dark:text-white">Academic Path Advanced!</h4>
+                  <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-0.5 line-clamp-2">
+                    Introductory modules for <span className="font-semibold text-slate-700 dark:text-zinc-200">"{topicTitle}"</span> fast-tracked to advanced tracks.
+                  </p>
+                </div>
               </div>
 
-              <button
-                onClick={() => {
-                  if (onViewStudyPlan) {
-                    onViewStudyPlan();
-                  } else {
+              <div className="flex items-center justify-end gap-2 pt-1 border-t border-slate-100 dark:border-zinc-800/80">
+                <button
+                  onClick={onClose}
+                  className="px-2.5 py-1 text-[11px] font-semibold text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-white"
+                >
+                  Dismiss
+                </button>
+                <button
+                  onClick={() => {
                     onClose();
-                  }
-                }}
-                className="w-full py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl font-black text-sm hover:scale-[1.02] transition-transform shadow-lg"
-              >
-                VIEW NEW STUDY PLAN
-              </button>
-            </div>
-          )}
-
-          {step === 'no_plan' && (
-            <div className="text-center py-6 space-y-6">
-              <div className="w-16 h-16 bg-amber-50 dark:bg-amber-950/40 text-amber-500 rounded-3xl flex items-center justify-center mx-auto">
-                <AlertCircle size={32} />
+                    onViewStudyPlan?.();
+                  }}
+                  className="px-3 py-1 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-lg text-[11px] font-bold hover:opacity-90 transition-opacity flex items-center gap-1"
+                >
+                  View Study Plan <ArrowRight size={12} />
+                </button>
               </div>
-              <div className="space-y-2">
-                <h3 className="text-xl font-black text-slate-900 dark:text-white">No Active Study Plan Found</h3>
-                <p className="text-slate-500 dark:text-zinc-400 text-sm max-w-sm mx-auto">
-                  We evaluated your score, but you haven't generated your personalized Study Plan yet. Go to the **AI Study Plan** view on your dashboard to initialize your core schedule!
-                </p>
-              </div>
-
-              <button
-                onClick={onClose}
-                className="w-full py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl font-black text-sm hover:scale-[1.02] transition-transform"
-              >
-                GOT IT
-              </button>
             </div>
           )}
         </motion.div>
