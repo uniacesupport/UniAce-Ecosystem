@@ -495,6 +495,15 @@ export async function generateCourseSkeleton(
     });
     clearTimeout(timeoutId);
 
+    const ct = res.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) {
+      const text = await res.text().catch(() => '');
+      if (text.includes('<!doctype') || text.includes('Starting Server') || !res.ok) {
+        throw new Error('Application server is warming up or temporarily unavailable. Please retry in a few moments.');
+      }
+      throw new Error(`Unexpected server response format (${res.status}).`);
+    }
+
     if (!res.ok) {
       const errData = await res.json().catch(() => ({}));
       throw new Error(errData.error || `Server failed to generate course structure (${res.status}).`);
@@ -504,7 +513,7 @@ export async function generateCourseSkeleton(
     return data;
   } catch (err: any) {
     clearTimeout(timeoutId);
-    console.error('generateCourseSkeleton error:', err);
+    console.warn('generateCourseSkeleton error:', err?.message || err);
     throw err;
   }
 }

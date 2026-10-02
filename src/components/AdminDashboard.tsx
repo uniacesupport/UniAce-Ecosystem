@@ -794,10 +794,16 @@ export default function AdminDashboard() {
         }
         setLastAiUpdate(new Date());
       } else {
-        console.error("Failed to fetch AI status:", await res.text());
+        const ct = res.headers.get('content-type') || '';
+        if (ct.includes('application/json')) {
+          const errData = await res.json().catch(() => null);
+          console.warn("AI status not available:", errData?.error || res.status);
+        } else {
+          console.warn(`AI status check: server warming up or non-JSON returned (${res.status})`);
+        }
       }
-    } catch (error) {
-      console.error("Error checking AI status:", error);
+    } catch (error: any) {
+      console.warn("Notice checking AI status:", error?.message || error);
     } finally {
       setIsCheckingAI(false);
     }
@@ -1063,8 +1069,8 @@ export default function AdminDashboard() {
       setGenerationStep('skeleton');
       showToast('Course structure generated! Please review.', 'info');
     } catch (error: any) {
-      console.error('Skeleton generation error:', error);
-      showToast('Failed to generate structure: ' + error.message, 'error');
+      console.warn('Skeleton generation issue:', error?.message || error);
+      showToast('Failed to generate structure: ' + (error?.message || 'Server error'), 'error');
     } finally {
       setIsGeneratingSkeleton(false);
     }
@@ -1124,6 +1130,15 @@ export default function AdminDashboard() {
           groundingReferences: courseSkeleton.groundingReferences
         })
       });
+
+      const ct = response.headers.get('content-type') || '';
+      if (!ct.includes('application/json')) {
+        const text = await response.text().catch(() => '');
+        if (text.includes('<!doctype') || text.includes('Starting Server') || !response.ok) {
+          throw new Error('Application server is warming up or temporarily busy. Please retry shortly.');
+        }
+        throw new Error(`Unexpected server response format (${response.status}).`);
+      }
 
       if (!response.ok) {
         const errData = await response.json().catch(() => ({}));

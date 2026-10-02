@@ -1179,15 +1179,19 @@ Generate a university-level quiz for ${subTopic ? 'the specific subtopic' : 'the
           ...(token ? { 'Authorization': `Bearer ${token}` } : {})
         }
       });
-      if (!response.ok) throw new Error(`Failed to fetch analytics (${response.status})`);
+      if (!response.ok) {
+        console.warn(`Failed to fetch struggle analytics (${response.status})`);
+        return [];
+      }
       const ct = response.headers.get('content-type');
       if (!ct || !ct.includes('application/json')) {
-        throw new Error(`Expected JSON response, got ${ct || 'unknown'}`);
+        console.warn(`Struggle analytics: Expected JSON response, got ${ct || 'unknown'}`);
+        return [];
       }
       const data = await response.json();
       return Array.isArray(data.analytics) ? data.analytics : [];
-    } catch (error) {
-      console.error('Get Struggle Analytics Error:', error);
+    } catch (error: any) {
+      console.warn('Get Struggle Analytics Warning:', error?.message || error);
       return [];
     }
   },
@@ -1200,15 +1204,19 @@ Generate a university-level quiz for ${subTopic ? 'the specific subtopic' : 'the
           ...(token ? { 'Authorization': `Bearer ${token}` } : {})
         }
       });
-      if (!response.ok) throw new Error(`Failed to fetch chat analytics (${response.status})`);
+      if (!response.ok) {
+        console.warn(`Failed to fetch chat analytics (${response.status})`);
+        return { topTopics: [], recentQueries: [] };
+      }
       const ct = response.headers.get('content-type');
       if (!ct || !ct.includes('application/json')) {
-        throw new Error(`Expected JSON response, got ${ct || 'unknown'}`);
+        console.warn(`Chat analytics: Expected JSON response, got ${ct || 'unknown'}`);
+        return { topTopics: [], recentQueries: [] };
       }
       const data = await response.json();
       return { topTopics: data.topTopics || [], recentQueries: data.recentQueries || [] };
-    } catch (error) {
-      console.error('Get Chat Analytics Error:', error);
+    } catch (error: any) {
+      console.warn('Get Chat Analytics Warning:', error?.message || error);
       return { topTopics: [], recentQueries: [] };
     }
   },

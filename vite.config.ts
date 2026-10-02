@@ -20,7 +20,7 @@ export default defineConfig(({mode}) => {
       react(), 
       tailwindcss(),
       VitePWA({
-        disable: mode === 'production',
+        disable: mode !== 'production',
         registerType: 'autoUpdate',
         includeAssets: ['icon.svg'],
         devOptions: {
