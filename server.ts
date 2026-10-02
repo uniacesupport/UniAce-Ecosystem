@@ -1932,12 +1932,17 @@ async function purgeCourseSubcollections(db: admin.firestore.Firestore, courseId
 const CourseSkeletonSchema = z.object({
   pedagogicalReasoning: z.string().optional(),
   description: z.string().optional().default(''),
+  learningOutcomes: z.array(z.object({
+    outcome: z.string(),
+    bloomLevel: z.enum(['Remember', 'Understand', 'Apply', 'Analyze', 'Evaluate', 'Create'])
+  })).min(3).optional().default([]),
   modules: z.array(z.object({
     title: z.string().min(1),
     topics: z.array(z.string()).optional(),
     lessons: z.array(z.string()).optional(),
     lessonTitles: z.array(z.string()).optional(),
-    quizTopics: z.array(z.string()).optional().default([])
+    quizTopics: z.array(z.string()).optional().default([]),
+    learningOutcomeIds: z.array(z.string()).optional().default([])
   })).min(1)
 });
 
@@ -2011,14 +2016,34 @@ const StudySessionSchema = z.object({
 const DomainInferenceSchema = z.object({
   primaryDomain: z.string(),
   subDisciplines: z.array(z.string()),
-  coreRequiredTopics: z.array(z.string())
+  coreRequiredTopics: z.array(z.string()),
+  accreditationStandards: z.array(z.string()).optional().default(['ABET', 'Standard University Benchmarks']),
+  groundingReferences: z.array(z.string()).optional().default([])
 });
 
 const VerificationResultSchema = z.object({
   isValid: z.boolean(),
   reasoning: z.string(),
   missingTopics: z.array(z.string()).optional().default([]),
-  genericFillerDetected: z.boolean()
+  genericFillerDetected: z.boolean(),
+  coverageScore: z.number().min(0).max(100).optional().default(0),
+  pedagogyAudit: z.object({
+    isSequencingValid: z.boolean(),
+    prerequisiteGaps: z.array(z.string()),
+    workloadAssessment: z.string()
+  }).optional(),
+  consistencyScore: z.number().min(0).max(100).optional().default(100)
+});
+
+const RegressionTestSchema = z.object({
+  testId: z.string(),
+  courseTitle: z.string(),
+  expectedDomain: z.string(),
+  status: z.enum(['passed', 'failed', 'pending']),
+  actualDomain: z.string().optional(),
+  coverageScore: z.number().optional(),
+  error: z.string().optional(),
+  timestamp: z.string()
 });
 
 const LearningProfileSchema = z.object({
@@ -4424,23 +4449,28 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
         // Purge any stale subcollections from previous runs on this course ID
         await purgeCourseSubcollections(db, courseId);
 
-        // STEP 0: Infer Academic Domain
-        console.log(`[Coordinated Gen] Inferring domain for ${courseName}...`);
+        // STEP 0: Infer Academic Domain with Grounding Rationale
+        console.log(`[Coordinated Gen] Inferring domain and grounding for ${courseName}...`);
         await db.collection('courses').doc(courseId).update({
           generationProgress: 7,
-          statusMessage: 'Inferring academic domain and core topics...',
+          statusMessage: 'Retrieving grounding references and inferring domain...',
           updatedAt: new Date().toISOString()
         });
 
         const domainPrompt = `Analyze the course title "${courseName}" and code "${courseId}".
-        Identify the primary academic domain and sub-disciplines.
-        Identify 5-10 core topics that MUST be covered in a university-level course of this name.
+        
+        [GROUNDING TASK]:
+        1. Identify the primary academic domain and 3-5 sub-disciplines.
+        2. Identify 8-12 core topics that MUST be covered to meet university accreditation (e.g., ABET, AACSB, or global standards).
+        3. List 2-3 standard textbook titles or public syllabi that typically define this course's scope.
         
         Return strictly a JSON object:
         {
           "primaryDomain": "e.g. Materials Science",
           "subDisciplines": ["e.g. Crystallography", "Thermodynamics"],
-          "coreRequiredTopics": ["e.g. Crystal Lattices", "Phase Diagrams"]
+          "coreRequiredTopics": ["e.g. Crystal Lattices", "Phase Diagrams"],
+          "accreditationStandards": ["ABET", "University of California System"],
+          "groundingReferences": ["Callister - Materials Science and Engineering", "MIT OpenCourseWare Syllabus"]
         }`;
 
         const domainInference = await completeWithProviderJSON({
@@ -4451,26 +4481,27 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
           complexity: 'standard'
         });
 
-        console.log(`[Coordinated Gen] Domain inferred: ${domainInference.primaryDomain}`);
+        console.log(`[Coordinated Gen] Domain inferred: ${domainInference.primaryDomain}. Grounded via: ${domainInference.groundingReferences.join(', ')}`);
 
-        // STEP 1: Generate & Verify Course Skeleton
+        // STEP 1: Generate & Verify Course Skeleton with Multi-Agent Pipeline & Self-Consistency
         let skeleton: any = null;
         let attempts = 0;
         const MAX_ATTEMPTS = 3;
 
         while (attempts < MAX_ATTEMPTS) {
           attempts++;
-          console.log(`[Coordinated Gen] Generating Skeleton attempt ${attempts} for course ${courseId}...`);
+          console.log(`[Coordinated Gen] Multi-Agent Pipeline: Attempt ${attempts} for course ${courseId}...`);
           await db.collection('courses').doc(courseId).update({
             generationProgress: 10 + (attempts * 2),
-            statusMessage: attempts > 1 ? `Retrying skeleton generation (Attempt ${attempts})...` : 'Generating course skeleton structure...',
+            statusMessage: attempts > 1 ? `Refining skeleton structure (Multi-Agent Pass ${attempts})...` : 'Initiating Multi-Agent Curriculum Pipeline...',
             updatedAt: new Date().toISOString()
           });
 
           const skeletonPrompt = `Create a high-level syllabus course structure for a university course on "${courseName}".
           
           AUTHORITATIVE SUBJECT: ${domainInference.primaryDomain}
-          REQUIRED CORE TOPICS: ${domainInference.coreRequiredTopics.join(', ')}
+          REQUIRED CORE TOPICS (FOR COVERAGE): ${domainInference.coreRequiredTopics.join(', ')}
+          GROUNDING REFERENCES: ${domainInference.groundingReferences.join(', ')}
           
           ${scopeDirective}
           Level: ${level}
@@ -4480,76 +4511,117 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
           ${outline ? `Additional Outlines/Topics: ${outline}` : ''}
           ${sourceText ? `Based on source context:\n${sourceText.substring(0, 4000)}` : ''}
 
+          [NEW REQUIREMENT - BLOOM'S TAXONOMY]:
+          - Generate 5-8 measurable "learningOutcomes" with Bloom's taxonomy levels.
+          - Assign relevant "learningOutcomeIds" to each module to show alignment.
+
           Return strictly a JSON object matching this schema:
           {
-            "pedagogicalReasoning": "Your step-by-step pedagogical strategy for this syllabus structure",
+            "pedagogicalReasoning": "Your strategy grounded in ${domainInference.accreditationStandards.join(' and ')}",
             "description": "Short overall description of the course",
+            "learningOutcomes": [{"outcome": "Students will...", "bloomLevel": "Understand"}],
             "modules": [
               {
                 "title": "Module Title",
                 "topics": ["Key Topic 1", "Key Topic 2"],
-                "quizTopics": ["Concept 1", "Concept 2"]
+                "quizTopics": ["Concept 1", "Concept 2"],
+                "learningOutcomeIds": ["index of outcome"]
               }
             ]
           }`;
 
-          skeleton = await completeWithProviderJSON({
-            type: 'skeleton',
-            messages: [
-              { 
-                role: 'system', 
-                content: `You are an expert university curriculum designer in ${domainInference.primaryDomain}. You output strictly valid JSON with no preamble. [Chain of Thought Instruction]: Perform deep pedagogical planning inside <think>...</think> tags first.\n\n${latexInstruction}` 
-              },
-              { role: 'user', content: skeletonPrompt }
-            ],
-            schema: CourseSkeletonSchema,
-            requestedProvider,
-            complexity: 'high'
-          });
+          // DYNAMIC AGENT SELECTION FROM LIVE SYSTEM CONFIG
+          const designerAProvider = requestedProvider || routingConfig.skeleton || 'groq';
+          const designerBProvider = routingConfig.deep_reasoning || 'nvidia';
+          const auditorProvider = routingConfig.vision || routingConfig.chat || 'gemini_direct';
 
-          // Verification Pass
-          console.log(`[Coordinated Gen] Verifying skeleton for ${courseId}...`);
-          const verificationPrompt = `You are a university academic auditor. 
-          Evaluate if the following generated course syllabus correctly teaches the academic domain described in the course title.
+          // SELF-CONSISTENCY: Generate twice independently using dynamic agents
+          console.log(`[Coordinated Gen] Self-Consistency Check: Generating dual skeletons via ${designerAProvider} and ${designerBProvider}...`);
+          const [skeletonA, skeletonB] = await Promise.all([
+            completeWithProviderJSON({
+              type: 'skeleton',
+              messages: [
+                { role: 'system', content: `You are Curriculum Designer A. Expert in ${domainInference.primaryDomain}.\n\n${latexInstruction}` },
+                { role: 'user', content: skeletonPrompt }
+              ],
+              schema: CourseSkeletonSchema,
+              requestedProvider: designerAProvider,
+              complexity: 'high'
+            }),
+            completeWithProviderJSON({
+              type: 'skeleton',
+              messages: [
+                { role: 'system', content: `You are Curriculum Designer B. Expert in ${domainInference.primaryDomain}.\n\n${latexInstruction}` },
+                { role: 'user', content: skeletonPrompt }
+              ],
+              schema: CourseSkeletonSchema,
+              requestedProvider: designerBProvider,
+              complexity: 'high'
+            })
+          ]);
 
-          Course Title: "${courseName}"
+          // MULTI-AGENT VERIFICATION VIA DYNAMIC AUDITOR
+          console.log(`[Coordinated Gen] Multi-Agent Audit: Invoking Auditor via ${auditorProvider}...`);
+          const auditPrompt = `Perform a rigorous audit of the generated curriculum skeletons (A and B) for "${courseName}".
+          
           Target Domain: "${domainInference.primaryDomain}"
+          Required Topics: ${domainInference.coreRequiredTopics.join(', ')}
 
-          Generated Syllabus:
-          ${JSON.stringify(skeleton.modules, null, 2)}
+          Skeleton A Modules: ${skeletonA.modules.map((m: any) => m.title).join(', ')}
+          Skeleton B Modules: ${skeletonB.modules.map((m: any) => m.title).join(', ')}
 
-          Criteria:
-          1. Does the syllabus cover core concepts native to "${courseName}" and "${domainInference.primaryDomain}"?
-          2. Does it avoid falling back to generic placeholder topics (like basic math or general science) that are not the primary focus of "${courseName}"?
+          [AGENT 1: SUBJECT-MATTER CRITIC TASK]:
+          - Check if the technical domain is accurately covered.
+          - Calculate a Coverage Score (0-100).
+          - Identify any generic filler hallucinations.
+
+          [AGENT 2: PEDAGOGY REVIEWER TASK]:
+          - Check for Bloom's taxonomy alignment.
+          - Identify sequencing errors (e.g. teaching an advanced concept before its prerequisite).
+          - Identify prerequisite gaps in the knowledge graph.
+
+          [AGENT 3: CONSISTENCY AUDITOR TASK]:
+          - Compare A and B. Calculate a Consistency Score (0-100).
+          - If they differ wildly, flag for low confidence.
 
           Return strictly a JSON object:
           {
             "isValid": true/false,
-            "reasoning": "Detailed explanation",
+            "reasoning": "Combined audit summary",
             "missingTopics": ["Topic 1"],
-            "genericFillerDetected": true/false
+            "genericFillerDetected": true/false,
+            "coverageScore": 85,
+            "pedagogyAudit": {
+              "isSequencingValid": true/false,
+              "prerequisiteGaps": ["Concept A needed before B"],
+              "workloadAssessment": "Brief workload comment"
+            },
+            "consistencyScore": 90,
+            "preferredSkeleton": "A" or "B"
           }`;
 
-          const verification = await completeWithProviderJSON({
+          const auditResult = await completeWithProviderJSON({
             type: 'skeleton',
-            messages: [{ role: 'user', content: verificationPrompt }],
-            schema: VerificationResultSchema,
-            requestedProvider,
-            complexity: 'standard'
+            messages: [{ role: 'user', content: auditPrompt }],
+            schema: VerificationResultSchema.extend({ preferredSkeleton: z.enum(['A', 'B']) }),
+            requestedProvider: auditorProvider,
+            complexity: 'high'
           });
 
-          if (verification.isValid) {
-            console.log(`[Coordinated Gen] Skeleton verified successfully on attempt ${attempts}.`);
+          if (auditResult.isValid && auditResult.coverageScore >= 80 && auditResult.consistencyScore >= 70 && auditResult.pedagogyAudit?.isSequencingValid) {
+            console.log(`[Coordinated Gen] Multi-Agent Pipeline SUCCESS on attempt ${attempts}. Score: ${auditResult.coverageScore}%, Consistency: ${auditResult.consistencyScore}%`);
+            skeleton = auditResult.preferredSkeleton === 'A' ? skeletonA : skeletonB;
+            skeleton.verification = auditResult;
             break;
           } else {
-            console.warn(`[Coordinated Gen] Skeleton failed verification on attempt ${attempts}: ${verification.reasoning}`);
+            console.warn(`[Coordinated Gen] Multi-Agent REJECTION on attempt ${attempts}: ${auditResult.reasoning}`);
             if (attempts === MAX_ATTEMPTS) {
-              throw new Error(`Zero-Fallback Policy: Failed to generate a valid syllabus for "${courseName}" after ${MAX_ATTEMPTS} attempts. [Audit Result]: ${verification.reasoning}`);
+              throw new Error(`Zero-Fallback Policy: Multi-Agent Pipeline failed to reach consensus for "${courseName}" after ${MAX_ATTEMPTS} attempts. [Audit]: ${auditResult.reasoning}`);
             }
           }
         }
 
-        console.log(`[Coordinated Gen] Skeleton generated and verified with ${skeleton.modules.length} modules.`);
+        console.log(`[Coordinated Gen] Skeleton generated, verified, and scored (${skeleton.verification.coverageScore}%) with ${skeleton.modules.length} modules.`);
         
         const syllabus = skeleton.modules.map((m: any, mIdx: number) => ({
           id: `m${mIdx + 1}`,
@@ -4563,9 +4635,16 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
         await db.collection('courses').doc(courseId).update({
           description: skeleton.description || `A comprehensive course on ${courseName}.`,
           syllabus: syllabus,
+          learningOutcomes: skeleton.learningOutcomes || [],
           primaryDomain: domainInference.primaryDomain,
+          coverageScore: skeleton.verification.coverageScore,
+          consistencyScore: skeleton.verification.consistencyScore,
+          pedagogyAudit: skeleton.verification.pedagogyAudit,
+          accreditationStandards: domainInference.accreditationStandards,
+          groundingReferences: domainInference.groundingReferences,
           generationProgress: 20,
-          statusMessage: 'Syllabus skeleton created and verified. Starting parallel content generation...',
+          needsApproval: true, // Human-in-the-loop requirement
+          statusMessage: `Syllabus verified (Score: ${skeleton.verification.coverageScore}%, Consistency: ${skeleton.verification.consistencyScore}%). Starting parallel content generation...`,
           updatedAt: new Date().toISOString()
         });
 
@@ -4609,6 +4688,8 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
               
               SUBJECT DOMAIN: ${domainInference.primaryDomain}
               ${scopeDirective}
+              TARGET LEARNING OUTCOMES: ${moduleSkeleton.learningOutcomeIds?.map((id: string) => skeleton.learningOutcomes[parseInt(id)]?.outcome).filter(Boolean).join('; ') || 'General Domain Mastery'}
+              
               Target Audience / Department: ${targetDept}
               Level: ${level}
               Tone: ${tone}
@@ -4619,10 +4700,11 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
               Pedagogical Directives:
               - ${comparisonInstruction}
               - ${caseStudyInstruction}
+              - Align content strictly with the targeted Learning Outcomes.
 
               Return strictly a JSON object matching this schema:
               {
-                "pedagogicalReasoning": "Your step-by-step pedagogical breakdown for this lesson topic",
+                "pedagogicalReasoning": "How this lesson satisfies the targeted learning outcomes",
                 "title": "Lesson Title",
                 "content": "Full detailed markdown lesson text. Include clear explanations, equations, proofs, and bullet points. Enforce high scientific rigor."
               }`;
@@ -4815,13 +4897,14 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
           console.warn('[Coordinated Gen] Failed compiling syllabus array for main doc:', sErr);
         }
 
-        // STEP 4: Generation Complete
-        console.log(`[Coordinated Gen] Finished background worker for course ${courseId}!`);
+        // STEP 4: Generation Complete (Set to Pending Approval)
+        console.log(`[Coordinated Gen] Finished background worker for course ${courseId}! Setting to pending_approval...`);
         await db.collection('courses').doc(courseId).update({
           syllabus: compiledSyllabus,
           generationStatus: 'completed',
           generationProgress: 100,
-          statusMessage: 'Course generated successfully!',
+          statusMessage: 'Course generated and verified. Awaiting instructor approval before publishing.',
+          published: false, // Explicitly false until approved
           updatedAt: new Date().toISOString()
         });
 
@@ -4841,6 +4924,91 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
     console.error('Coordinated Generate Error:', error);
     res.status(500).json({ error: 'Failed to start coordinated generation.' });
   }
+});
+
+app.post('/api/course/:courseId/publish', verifyAuth, async (req, res) => {
+  const { courseId } = req.params;
+  const app = getAdminApp();
+  if (!app) return res.status(500).json({ error: 'Database service unavailable.' });
+  const db = app.firestore();
+
+  try {
+    const courseRef = db.collection('courses').doc(courseId);
+    const doc = await courseRef.get();
+    
+    if (!doc.exists) {
+      return res.status(404).json({ error: 'Course not found.' });
+    }
+
+    await courseRef.update({
+      published: true,
+      needsApproval: false,
+      updatedAt: new Date().toISOString(),
+      statusMessage: 'Course published successfully after human review.'
+    });
+
+    res.json({ success: true, message: `Course ${courseId} published.` });
+  } catch (error: any) {
+    console.error('Publish Error:', error);
+    res.status(500).json({ error: 'Failed to publish course.' });
+  }
+});
+
+app.post('/api/admin/regression-test', verifyAuth, async (req, res) => {
+  const { testCases } = req.body; // Array of { id, title, expectedDomain }
+  if (!testCases || !Array.isArray(testCases)) {
+    return res.status(400).json({ error: 'Invalid testCases' });
+  }
+
+  const app = getAdminApp();
+  if (!app) return res.status(500).json({ error: 'Database service unavailable.' });
+  const db = app.firestore();
+
+  const results = [];
+  
+  for (const tc of testCases) {
+    const testResult: any = {
+      testId: tc.id,
+      courseTitle: tc.title,
+      expectedDomain: tc.expectedDomain,
+      timestamp: new Date().toISOString(),
+      status: 'pending'
+    };
+
+    try {
+      console.log(`[Regression Test] Testing: ${tc.title}...`);
+      
+      const domainPrompt = `Analyze the course title "${tc.title}". Identify the primary academic domain. Return strictly JSON: { "primaryDomain": "..." }`;
+      const domainInference = await completeWithProviderJSON({
+        type: 'skeleton',
+        messages: [{ role: 'user', content: domainPrompt }],
+        requestedProvider: 'groq',
+        complexity: 'standard'
+      });
+
+      testResult.actualDomain = domainInference.primaryDomain;
+      
+      const isMatch = domainInference.primaryDomain.toLowerCase().includes(tc.expectedDomain.toLowerCase()) || 
+                      tc.expectedDomain.toLowerCase().includes(domainInference.primaryDomain.toLowerCase());
+      
+      testResult.status = isMatch ? 'passed' : 'failed';
+      if (!isMatch) {
+        testResult.error = `Domain mismatch: Expected "${tc.expectedDomain}", got "${domainInference.primaryDomain}"`;
+      }
+      
+      results.push(testResult);
+      
+      // Save result to firestore for audit
+      await db.collection('system_tests').doc(tc.id).set(testResult);
+      
+    } catch (err: any) {
+      testResult.status = 'failed';
+      testResult.error = err.message;
+      results.push(testResult);
+    }
+  }
+
+  res.json({ success: true, results });
 });
 
 // --- Study Architect & Vision-to-Quiz Endpoints ---
