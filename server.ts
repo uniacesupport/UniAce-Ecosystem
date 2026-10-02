@@ -2008,6 +2008,19 @@ const StudySessionSchema = z.object({
   }))
 });
 
+const DomainInferenceSchema = z.object({
+  primaryDomain: z.string(),
+  subDisciplines: z.array(z.string()),
+  coreRequiredTopics: z.array(z.string())
+});
+
+const VerificationResultSchema = z.object({
+  isValid: z.boolean(),
+  reasoning: z.string(),
+  missingTopics: z.array(z.string()).optional().default([]),
+  genericFillerDetected: z.boolean()
+});
+
 const LearningProfileSchema = z.object({
   strengths: z.array(z.string()).default([]),
   weaknesses: z.array(z.string()).default([])
@@ -4340,21 +4353,21 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
 
   if (normalizedScope === 'GLOBAL' || normalizedScope === 'PUBLIC' || normalizedScope === 'ALL') {
     targetDept = 'General University Studies (All Students)';
-    scopeDirective = `CRITICAL SCOPE DIRECTIVE (GLOBAL / UNIVERSAL COURSE):
-- This course is marked for GLOBAL / UNIVERSAL audience across ALL university departments and majors.
-- Do NOT hijack or restrict lessons, case studies, or topics to any specific engineering or science sub-field (such as Materials Science, Metallurgy, Aerospace, Civil Engineering, etc.).
-- Examples, derivations, and case studies MUST be universally applicable general academic frameworks suitable for any undergraduate student.`;
+    scopeDirective = `AUDIENCE SCOPE: GLOBAL / UNIVERSAL (Cross-departmental).
+- Focus: Assume a mixed audience from various majors.
+- Requirement: Teach the core academic domain of "${courseName}" at an introductory level suitable for non-specialists.
+- Strategy: Use universally accessible analogies and diverse examples, but NEVER compromise on the core subject matter of "${courseName}".`;
   } else if (normalizedScope === 'FACULTY') {
     const facultyNames = selectedFaculties.length > 0 ? selectedFaculties.join(', ') : 'Engineering & Technology';
     targetDept = `Faculty-Wide (${facultyNames})`;
-    scopeDirective = `CRITICAL SCOPE DIRECTIVE (FACULTY-WIDE COURSE):
-- This course applies across the entire Faculty of ${facultyNames}.
-- Keep examples and case studies representative of the general Faculty as a whole.
-- Do NOT narrow or hijack the lessons into a single specific sub-department (e.g., do NOT hijack a general Engineering course into Materials Science or Civil Engineering unless explicitly requested).`;
+    scopeDirective = `AUDIENCE SCOPE: FACULTY-WIDE (${facultyNames}).
+- Focus: Students within the Faculty of ${facultyNames}.
+- Requirement: Teach the core academic domain of "${courseName}" using terminology and case studies relevant to ${facultyNames} students.`;
   } else {
     targetDept = rawDept || (selectedDepartments.length > 0 ? selectedDepartments.join(', ') : 'Undergraduate Studies');
-    scopeDirective = `CRITICAL SCOPE DIRECTIVE (DEPARTMENTAL COURSE):
-- Target Department: ${targetDept}. All topics, lessons, and case studies MUST strictly reflect the specific domain of ${targetDept} within "${courseName}".`;
+    scopeDirective = `AUDIENCE SCOPE: DEPARTMENTAL (${targetDept}).
+- Focus: Specialists in ${targetDept}.
+- Requirement: Use rigorous, domain-specific terminology and advanced case studies strictly native to the "${courseName}" field within ${targetDept}.`;
   }
 
   const app = getAdminApp();
@@ -4411,54 +4424,132 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
         // Purge any stale subcollections from previous runs on this course ID
         await purgeCourseSubcollections(db, courseId);
 
-        // STEP 1: Generate Course Skeleton with Schema Validation
-        console.log(`[Coordinated Gen] Generating Skeleton for course ${courseId}...`);
+        // STEP 0: Infer Academic Domain
+        console.log(`[Coordinated Gen] Inferring domain for ${courseName}...`);
         await db.collection('courses').doc(courseId).update({
-          generationProgress: 10,
-          statusMessage: 'Generating course skeleton structure...',
+          generationProgress: 7,
+          statusMessage: 'Inferring academic domain and core topics...',
           updatedAt: new Date().toISOString()
         });
 
-        const skeletonPrompt = `Create a high-level syllabus course structure for a university course on "${courseName}".
-        ${scopeDirective}
-        Target Audience / Department: ${targetDept}
-        Level: ${level}
-        Tone: ${tone}
-        Depth: ${depth}
-        Academic Standard: ${academicStandard}
-        ${outline ? `Additional Outlines/Topics: ${outline}` : ''}
-        ${sourceText ? `Based on source context:\n${sourceText.substring(0, 4000)}` : ''}
-
-        Return strictly a JSON object matching this schema:
+        const domainPrompt = `Analyze the course title "${courseName}" and code "${courseId}".
+        Identify the primary academic domain and sub-disciplines.
+        Identify 5-10 core topics that MUST be covered in a university-level course of this name.
+        
+        Return strictly a JSON object:
         {
-          "pedagogicalReasoning": "Your step-by-step pedagogical strategy for this syllabus structure",
-          "description": "Short overall description of the course",
-          "modules": [
-            {
-              "title": "Module Title",
-              "topics": ["Key Topic 1", "Key Topic 2"],
-              "quizTopics": ["Concept 1", "Concept 2"]
-            }
-          ]
+          "primaryDomain": "e.g. Materials Science",
+          "subDisciplines": ["e.g. Crystallography", "Thermodynamics"],
+          "coreRequiredTopics": ["e.g. Crystal Lattices", "Phase Diagrams"]
         }`;
 
-        const skeletonMessages = [
-          { 
-            role: 'system', 
-            content: `You are an expert university curriculum designer in ${targetDept}. You output strictly valid JSON with no preamble. Put your step-by-step reasoning inside the "pedagogicalReasoning" field in JSON.\n\n${latexInstruction}` 
-          },
-          { role: 'user', content: skeletonPrompt }
-        ];
-
-        const skeleton = await completeWithProviderJSON({
+        const domainInference = await completeWithProviderJSON({
           type: 'skeleton',
-          messages: skeletonMessages,
-          schema: CourseSkeletonSchema,
+          messages: [{ role: 'user', content: domainPrompt }],
+          schema: DomainInferenceSchema,
           requestedProvider,
-          complexity: 'high'
+          complexity: 'standard'
         });
 
-        console.log(`[Coordinated Gen] Skeleton generated with ${skeleton.modules.length} modules.`);
+        console.log(`[Coordinated Gen] Domain inferred: ${domainInference.primaryDomain}`);
+
+        // STEP 1: Generate & Verify Course Skeleton
+        let skeleton: any = null;
+        let attempts = 0;
+        const MAX_ATTEMPTS = 3;
+
+        while (attempts < MAX_ATTEMPTS) {
+          attempts++;
+          console.log(`[Coordinated Gen] Generating Skeleton attempt ${attempts} for course ${courseId}...`);
+          await db.collection('courses').doc(courseId).update({
+            generationProgress: 10 + (attempts * 2),
+            statusMessage: attempts > 1 ? `Retrying skeleton generation (Attempt ${attempts})...` : 'Generating course skeleton structure...',
+            updatedAt: new Date().toISOString()
+          });
+
+          const skeletonPrompt = `Create a high-level syllabus course structure for a university course on "${courseName}".
+          
+          AUTHORITATIVE SUBJECT: ${domainInference.primaryDomain}
+          REQUIRED CORE TOPICS: ${domainInference.coreRequiredTopics.join(', ')}
+          
+          ${scopeDirective}
+          Level: ${level}
+          Tone: ${tone}
+          Depth: ${depth}
+          Academic Standard: ${academicStandard}
+          ${outline ? `Additional Outlines/Topics: ${outline}` : ''}
+          ${sourceText ? `Based on source context:\n${sourceText.substring(0, 4000)}` : ''}
+
+          Return strictly a JSON object matching this schema:
+          {
+            "pedagogicalReasoning": "Your step-by-step pedagogical strategy for this syllabus structure",
+            "description": "Short overall description of the course",
+            "modules": [
+              {
+                "title": "Module Title",
+                "topics": ["Key Topic 1", "Key Topic 2"],
+                "quizTopics": ["Concept 1", "Concept 2"]
+              }
+            ]
+          }`;
+
+          skeleton = await completeWithProviderJSON({
+            type: 'skeleton',
+            messages: [
+              { 
+                role: 'system', 
+                content: `You are an expert university curriculum designer in ${domainInference.primaryDomain}. You output strictly valid JSON with no preamble. [Chain of Thought Instruction]: Perform deep pedagogical planning inside <think>...</think> tags first.\n\n${latexInstruction}` 
+              },
+              { role: 'user', content: skeletonPrompt }
+            ],
+            schema: CourseSkeletonSchema,
+            requestedProvider,
+            complexity: 'high'
+          });
+
+          // Verification Pass
+          console.log(`[Coordinated Gen] Verifying skeleton for ${courseId}...`);
+          const verificationPrompt = `You are a university academic auditor. 
+          Evaluate if the following generated course syllabus correctly teaches the academic domain described in the course title.
+
+          Course Title: "${courseName}"
+          Target Domain: "${domainInference.primaryDomain}"
+
+          Generated Syllabus:
+          ${JSON.stringify(skeleton.modules, null, 2)}
+
+          Criteria:
+          1. Does the syllabus cover core concepts native to "${courseName}" and "${domainInference.primaryDomain}"?
+          2. Does it avoid falling back to generic placeholder topics (like basic math or general science) that are not the primary focus of "${courseName}"?
+
+          Return strictly a JSON object:
+          {
+            "isValid": true/false,
+            "reasoning": "Detailed explanation",
+            "missingTopics": ["Topic 1"],
+            "genericFillerDetected": true/false
+          }`;
+
+          const verification = await completeWithProviderJSON({
+            type: 'skeleton',
+            messages: [{ role: 'user', content: verificationPrompt }],
+            schema: VerificationResultSchema,
+            requestedProvider,
+            complexity: 'standard'
+          });
+
+          if (verification.isValid) {
+            console.log(`[Coordinated Gen] Skeleton verified successfully on attempt ${attempts}.`);
+            break;
+          } else {
+            console.warn(`[Coordinated Gen] Skeleton failed verification on attempt ${attempts}: ${verification.reasoning}`);
+            if (attempts === MAX_ATTEMPTS) {
+              throw new Error(`Zero-Fallback Policy: Failed to generate a valid syllabus for "${courseName}" after ${MAX_ATTEMPTS} attempts. [Audit Result]: ${verification.reasoning}`);
+            }
+          }
+        }
+
+        console.log(`[Coordinated Gen] Skeleton generated and verified with ${skeleton.modules.length} modules.`);
         
         const syllabus = skeleton.modules.map((m: any, mIdx: number) => ({
           id: `m${mIdx + 1}`,
@@ -4472,8 +4563,9 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
         await db.collection('courses').doc(courseId).update({
           description: skeleton.description || `A comprehensive course on ${courseName}.`,
           syllabus: syllabus,
+          primaryDomain: domainInference.primaryDomain,
           generationProgress: 20,
-          statusMessage: 'Syllabus skeleton created. Starting parallel content generation...',
+          statusMessage: 'Syllabus skeleton created and verified. Starting parallel content generation...',
           updatedAt: new Date().toISOString()
         });
 
@@ -4509,12 +4601,13 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
               const topic = topics[lIndex];
               const lessonId = `m${mIndex + 1}-l${lIndex + 1}`;
 
-              const comparisonInstruction = `Structure complex topics with clear Comparison Tables specifically relevant to "${courseName}" and "${targetDept}" (e.g., contrasting core theories, methodologies, or frameworks native to "${targetDept}").`;
-              const caseStudyInstruction = `Include a comprehensive real-world case study or empirical application strictly native to "${courseName}" in "${targetDept}".`;
-              const negativeConstraintInstruction = `CRITICAL NEGATIVE CONSTRAINT: Strictly avoid mentioning materials science, material properties, crystalline lattices, or metallurgical failure analysis UNLESS "${targetDept}" or "${courseName}" is explicitly Materials Science or Metallurgy.`;
+              const comparisonInstruction = `Structure complex topics with clear Comparison Tables specifically relevant to "${courseName}" and "${domainInference.primaryDomain}".`;
+              const caseStudyInstruction = `Include a comprehensive real-world case study or empirical application strictly native to "${courseName}" in "${domainInference.primaryDomain}".`;
 
               const lessonPrompt = `Write a rigorous, comprehensive, university-level study guide/lesson on the topic: "${topic}"
               within the module "${moduleSkeleton.title}" of the course "${courseName}".
+              
+              SUBJECT DOMAIN: ${domainInference.primaryDomain}
               ${scopeDirective}
               Target Audience / Department: ${targetDept}
               Level: ${level}
@@ -4526,7 +4619,6 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
               Pedagogical Directives:
               - ${comparisonInstruction}
               - ${caseStudyInstruction}
-              - ${negativeConstraintInstruction}
 
               Return strictly a JSON object matching this schema:
               {
@@ -4538,7 +4630,7 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
               const lessonMessages = [
                 { 
                   role: 'system', 
-                  content: `You are an expert university professor in ${targetDept}. You write rigorous educational content. You output strictly valid JSON with no preamble. Put your step-by-step reasoning inside the "pedagogicalReasoning" field in JSON.\n\n${latexInstruction}` 
+                  content: `You are an expert university professor in ${domainInference.primaryDomain}. You write rigorous educational content. You output strictly valid JSON with no preamble. Put your step-by-step reasoning inside the "pedagogicalReasoning" field in JSON.\n\n${latexInstruction}` 
                 },
                 { role: 'user', content: lessonPrompt }
               ];
