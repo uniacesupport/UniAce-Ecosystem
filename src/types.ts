@@ -8,6 +8,19 @@ export type CourseId = string;
 
 export type CourseScope = 'GLOBAL' | 'FACULTY' | 'DEPARTMENT';
 
+export interface CourseObjective {
+  outcome: string;
+  bloomLevel?: 'Remember' | 'Understand' | 'Apply' | 'Analyze' | 'Evaluate' | 'Create';
+}
+
+export interface CourseProvenance {
+  sources: string[];
+  modelVersion: string;
+  promptVersion: string;
+  generatedAt: string;
+  groundingScore?: number;
+}
+
 export interface Course {
   id: CourseId;
   title: string;
@@ -15,13 +28,20 @@ export interface Course {
   syllabus: Module[];
   formulas?: Formula[];
   department: Department;
-  objectives?: string[];
+  objectives?: (string | CourseObjective)[];
+  learningOutcomes?: CourseObjective[];
   departments?: Department[];
   faculties?: string[];
   scope?: CourseScope;
   level?: Level;
   semester?: Semester;
+  creditUnits?: number;
   academicStandard?: string;
+  primaryDomain?: string;
+  coverageScore?: number;
+  consistencyScore?: number;
+  confidenceState?: 'verified' | 'needs_review' | 'failed';
+  provenance?: CourseProvenance;
   deleted?: boolean;
   deletedAt?: string;
 }

@@ -524,6 +524,7 @@ function AppContent() {
             onViewSelect={handleViewSelect}
             activeCourseId={activeCourseId}
             syllabus={syllabus}
+            objectives={activeCourse?.learningOutcomes || activeCourse?.objectives}
             isEnrolled={activeCourseId ? (progress.enrolledCourses || []).includes(activeCourseId) : false}
             onEnroll={() => {
               if (activeCourseId && activeCourse) {

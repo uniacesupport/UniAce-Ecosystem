@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { ArrowRight, GraduationCap, ArrowLeft, Wand2, Lock, Book, Activity } from 'lucide-react';
+import { ArrowRight, GraduationCap, ArrowLeft, Wand2, Lock, Book, Activity, Sparkles, CheckCircle2 } from 'lucide-react';
 import { motion } from 'motion/react';
-import { Module, CourseId } from '../types';
+import { Module, CourseId, CourseObjective } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { usePremiumStatus } from '../hooks/usePremiumStatus';
 import { LogService } from '../services/logService';
@@ -13,7 +13,7 @@ interface CourseSyllabusProps {
   onViewSelect?: (view: any) => void;
   activeCourseId: CourseId | null;
   syllabus: Module[];
-  objectives?: string[];
+  objectives?: (string | CourseObjective)[];
   isEnrolled: boolean;
   onEnroll: () => void;
   onUnenroll?: () => void;
@@ -220,22 +220,52 @@ export default function CourseSyllabus({
           </div>
         </section>
 
-        {/* Syllabus Summary */}
-        <section className="bg-slate-900 dark:bg-blue-900 text-white p-6 sm:p-10 rounded-[2rem] sm:rounded-[3rem] space-y-6 sm:space-y-8 border dark:border-blue-800">
+        {/* Syllabus Summary / Learning Outcomes */}
+        <section className="bg-slate-900 dark:bg-blue-900 text-white p-6 sm:p-10 rounded-[2rem] sm:rounded-[3rem] space-y-6 sm:space-y-8 border dark:border-blue-800 shadow-xl">
           <div className="space-y-2">
-            <h3 className="text-xl sm:text-2xl font-bold">Course Objectives</h3>
-            <p className="text-slate-400 dark:text-blue-200 text-sm sm:text-base">By the end of this course, students should be able to:</p>
+            <div className="flex items-center gap-2 text-emerald-400 font-semibold text-xs uppercase tracking-wider">
+              <Sparkles size={16} />
+              <span>Academic Competencies</span>
+            </div>
+            <h3 className="text-xl sm:text-2xl font-bold">Course Learning Objectives</h3>
+            <p className="text-slate-400 dark:text-blue-200 text-sm sm:text-base">By the end of this course, students will be able to demonstrate mastery in:</p>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-            {(objectives || []).map((objective, index) => (
-              <div key={index} className="flex gap-4">
-                <div className="bg-emerald-500/20 text-emerald-400 p-2 rounded-lg h-fit">
-                  <GraduationCap size={20} />
-                </div>
-                <p className="text-slate-300 dark:text-blue-100 text-sm">{objective}</p>
+          
+          {(objectives && objectives.length > 0) ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+              {objectives.map((item, index) => {
+                const isObj = item && typeof item === 'object';
+                const text = isObj ? (item as any).outcome || (item as any).title || (item as any).text : String(item);
+                const bloom = isObj ? (item as any).bloomLevel : null;
+                
+                return (
+                  <div key={index} className="flex gap-4 p-4 rounded-2xl bg-white/5 border border-white/10 hover:border-white/20 transition-all">
+                    <div className="bg-emerald-500/20 text-emerald-400 p-2.5 rounded-xl h-fit shrink-0">
+                      <GraduationCap size={20} />
+                    </div>
+                    <div className="space-y-1.5 flex-1">
+                      {bloom && (
+                        <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                          {bloom}
+                        </span>
+                      )}
+                      <p className="text-slate-200 dark:text-blue-100 text-sm leading-relaxed">{text}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="p-8 rounded-2xl bg-white/5 border border-white/10 text-center space-y-3">
+              <div className="w-12 h-12 mx-auto rounded-full bg-slate-800 flex items-center justify-center text-slate-400">
+                <Book size={24} />
               </div>
-            ))}
-          </div>
+              <p className="text-slate-300 font-medium">Learning Outcomes Being Formulated</p>
+              <p className="text-xs text-slate-400 max-w-md mx-auto">
+                The detailed academic objectives and Bloom's taxonomy outcomes for this syllabus are being synchronized. Explore the modules above to begin learning.
+              </p>
+            </div>
+          )}
         </section>
       </div>
 

@@ -1126,6 +1126,7 @@ export default function AdminDashboard() {
           selectedDepartments: courseScope === 'DEPARTMENT' ? selectedDepartments : [],
           approvedModules: courseSkeleton.modules,
           domainBrief: courseSkeleton.domainBrief,
+          learningOutcomes: courseSkeleton.learningOutcomes,
           coverageScore: courseSkeleton.coverageScore,
           groundingReferences: courseSkeleton.groundingReferences
         })

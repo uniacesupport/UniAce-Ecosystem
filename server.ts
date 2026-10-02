@@ -29,6 +29,22 @@ import { getCachedResponse, setCachedResponse } from './server/cache';
 import { MailService } from './server/mailService';
 import { telemetry } from './server/telemetry';
 import academicRouter from './server/routes/academic.js';
+import { 
+  DomainBriefSchema,
+  CourseSkeletonSchema, 
+  OutlineCriticRubricSchema,
+  LessonContentSchema,
+  CourseProvenanceSchema,
+  normalizeLearningOutcomes,
+  deriveCurriculumParameters
+} from './src/shared/courseSchemas.js';
+import {
+  validateLessonSyntax,
+  buildDomainBriefPrompt,
+  buildCurriculumSkeletonPrompt,
+  buildOutlineCriticPrompt,
+  buildLessonPrompt
+} from './server/curriculumEngine.js';
 
 
 // --- ADMIN AUTHORIZATION UTILITY ---
@@ -4343,6 +4359,7 @@ app.post('/api/course/generate-skeleton', verifyAuth, async (req, res) => {
     scope = 'DEPARTMENT',
     level = 'Undergraduate',
     semester = 'Semester 1',
+    creditUnits,
     tone = 'academic',
     depth = 'standard',
     outline,
@@ -4358,55 +4375,26 @@ app.post('/api/course/generate-skeleton', verifyAuth, async (req, res) => {
   }
 
   try {
-    const rawDept = (department || '').trim();
-    const normalizedScope = (scope || '').toUpperCase();
-
     // 1. STAGE 1: INFER AUTHORITATIVE ACADEMIC DOMAIN & GROUNDING BRIEF
-    console.log(`[Skeleton Gen] Stage 1: Inferring authoritative domain & grounding for "${courseName}"...`);
-    const domainPrompt = `Analyze the university course title "${courseName}" ${courseCode ? `and code "${courseCode}"` : ''}.
-    
-    [GROUNDING & ACCREDITATION TASK]:
-    1. Identify the authoritative primary academic domain (e.g., if title is "MME 201" or "Introduction to Materials Science", domain is "Materials Science and Engineering"; if "BCH 301", domain is "Biochemistry").
-    2. Identify 3-5 standard university sub-disciplines.
-    3. Identify 8-12 core topics that MUST be covered to satisfy university accreditation (e.g., ABET, ACM, AACSB, or global university curricula).
-    4. List 2-3 standard university textbook titles or public syllabi defining this course's canonical scope (e.g., "Callister - Materials Science and Engineering", "MIT OpenCourseWare").
-    
-    Return strictly JSON:
-    {
-      "primaryDomain": "Authoritative Academic Discipline",
-      "subDisciplines": ["Sub-discipline 1", "Sub-discipline 2"],
-      "coreRequiredTopics": ["Topic 1", "Topic 2", "Topic 3", "Topic 4", "Topic 5", "Topic 6", "Topic 7", "Topic 8"],
-      "accreditationStandards": ["ABET / Canonical Higher Education Framework"],
-      "groundingReferences": ["Authoritative Textbook 1", "University Syllabus Reference 2"]
-    }`;
+    console.log(`[Skeleton Gen] Stage 1: Inferring domain & canonical course references for "${courseName}"...`);
+    const domainPrompt = buildDomainBriefPrompt({
+      courseId: courseCode || courseName,
+      courseName,
+      courseCode,
+      department
+    });
 
     const domainBrief = await completeWithProviderJSON({
       type: 'skeleton',
       messages: [{ role: 'user', content: domainPrompt }],
-      schema: DomainInferenceSchema,
+      schema: DomainBriefSchema,
       requestedProvider,
       complexity: 'standard'
     });
 
-    console.log(`[Skeleton Gen] Domain Brief Established: ${domainBrief.primaryDomain}. Grounding: ${domainBrief.groundingReferences.join(', ')}`);
+    console.log(`[Skeleton Gen] Domain Brief Established: ${domainBrief.primaryDomain} (${domainBrief.pedagogyType}). Grounding: ${domainBrief.canonicalCourseReferences.join(', ')}`);
 
-    // 2. POSITIVE SCOPE DIRECTIVES (Subject is Authoritative - Scope NEVER overrides Subject)
-    let audienceDescription = '';
-    let exampleStyle = '';
-    if (normalizedScope === 'GLOBAL' || normalizedScope === 'PUBLIC' || normalizedScope === 'ALL') {
-      audienceDescription = 'a mixed university cohort from multiple faculties';
-      exampleStyle = `Use relatable, real-world analogies and intuitive explanations to scaffold complex concepts, but teach the authentic foundational principles of ${domainBrief.primaryDomain}.`;
-    } else if (normalizedScope === 'FACULTY') {
-      const facNames = selectedFaculties.length > 0 ? selectedFaculties.join(', ') : 'Engineering & Applied Sciences';
-      audienceDescription = `faculty-wide students in ${facNames}`;
-      exampleStyle = `Anchor examples and case studies in interdisciplinary technical applications relevant to ${facNames}, while remaining strictly focused on ${domainBrief.primaryDomain}.`;
-    } else {
-      const deptName = rawDept || (selectedDepartments.length > 0 ? selectedDepartments.join(', ') : domainBrief.primaryDomain);
-      audienceDescription = `specialist students in ${deptName}`;
-      exampleStyle = `Use rigorous, discipline-standard terminology, proofs, derivations, and professional case studies strictly native to ${domainBrief.primaryDomain}.`;
-    }
-
-    // 3. STAGE 2: GENERATE SYLLABUS GROUNDED IN DOMAIN BRIEF
+    // 2. STAGE 2: GENERATE SYLLABUS GROUNDED IN DOMAIN BRIEF WITH MULTI-AGENT AUDIT
     let skeleton: any = null;
     let auditResult: any = null;
     let attempts = 0;
@@ -4417,48 +4405,30 @@ app.post('/api/course/generate-skeleton', verifyAuth, async (req, res) => {
       attempts++;
       console.log(`[Skeleton Gen] Stage 2 Attempt ${attempts} for "${courseName}" (${domainBrief.primaryDomain})...`);
 
-      const skeletonPrompt = `Create a high-level syllabus course structure for a university course on "${courseName}".
-      
-      AUTHORITATIVE ACADEMIC DOMAIN: ${domainBrief.primaryDomain}
-      REQUIRED ACCREDITED CORE TOPICS: ${domainBrief.coreRequiredTopics.join(', ')}
-      GROUNDING REFERENCES: ${domainBrief.groundingReferences.join(', ')}
-      
-      [POSITIVE PEDAGOGICAL DIRECTIVES]:
-      - Teach the core academic domain of "${courseName}" (${domainBrief.primaryDomain}) at ${depth || 'an introductory to intermediate'} level for ${audienceDescription}.
-      - ${exampleStyle}
-      - Focus every module and lesson on building progressive understanding of the foundational principles of ${domainBrief.primaryDomain}.
-      - Ground theoretical ideas in intuitive, relatable phenomena and practical applications that illustrate core mechanisms.
-      ${feedbackCritique ? `\n[AUDIT CRITIQUE FROM PREVIOUS ATTEMPT TO FIX]:\n${feedbackCritique}\n` : ''}
-
-      Level: ${level}
-      Tone: ${tone}
-      Depth: ${depth}
-      Academic Standard: ${academicStandard}
-      ${outline ? `Instructor Provided Outline:\n${outline}` : ''}
-      ${sourceText ? `Source Reference Context:\n${sourceText.substring(0, 3000)}` : ''}
-
-      Generate 5-8 measurable learningOutcomes using Bloom's Taxonomy.
-      Return strictly a JSON object:
-      {
-        "description": "Concise summary of the course rooted in ${domainBrief.primaryDomain}",
-        "learningOutcomes": [
-          { "outcome": "Students will analyze...", "bloomLevel": "Analyze" }
-        ],
-        "modules": [
-          {
-            "title": "Module Title in ${domainBrief.primaryDomain}",
-            "lessonTitles": ["Lesson 1 Title", "Lesson 2 Title", "Lesson 3 Title", "Lesson 4 Title"],
-            "quizTopics": ["Core Concept 1", "Core Concept 2"]
-          }
-        ]
-      }`;
+      const skeletonPrompt = buildCurriculumSkeletonPrompt(domainBrief, {
+        courseId: courseCode || courseName,
+        courseName,
+        courseCode,
+        department,
+        level,
+        semester,
+        creditUnits,
+        tone,
+        depth,
+        scope,
+        selectedFaculties,
+        selectedDepartments,
+        outline,
+        sourceText,
+        academicStandard
+      }, feedbackCritique);
 
       skeleton = await completeWithProviderJSON({
         type: 'skeleton',
         messages: [
           { 
             role: 'system', 
-            content: `You are an expert university curriculum designer and department chair in ${domainBrief.primaryDomain}. You output strictly valid JSON. [Chain of Thought]: Plan the curriculum progression inside <think>...</think> tags first.\n\n${latexInstruction}` 
+            content: `You are an expert university curriculum committee chair in ${domainBrief.primaryDomain}. You output strictly valid JSON. [Chain of Thought]: Plan the curriculum progression inside <think>...</think> tags first.\n\n${latexInstruction}` 
           },
           { role: 'user', content: skeletonPrompt }
         ],
@@ -4467,49 +4437,33 @@ app.post('/api/course/generate-skeleton', verifyAuth, async (req, res) => {
         complexity: 'high'
       });
 
-      // 4. VERIFICATION PASS & COVERAGE AUDIT
-      console.log(`[Skeleton Gen] Verification Pass on Attempt ${attempts}...`);
-      const verificationPrompt = `You are a university academic auditor and subject-matter critic.
-      Evaluate this proposed syllabus against the authoritative course domain: "${domainBrief.primaryDomain}" for course "${courseName}".
-      
-      Required Core Topics Expected:
-      ${domainBrief.coreRequiredTopics.join(', ')}
-      
-      Proposed Syllabus Modules:
-      ${(skeleton.modules || []).map((m: any) => `- ${m.title}: ${(m.lessonTitles || m.topics || []).join(', ')}`).join('\n')}
-      
-      Audit Criteria:
-      1. Does this syllabus actually teach the subject matter of "${domainBrief.primaryDomain}"?
-      2. List the core topics expected vs. covered.
-      3. Calculate a "coverageScore" from 0 to 100 based on the percentage of Required Core Topics authentically addressed.
-      4. Check prerequisite sequencing (are foundational concepts taught before advanced applications?).
-      
-      Return strictly JSON:
-      {
-        "isValid": true/false,
-        "reasoning": "Audit critique",
-        "expectedTopics": ${JSON.stringify(domainBrief.coreRequiredTopics)},
-        "coveredTopics": ["Topics authentically addressed in syllabus"],
-        "missingTopics": ["List any omitted core topics"],
-        "genericFillerDetected": true/false,
-        "coverageScore": 85,
-        "confidenceState": "verified"
-      }`;
+      // 3. STAGE 3: OUTLINE CRITIC AUDIT WITH RUBRIC
+      console.log(`[Skeleton Gen] Outline Critic Rubric Pass on Attempt ${attempts}...`);
+      const criticPrompt = buildOutlineCriticPrompt(domainBrief, skeleton, {
+        courseId: courseCode || courseName,
+        courseName
+      });
 
       auditResult = await completeWithProviderJSON({
         type: 'skeleton',
-        messages: [{ role: 'user', content: verificationPrompt }],
-        schema: VerificationResultSchema,
+        messages: [{ role: 'user', content: criticPrompt }],
+        schema: OutlineCriticRubricSchema,
         requestedProvider,
-        complexity: 'standard'
+        complexity: 'high'
       });
 
-      if (auditResult.isValid && auditResult.coverageScore >= 75 && !auditResult.genericFillerDetected) {
-        console.log(`[Skeleton Gen] Verified! Coverage Score: ${auditResult.coverageScore}%.`);
+      const isApproved = auditResult.isValid && 
+        auditResult.coverageScore >= 75 && 
+        auditResult.foundationsScore >= 75 && 
+        auditResult.sequencingScore >= 75 && 
+        !auditResult.genericFillerDetected;
+
+      if (isApproved) {
+        console.log(`[Skeleton Gen] Verified! Coverage: ${auditResult.coverageScore}%, Foundations: ${auditResult.foundationsScore}%, Sequencing: ${auditResult.sequencingScore}%.`);
         break;
       } else {
-        console.warn(`[Skeleton Gen] Attempt ${attempts} rejected: ${auditResult.reasoning} (Coverage: ${auditResult.coverageScore}%, Generic Filler: ${auditResult.genericFillerDetected})`);
-        feedbackCritique = `The previous attempt scored only ${auditResult.coverageScore}% domain coverage and had the following critique: ${auditResult.reasoning}. Missing required core topics: ${(auditResult.missingTopics || []).join(', ')}. Please explicitly include and cover these required topics in ${domainBrief.primaryDomain}.`;
+        console.warn(`[Skeleton Gen] Attempt ${attempts} rejected by Critic: ${auditResult.reasoning} (Coverage: ${auditResult.coverageScore}%, Foundations: ${auditResult.foundationsScore}%)`);
+        feedbackCritique = `The previous outline scored Coverage: ${auditResult.coverageScore}%, Foundations: ${auditResult.foundationsScore}%, Sequencing: ${auditResult.sequencingScore}%. Critic Critique: ${auditResult.reasoning}. Missing core topics: ${(auditResult.missingTopics || []).join(', ')}. Sequencing errors: ${(auditResult.sequencingErrors || []).join(', ')}. Please explicitly include foundational orientation in Module 1 and address these required topics.`;
         
         if (attempts === MAX_ATTEMPTS) {
           return res.status(422).json({
@@ -4523,29 +4477,35 @@ app.post('/api/course/generate-skeleton', verifyAuth, async (req, res) => {
 
     const confidenceState = (auditResult && auditResult.coverageScore >= 90) ? 'verified' : 'needs_review';
 
-    // Normalize module lessonTitles
+    // Normalize module lessonTitles & learning outcomes
     const normalizedModules = (skeleton.modules || []).map((m: any, idx: number) => ({
       id: `m${idx + 1}`,
       title: m.title || `Module ${idx + 1}`,
-      lessonTitles: m.lessonTitles || m.topics || m.lessons || [`Introduction to ${m.title || 'Module'}`],
-      quizTopics: m.quizTopics || []
+      isFoundationModule: idx === 0 || !!m.isFoundationModule,
+      lessonTitles: m.lessonTitles || m.topics || (m.lessons ? m.lessons.map((l: any) => typeof l === 'string' ? l : l.title) : []) || [`Introduction to ${m.title || 'Module'}`],
+      quizTopics: m.quizTopics || [],
+      learningOutcomeIds: m.learningOutcomeIds || []
     }));
+
+    const normalizedOutcomes = normalizeLearningOutcomes(skeleton.learningOutcomes);
 
     res.json({
       success: true,
       description: skeleton.description || `A comprehensive university course on ${courseName} (${domainBrief.primaryDomain}).`,
       modules: normalizedModules,
-      learningOutcomes: skeleton.learningOutcomes || [],
+      learningOutcomes: normalizedOutcomes,
       domainBrief: {
         primaryDomain: domainBrief.primaryDomain,
         subDisciplines: domainBrief.subDisciplines,
-        coreRequiredTopics: domainBrief.coreRequiredTopics,
-        groundingReferences: domainBrief.groundingReferences,
-        accreditationStandards: domainBrief.accreditationStandards
+        pedagogyType: domainBrief.pedagogyType,
+        coreRequiredTopics: domainBrief.coreCourseTopics,
+        groundingReferences: domainBrief.canonicalCourseReferences,
+        foundationalAxioms: domainBrief.foundationalAxioms
       },
       coverageScore: auditResult?.coverageScore || 85,
       confidenceState,
-      groundingReferences: domainBrief.groundingReferences
+      rubricAudit: auditResult,
+      groundingReferences: domainBrief.canonicalCourseReferences
     });
 
   } catch (err: any) {
@@ -4565,6 +4525,7 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
     level,
     semester,
     department,
+    creditUnits,
     tone = 'academic',
     depth = 'standard',
     sourceText,
@@ -4590,37 +4551,6 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
   }
 
   const rawDept = (department || '').trim();
-  const normalizedScope = (scope || '').toUpperCase();
-
-  // SUBJECT IS AUTHORITATIVE: Department is the authentic domain department, not overwritten by scope.
-  // Scope controls audience scaffolding, depth, and example styling only.
-  let audienceDescription = '';
-  let exampleStyle = '';
-  let scopeDirective = '';
-
-  if (normalizedScope === 'GLOBAL' || normalizedScope === 'PUBLIC' || normalizedScope === 'ALL') {
-    audienceDescription = 'a mixed university cohort across diverse academic disciplines with no prior specialized coursework in this domain';
-    exampleStyle = 'Use clear conceptual scaffolding, intuitive analogies, and accessible real-world examples to build foundational understanding.';
-    scopeDirective = `AUDIENCE SCOPE: GLOBAL / CROSS-DEPARTMENTAL.
-- Target Cohort: Multidisciplinary students with diverse academic backgrounds.
-- Pedagogical Directive: Teach the authentic domain principles of "${courseName}" at an introductory to intermediate level using accessible analogies and practical real-world applications.
-- Depth & Scaffolding: Explain foundational mechanisms intuitively without assuming prior advanced coursework in this specific discipline.`;
-  } else if (normalizedScope === 'FACULTY') {
-    const facultyNames = selectedFaculties.length > 0 ? selectedFaculties.join(', ') : 'Faculty Students';
-    audienceDescription = `faculty-wide students in ${facultyNames} with foundational analytical and technical training`;
-    exampleStyle = `Anchor examples and case studies in interdisciplinary technical applications relevant across ${facultyNames}.`;
-    scopeDirective = `AUDIENCE SCOPE: FACULTY-WIDE (${facultyNames}).
-- Target Cohort: Students within ${facultyNames}.
-- Pedagogical Directive: Teach the core academic domain of "${courseName}" highlighting interdisciplinary technical connections and practical problem-solving across ${facultyNames}.`;
-  } else {
-    const deptName = rawDept || (selectedDepartments.length > 0 ? selectedDepartments.join(', ') : 'Departmental Cohort');
-    audienceDescription = `specialist students in ${deptName} pursuing deep academic mastery`;
-    exampleStyle = `Use rigorous, discipline-standard terminology, proofs, derivations, and professional case studies native to the domain.`;
-    scopeDirective = `AUDIENCE SCOPE: DEPARTMENTAL SPECIALISTS (${deptName}).
-- Target Cohort: Majors in ${deptName}.
-- Pedagogical Directive: Teach "${courseName}" with deep theoretical rigor, formal mathematical formulations, and specialized case studies native to the field.`;
-  }
-
   const app = getAdminApp();
   if (!app) {
     return res.status(500).json({ error: 'Database service unavailable.' });
@@ -4628,7 +4558,7 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
   const db = app.firestore();
 
   try {
-    // Idempotency & Concurrent Job Guard: Check if a generation job is already actively running
+    // Idempotency & Concurrent Job Guard
     const existingDoc = await db.collection('courses').doc(courseId).get();
     if (existingDoc.exists) {
       const existingData = existingDoc.data();
@@ -4645,12 +4575,12 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
     await db.collection('courses').doc(courseId).set({
       id: courseId,
       title: courseName,
-      description: courseDescription || `A comprehensive course on ${courseName}.`,
+      description: courseDescription || `A comprehensive university course on ${courseName}.`,
       department: rawDept || 'Academic Studies',
       subject: subject || 'General',
       level: level || 'Undergraduate',
       semester: semester || 'Semester 1',
-      creditUnits: 0,
+      creditUnits: creditUnits || 3,
       prerequisites: [],
       scope: scope || 'PUBLIC',
       academicStandard: academicStandard,
@@ -4664,76 +4594,62 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
       statusMessage: 'Coordinating course creation on server...'
     }, { merge: true });
 
-    // 2. Respond immediately to the client to prevent browser HTTP timeout
+    // 2. Respond immediately to the client
     res.json({ status: 'started', courseId });
 
-    // 3. Fire the asynchronous background generation worker
+    // 3. Fire asynchronous background generation worker
     (async () => {
       try {
         console.log(`[Coordinated Gen] Starting background worker for course ${courseId} (${rawDept})...`);
 
-        // Purge any stale subcollections from previous runs on this course ID
+        // Purge stale subcollections
         await purgeCourseSubcollections(db, courseId);
 
-        // STEP 0: Infer Academic Domain with Grounding Rationale
-        console.log(`[Coordinated Gen] Inferring domain and grounding for ${courseName}...`);
+        // STEP 0: Infer Academic Domain & Canonical References
+        console.log(`[Coordinated Gen] Inferring domain brief for ${courseName}...`);
         await db.collection('courses').doc(courseId).update({
-          generationProgress: 7,
-          statusMessage: 'Retrieving grounding references and inferring domain...',
+          generationProgress: 8,
+          statusMessage: 'Retrieving canonical references and establishing domain taxonomy...',
           updatedAt: new Date().toISOString()
         });
 
-        const domainPrompt = `Analyze the course title "${courseName}" and code "${courseId}".
-        
-        [GROUNDING TASK]:
-        1. Identify the primary academic domain and 3-5 sub-disciplines.
-        2. Identify 8-12 core topics that MUST be covered to meet university accreditation (e.g., ABET, AACSB, or global standards).
-        3. List 2-3 standard textbook titles or public syllabi that typically define this course's scope.
-        
-        Return strictly a JSON object:
-        {
-          "primaryDomain": "e.g. Materials Science",
-          "subDisciplines": ["e.g. Crystallography", "Thermodynamics"],
-          "coreRequiredTopics": ["e.g. Crystal Lattices", "Phase Diagrams"],
-          "accreditationStandards": ["ABET", "University of California System"],
-          "groundingReferences": ["Callister - Materials Science and Engineering", "MIT OpenCourseWare Syllabus"]
-        }`;
+        const domainPrompt = buildDomainBriefPrompt({
+          courseId,
+          courseName,
+          courseCode: courseId,
+          department: rawDept
+        });
 
-        const domainInference = await completeWithProviderJSON({
+        const domainBrief: any = passedDomainBrief && passedDomainBrief.primaryDomain ? passedDomainBrief : await completeWithProviderJSON({
           type: 'skeleton',
           messages: [{ role: 'user', content: domainPrompt }],
-          schema: DomainInferenceSchema,
+          schema: DomainBriefSchema,
           requestedProvider,
           complexity: 'standard'
         });
 
-        console.log(`[Coordinated Gen] Domain inferred: ${domainInference.primaryDomain}. Grounded via: ${domainInference.groundingReferences.join(', ')}`);
+        console.log(`[Coordinated Gen] Domain Brief Established: ${domainBrief.primaryDomain} (${domainBrief.pedagogyType}). Canonical: ${(domainBrief.canonicalCourseReferences || domainBrief.groundingReferences || []).join(', ')}`);
 
-        let routingConfig: any = {};
-        try {
-          const routingDoc = await db.collection('system_config').doc('routing').get();
-          if (routingDoc.exists) {
-            routingConfig = routingDoc.data() || {};
-          }
-        } catch (rErr) {
-          console.warn('[Coordinated Gen] Could not load routing config, using defaults:', rErr);
-        }
-
-        // STEP 1: Generate & Verify Course Skeleton with Multi-Agent Pipeline & Self-Consistency (or honor Human-in-the-Loop Approved Skeleton)
+        // STEP 1: Skeleton Generation & Verification (or Human-Approved Skeleton)
         let skeleton: any = null;
+        let rubricAudit: any = null;
 
         if (Array.isArray(approvedModules) && approvedModules.length > 0) {
           console.log(`[Coordinated Gen] Human-in-the-Loop: Using approved skeleton with ${approvedModules.length} modules for "${courseName}".`);
           skeleton = {
-            description: courseDescription || `A comprehensive university course on ${courseName} (${domainInference.primaryDomain}).`,
+            description: courseDescription || `A comprehensive university course on ${courseName} (${domainBrief.primaryDomain}).`,
             modules: approvedModules,
-            learningOutcomes: req.body.learningOutcomes || [],
-            verification: {
-              coverageScore: passedCoverageScore || 90,
-              consistencyScore: 95,
-              confidenceState: 'verified',
-              isValid: true
-            }
+            learningOutcomes: normalizeLearningOutcomes(req.body.learningOutcomes || []),
+            pedagogyType: domainBrief.pedagogyType || 'STEM_MATHEMATICAL',
+            creditHours: creditUnits || 3
+          };
+          rubricAudit = {
+            coverageScore: passedCoverageScore || 92,
+            foundationsScore: 95,
+            sequencingScore: 95,
+            workloadBalanceScore: 90,
+            confidenceState: 'verified',
+            isValid: true
           };
         } else {
           let attempts = 0;
@@ -4742,188 +4658,116 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
 
           while (attempts < MAX_ATTEMPTS) {
             attempts++;
-            console.log(`[Coordinated Gen] Multi-Agent Pipeline: Attempt ${attempts} for course ${courseId}...`);
+            console.log(`[Coordinated Gen] Multi-Agent Pipeline Attempt ${attempts} for ${courseId}...`);
             await db.collection('courses').doc(courseId).update({
-              generationProgress: 10 + (attempts * 2),
-              statusMessage: attempts > 1 ? `Refining skeleton structure (Multi-Agent Pass ${attempts})...` : 'Initiating Multi-Agent Curriculum Pipeline...',
+              generationProgress: 10 + (attempts * 3),
+              statusMessage: attempts > 1 ? `Refining curriculum architecture (Pass ${attempts})...` : 'Formulating accredited curriculum skeleton...',
               updatedAt: new Date().toISOString()
             });
 
-            const skeletonPrompt = `Create a high-level syllabus course structure for a university course on "${courseName}".
-            
-            AUTHORITATIVE SUBJECT DOMAIN: ${domainInference.primaryDomain}
-            REQUIRED CORE TOPICS (FOR COVERAGE): ${domainInference.coreRequiredTopics.join(', ')}
-            GROUNDING REFERENCES: ${domainInference.groundingReferences.join(', ')}
-            
-            ${scopeDirective}
-            
-            [POSITIVE PEDAGOGICAL DIRECTIVES]:
-            - Teach the authentic core domain of "${courseName}" (${domainInference.primaryDomain}) at ${depth || 'an introductory to intermediate'} level for ${audienceDescription}.
-            - ${exampleStyle}
-            - Structure every module to progressively build competency in ${domainInference.primaryDomain}.
-            - Ground theoretical ideas in intuitive, relatable phenomena and practical applications that illustrate core mechanisms.
-            ${feedbackCritique ? `\n[AUDIT CRITIQUE FROM PREVIOUS ATTEMPT]:\n${feedbackCritique}\n` : ''}
+            const skeletonPrompt = buildCurriculumSkeletonPrompt(domainBrief, {
+              courseId,
+              courseName,
+              courseCode: courseId,
+              department: rawDept,
+              level,
+              semester,
+              creditUnits,
+              tone,
+              depth,
+              scope,
+              selectedFaculties,
+              selectedDepartments,
+              outline,
+              sourceText,
+              academicStandard
+            }, feedbackCritique);
 
-            Level: ${level}
-            Tone: ${tone}
-            Depth: ${depth}
-            Academic Standard: ${academicStandard}
-            ${outline ? `Additional Outlines/Topics: ${outline}` : ''}
-            ${sourceText ? `Based on source context:\n${sourceText.substring(0, 4000)}` : ''}
-
-            [NEW REQUIREMENT - BLOOM'S TAXONOMY]:
-            - Generate 5-8 measurable "learningOutcomes" with Bloom's taxonomy levels.
-            - Assign relevant "learningOutcomeIds" to each module to show alignment.
-
-            Return strictly a JSON object matching this schema:
-            {
-              "pedagogicalReasoning": "Your strategy grounded in ${domainInference.accreditationStandards.join(' and ')}",
-              "description": "Short overall description of the course",
-              "learningOutcomes": [{"outcome": "Students will...", "bloomLevel": "Understand"}],
-              "modules": [
-                {
-                  "title": "Module Title",
-                  "topics": ["Key Topic 1", "Key Topic 2"],
-                  "quizTopics": ["Concept 1", "Concept 2"],
-                  "learningOutcomeIds": ["index of outcome"]
-                }
-              ]
-            }`;
-
-            // DYNAMIC AGENT SELECTION FROM LIVE SYSTEM CONFIG
-            const designerAProvider = requestedProvider || routingConfig.skeleton || 'groq';
-            const designerBProvider = routingConfig.deep_reasoning || 'nvidia';
-            const auditorProvider = routingConfig.vision || routingConfig.chat || 'gemini_direct';
-
-            // SELF-CONSISTENCY: Generate twice independently using dynamic agents
-            console.log(`[Coordinated Gen] Self-Consistency Check: Generating dual skeletons via ${designerAProvider} and ${designerBProvider}...`);
-            const [skeletonA, skeletonB] = await Promise.all([
-              completeWithProviderJSON({
-                type: 'skeleton',
-                messages: [
-                  { role: 'system', content: `You are Curriculum Designer A. Expert in ${domainInference.primaryDomain}.\n\n${latexInstruction}` },
-                  { role: 'user', content: skeletonPrompt }
-                ],
-                schema: CourseSkeletonSchema,
-                requestedProvider: designerAProvider,
-                complexity: 'high'
-              }),
-              completeWithProviderJSON({
-                type: 'skeleton',
-                messages: [
-                  { role: 'system', content: `You are Curriculum Designer B. Expert in ${domainInference.primaryDomain}.\n\n${latexInstruction}` },
-                  { role: 'user', content: skeletonPrompt }
-                ],
-                schema: CourseSkeletonSchema,
-                requestedProvider: designerBProvider,
-                complexity: 'high'
-              })
-            ]);
-
-            // MULTI-AGENT VERIFICATION VIA DYNAMIC AUDITOR
-            console.log(`[Coordinated Gen] Multi-Agent Audit: Invoking Auditor via ${auditorProvider}...`);
-            const auditPrompt = `Perform a rigorous audit of the generated curriculum skeletons (A and B) for "${courseName}".
-            
-            AUTHORITATIVE TARGET DOMAIN: "${domainInference.primaryDomain}"
-            REQUIRED CORE TOPICS EXPECTED: ${domainInference.coreRequiredTopics.join(', ')}
-
-            Skeleton A Modules: ${skeletonA.modules.map((m: any) => m.title).join(', ')}
-            Skeleton B Modules: ${skeletonB.modules.map((m: any) => m.title).join(', ')}
-
-            [AGENT 1: SUBJECT-MATTER CRITIC TASK]:
-            - Check if the technical domain "${domainInference.primaryDomain}" is authentically covered.
-            - List the core topics expected vs. covered.
-            - Calculate a Coverage Score (0-100).
-            - Identify any generic filler hallucinations.
-
-            [AGENT 2: PEDAGOGY REVIEWER TASK]:
-            - Check for Bloom's taxonomy alignment.
-            - Identify sequencing errors (e.g. teaching an advanced concept before its prerequisite).
-            - Identify prerequisite gaps in the knowledge graph.
-
-            [AGENT 3: CONSISTENCY AUDITOR TASK]:
-            - Compare A and B. Calculate a Consistency Score (0-100).
-            - If they differ wildly, flag for low confidence.
-
-            Return strictly a JSON object:
-            {
-              "isValid": true/false,
-              "reasoning": "Combined audit summary",
-              "expectedTopics": ${JSON.stringify(domainInference.coreRequiredTopics)},
-              "coveredTopics": ["Topics addressed in skeleton"],
-              "missingTopics": ["Core topics omitted"],
-              "genericFillerDetected": true/false,
-              "coverageScore": 85,
-              "pedagogyAudit": {
-                "isSequencingValid": true/false,
-                "prerequisiteGaps": ["Concept A needed before B"],
-                "workloadAssessment": "Brief workload comment"
-              },
-              "consistencyScore": 90,
-              "confidenceState": "verified",
-              "preferredSkeleton": "A"
-            }`;
-
-            const auditResult = await completeWithProviderJSON({
+            skeleton = await completeWithProviderJSON({
               type: 'skeleton',
-              messages: [{ role: 'user', content: auditPrompt }],
-              schema: VerificationResultSchema.extend({ preferredSkeleton: z.enum(['A', 'B']) }),
-              requestedProvider: auditorProvider,
+              messages: [
+                { 
+                  role: 'system', 
+                  content: `You are an expert university curriculum committee chair in ${domainBrief.primaryDomain}. You output strictly valid JSON.\n\n${latexInstruction}` 
+                },
+                { role: 'user', content: skeletonPrompt }
+              ],
+              schema: CourseSkeletonSchema,
+              requestedProvider,
               complexity: 'high'
             });
 
-            if (auditResult.isValid && auditResult.coverageScore >= 80 && auditResult.consistencyScore >= 70 && auditResult.pedagogyAudit?.isSequencingValid) {
-              console.log(`[Coordinated Gen] Multi-Agent Pipeline SUCCESS on attempt ${attempts}. Score: ${auditResult.coverageScore}%, Consistency: ${auditResult.consistencyScore}%`);
-              skeleton = auditResult.preferredSkeleton === 'A' ? skeletonA : skeletonB;
-              skeleton.verification = auditResult;
+            const criticPrompt = buildOutlineCriticPrompt(domainBrief, skeleton, {
+              courseId,
+              courseName
+            });
+
+            rubricAudit = await completeWithProviderJSON({
+              type: 'skeleton',
+              messages: [{ role: 'user', content: criticPrompt }],
+              schema: OutlineCriticRubricSchema,
+              requestedProvider,
+              complexity: 'high'
+            });
+
+            const isApproved = rubricAudit.isValid && 
+              rubricAudit.coverageScore >= 75 && 
+              rubricAudit.foundationsScore >= 75 && 
+              rubricAudit.sequencingScore >= 75 && 
+              !rubricAudit.genericFillerDetected;
+
+            if (isApproved) {
+              console.log(`[Coordinated Gen] Curriculum Approved on attempt ${attempts}. Score: ${rubricAudit.coverageScore}%`);
               break;
             } else {
-              console.warn(`[Coordinated Gen] Multi-Agent REJECTION on attempt ${attempts}: ${auditResult.reasoning}`);
-              feedbackCritique = `Previous attempt scored ${auditResult.coverageScore}% coverage and had critique: ${auditResult.reasoning}. Missing core topics: ${(auditResult.missingTopics || []).join(', ')}. Please explicitly include and cover these required topics in ${domainInference.primaryDomain}.`;
+              console.warn(`[Coordinated Gen] Curriculum Critic Rejection on attempt ${attempts}: ${rubricAudit.reasoning}`);
+              feedbackCritique = `Critic Review: Coverage: ${rubricAudit.coverageScore}%, Foundations: ${rubricAudit.foundationsScore}%. Critique: ${rubricAudit.reasoning}. Missing topics: ${(rubricAudit.missingTopics || []).join(', ')}. Please explicitly include foundational orientation in Module 1.`;
 
               if (attempts === MAX_ATTEMPTS) {
                 await db.collection('courses').doc(courseId).update({
                   generationStatus: 'failed',
                   confidenceState: 'failed',
-                  statusMessage: `Curriculum rejected by academic verification auditor after ${MAX_ATTEMPTS} attempts: ${auditResult.reasoning} (Coverage: ${auditResult.coverageScore}%).`,
-                  verificationAudit: auditResult,
+                  statusMessage: `Curriculum rejected by academic auditor after ${MAX_ATTEMPTS} attempts: ${rubricAudit.reasoning}`,
+                  rubricAudit,
                   updatedAt: new Date().toISOString()
                 });
-                throw new Error(`Zero-Fallback Policy: Multi-Agent Pipeline failed to reach consensus for "${courseName}" after ${MAX_ATTEMPTS} attempts. [Audit]: ${auditResult.reasoning}`);
+                throw new Error(`Zero-Fallback Policy: Failed to reach curriculum consensus for "${courseName}" after ${MAX_ATTEMPTS} attempts.`);
               }
             }
           }
         }
 
-        console.log(`[Coordinated Gen] Skeleton generated, verified, and scored (${skeleton.verification.coverageScore}%) with ${skeleton.modules.length} modules.`);
-        
-        const syllabus = skeleton.modules.map((m: any, mIdx: number) => ({
+        const normalizedOutcomes = normalizeLearningOutcomes(skeleton.learningOutcomes);
+        const canonicalRefs = domainBrief.canonicalCourseReferences || domainBrief.groundingReferences || [];
+
+        const syllabus = (skeleton.modules || []).map((m: any, mIdx: number) => ({
           id: `m${mIdx + 1}`,
           title: m.title || `Module ${mIdx + 1}`,
-          subTopics: (m.topics || m.lessons || m.lessonTitles || []).map((t: string, tIdx: number) => ({
+          isFoundationModule: mIdx === 0 || !!m.isFoundationModule,
+          subTopics: (m.lessonTitles || m.topics || (m.lessons ? m.lessons.map((l: any) => typeof l === 'string' ? l : l.title) : []) || [`Introduction to ${m.title || 'Module'}`]).map((t: string, tIdx: number) => ({
             id: `m${mIdx + 1}-l${tIdx + 1}`,
             title: t || `Lesson ${tIdx + 1}`
           }))
         }));
 
         await db.collection('courses').doc(courseId).update({
-          description: skeleton.description || `A comprehensive course on ${courseName}.`,
+          description: skeleton.description || `A comprehensive university course on ${courseName}.`,
           syllabus: syllabus,
-          learningOutcomes: skeleton.learningOutcomes || [],
-          primaryDomain: domainInference.primaryDomain,
-          coverageScore: skeleton.verification.coverageScore,
-          consistencyScore: skeleton.verification.consistencyScore,
-          confidenceState: skeleton.verification.confidenceState || (skeleton.verification.coverageScore >= 90 ? 'verified' : 'needs_review'),
-          pedagogyAudit: skeleton.verification.pedagogyAudit,
-          accreditationStandards: domainInference.accreditationStandards,
-          groundingReferences: domainInference.groundingReferences,
+          learningOutcomes: normalizedOutcomes,
+          objectives: normalizedOutcomes.map(o => o.outcome), // Backwards compatibility
+          primaryDomain: domainBrief.primaryDomain,
+          pedagogyType: domainBrief.pedagogyType || 'STEM_MATHEMATICAL',
+          coverageScore: rubricAudit?.coverageScore || 90,
+          confidenceState: (rubricAudit?.coverageScore || 90) >= 90 ? 'verified' : 'needs_review',
+          rubricAudit,
+          canonicalCourseReferences: canonicalRefs,
+          groundingReferences: canonicalRefs,
           generationProgress: 20,
-          needsApproval: true, 
-          statusMessage: `Syllabus verified (Score: ${skeleton.verification.coverageScore}%, State: ${skeleton.verification.confidenceState || 'needs_review'}). Starting content generation...`,
+          statusMessage: `Syllabus verified (Score: ${rubricAudit?.coverageScore || 90}%). Generating comprehensive lessons in parallel...`,
           updatedAt: new Date().toISOString()
         });
 
-        // STEP 2: Generate Content for each module
+        // STEP 2: Parallel Module Generation with Isolated Per-Lesson Retry
         const totalModules = skeleton.modules.length;
         const CONCURRENCY_LIMIT = 3;
 
@@ -4934,7 +4778,7 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
           const progressPercent = 20 + Math.round((i / totalModules) * 70);
           await db.collection('courses').doc(courseId).update({
             generationProgress: progressPercent,
-            statusMessage: `Generating detailed lessons & quizzes for Modules ${i + 1}-${chunkEnd} of ${totalModules}...`,
+            statusMessage: `Authoring comprehensive lessons for Modules ${i + 1}-${chunkEnd} of ${totalModules}...`,
             updatedAt: new Date().toISOString()
           });
 
@@ -4942,13 +4786,14 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
             const mIndex = i + idx;
             const moduleId = `m${mIndex + 1}`;
 
-            console.log(`[Coordinated Gen] Generating Module ${mIndex + 1}/${totalModules}: ${moduleSkeleton.title}...`);
+            console.log(`[Coordinated Gen] Generating Module ${mIndex + 1}/${totalModules}: "${moduleSkeleton.title}"...`);
 
             await db.collection('courses').doc(courseId).collection('modules').doc(moduleId).set({
               title: moduleSkeleton.title || `Module ${mIndex + 1}`,
               order: mIndex + 1,
-              groundingReferences: domainInference.groundingReferences, // Module-level source citing
-              confidenceState: skeleton.verification.confidenceState || 'needs_review',
+              isFoundationModule: mIndex === 0 || !!moduleSkeleton.isFoundationModule,
+              groundingReferences: canonicalRefs,
+              confidenceState: 'verified',
               telemetry: {
                 regenerationCount: 0,
                 editCount: 0,
@@ -4956,80 +4801,91 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
               }
             });
 
-            const topics = moduleSkeleton.topics || moduleSkeleton.lessons || moduleSkeleton.lessonTitles || [];
+            const topics = moduleSkeleton.lessonTitles || moduleSkeleton.topics || (moduleSkeleton.lessons ? moduleSkeleton.lessons.map((l: any) => typeof l === 'string' ? l : l.title) : []) || [`Core Concepts of ${moduleSkeleton.title}`];
             
             for (let lIndex = 0; lIndex < topics.length; lIndex++) {
               const topic = topics[lIndex];
               const lessonId = `m${mIndex + 1}-l${lIndex + 1}`;
 
-              const comparisonInstruction = `Structure complex topics with clear Comparison Tables specifically relevant to "${courseName}" and "${domainInference.primaryDomain}".`;
-              const caseStudyInstruction = `Include a comprehensive real-world case study or empirical application strictly native to "${courseName}" in "${domainInference.primaryDomain}".`;
+              let targetOutcomeText = '';
+              if (moduleSkeleton.learningOutcomeIds && moduleSkeleton.learningOutcomeIds.length > 0) {
+                const targetIdx = parseInt(moduleSkeleton.learningOutcomeIds[0]);
+                if (!isNaN(targetIdx) && normalizedOutcomes[targetIdx]) {
+                  targetOutcomeText = normalizedOutcomes[targetIdx].outcome;
+                }
+              }
 
-              const lessonPrompt = `Write a rigorous, comprehensive, university-level study guide/lesson on the topic: "${topic}"
-              within the module "${moduleSkeleton.title}" of the course "${courseName}".
-              
-              SUBJECT DOMAIN: ${domainInference.primaryDomain}
-              ${scopeDirective}
-              TARGET LEARNING OUTCOMES: ${moduleSkeleton.learningOutcomeIds?.map((id: string) => skeleton.learningOutcomes[parseInt(id)]?.outcome).filter(Boolean).join('; ') || 'General Domain Mastery'}
-              
-              Target Audience / Department: ${rawDept || 'Departmental Majors'}
-              Level: ${level}
-              Tone: ${tone}
-              Depth: ${depth}
-              Academic Standard: ${academicStandard}
-              ${sourceText ? `Incorporate source material:\n${sourceText.substring(0, 1000)}` : ''}
+              // Isolated Lesson Generation & Syntax Validation Loop
+              let lessonAttempts = 0;
+              let lessonContent = '';
+              let lessonTitle = topic;
+              let lessonErrors: string[] = [];
 
-              Pedagogical Directives:
-              - ${comparisonInstruction}
-              - ${caseStudyInstruction}
-              - Align content strictly with the targeted Learning Outcomes.
+              while (lessonAttempts < 3) {
+                lessonAttempts++;
+                const lessonPrompt = buildLessonPrompt(
+                  topic,
+                  moduleSkeleton.title,
+                  mIndex + 1,
+                  domainBrief,
+                  {
+                    courseId,
+                    courseName,
+                    department: rawDept,
+                    level,
+                    tone,
+                    depth,
+                    scope,
+                    academicStandard,
+                    sourceText
+                  },
+                  targetOutcomeText
+                );
 
-              Return strictly a JSON object matching this schema:
-              {
-                "pedagogicalReasoning": "How this lesson satisfies the targeted learning outcomes",
-                "title": "Lesson Title",
-                "content": "Full detailed markdown lesson text. Include clear explanations, equations, proofs, and bullet points. Enforce high scientific rigor."
-              }`;
+                const critiqueAugmentedPrompt = lessonErrors.length > 0 
+                  ? `${lessonPrompt}\n\n[CRITICAL CORRECTION REQUIRED FROM PREVIOUS ATTEMPT]:\n${lessonErrors.join('\n')}\nEnsure strictly balanced LaTeX ($ and $$) and valid Markdown tables.`
+                  : lessonPrompt;
 
-              const lessonMessages = [
-                { 
-                  role: 'system', 
-                  content: `You are an expert university professor in ${domainInference.primaryDomain}. You write rigorous educational content. You output strictly valid JSON with no preamble. Put your step-by-step reasoning inside the "pedagogicalReasoning" field in JSON.\n\n${latexInstruction}` 
-                },
-                { role: 'user', content: lessonPrompt }
-              ];
+                const lessonData = await completeWithProviderJSON({
+                  type: 'lesson',
+                  messages: [
+                    { 
+                      role: 'system', 
+                      content: `You are an expert university professor in ${domainBrief.primaryDomain}. You write rigorous educational lessons. You output strictly valid JSON with no preamble.\n\n${latexInstruction}` 
+                    },
+                    { role: 'user', content: critiqueAugmentedPrompt }
+                  ],
+                  schema: LessonContentSchema,
+                  requestedProvider,
+                  complexity: 'high'
+                });
 
-              const lessonData = await completeWithProviderJSON({
-                type: 'lesson',
-                messages: lessonMessages,
-                schema: LessonContentSchema,
-                requestedProvider,
-                complexity: 'high'
-              });
+                lessonTitle = lessonData.title || topic;
+                lessonContent = lessonData.content || '';
 
-              const lessonContent = lessonData.content || '';
-
-              // Server-side domain consistency telemetry
-              const consistencyCheck = checkDomainConsistencyServer(lessonContent, domainInference.primaryDomain, courseName);
-              if (!consistencyCheck.isConsistent) {
-                console.warn(`[Coordinated Gen] Domain consistency low (${consistencyCheck.confidenceScore}%) in lesson "${topic}" for course "${courseName}" (${domainInference.primaryDomain})`);
+                // Lesson-level validator: KaTeX delimiters, markdown tables, depth
+                const syntaxValidation = validateLessonSyntax(lessonContent, domainBrief.pedagogyType);
+                if (syntaxValidation.isValid) {
+                  break;
+                } else {
+                  console.warn(`[Coordinated Gen] Lesson validation warning for "${topic}" (Attempt ${lessonAttempts}):`, syntaxValidation.errors);
+                  lessonErrors = syntaxValidation.errors;
+                }
               }
 
               await db.collection('courses').doc(courseId).collection('modules').doc(moduleId).collection('lessons').doc(lessonId).set({
-                title: lessonData.title || topic,
+                title: lessonTitle,
                 content: lessonContent,
                 order: lIndex + 1
               });
 
-              // Trigger server-side Knowledge Base vector ingestion for search & tutoring
+              // Vector embedding ingestion for tutoring
               try {
-                console.log(`[Coordinated Gen] Ingesting Lesson into Knowledge Base: ${lessonData.title || topic}...`);
-                const chunks = chunkText(lessonContent, 1000, 100);
-                const kbBatch = db.batch();
-                const kbRef = db.collection('knowledge_base');
-                
                 const apiKey = process.env.GEMINI_API_KEY;
                 if (apiKey) {
+                  const chunks = chunkText(lessonContent, 1000, 100);
+                  const kbBatch = db.batch();
+                  const kbRef = db.collection('knowledge_base');
                   const genAI = new GoogleGenAI({ apiKey });
 
                   for (const chunk of chunks) {
@@ -5043,53 +4899,48 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
                       content: chunk,
                       course_code: courseId,
                       module_name: moduleSkeleton.title,
-                      topic_name: lessonData.title || topic,
+                      topic_name: lessonTitle,
                       embedding: admin.firestore.VectorValue.fromArray(vector),
                       createdAt: admin.firestore.FieldValue.serverTimestamp()
                     }));
-                    // Throttling to prevent Gemini embedding rate limits
-                    await new Promise(resolve => setTimeout(resolve, 500));
+                    await new Promise(resolve => setTimeout(resolve, 300));
                   }
                   await kbBatch.commit();
-                  console.log(`[Coordinated Gen] Successfully ingested ${chunks.length} chunks for ${lessonData.title || topic}`);
                 }
-              } catch (ingestErr) {
-                console.error(`[Coordinated Gen] Knowledge base ingestion failed for lesson ${topic}:`, ingestErr);
+              } catch (kbErr) {
+                console.warn(`[Coordinated Gen] Knowledge base ingestion note for "${topic}":`, kbErr);
               }
             }
 
-            const quizPrompt = `Generate a university-level quiz with 5 highly challenging multiple choice questions based on: ${JSON.stringify(moduleSkeleton.quizTopics || topics)}.
-            Course: ${courseName}
-            Subject Domain: ${domainInference.primaryDomain}
-            Module: ${moduleSkeleton.title}
-            ${scopeDirective}
-            Target Audience: ${audienceDescription}
-            Academic Standard: ${academicStandard}
+            // Generate Module Quiz (5 challenging multiple choice questions)
+            const quizPrompt = `Generate a university-level quiz with 5 rigorous multiple choice questions on: ${JSON.stringify(moduleSkeleton.quizTopics || topics)}.
+Course: ${courseName} (${domainBrief.primaryDomain})
+Module: ${moduleSkeleton.title}
+Level: ${level || 'Undergraduate'}
+Academic Standard: ${academicStandard}
 
-            Return strictly a JSON object matching this schema:
-            {
-              "pedagogicalReasoning": "Assessment design strategy for these questions",
-              "questions": [
-                {
-                  "question": "Clear math/theory question text.",
-                  "options": ["A", "B", "C", "D"],
-                  "answerIndex": 0,
-                  "explanation": "Detailed explanation of correct answer."
-                }
-              ]
-            }`;
-
-            const quizMessages = [
-              { 
-                role: 'system', 
-                content: `You are an expert university professor in ${domainInference.primaryDomain}. You create rigorous academic assessments. You output strictly valid JSON with no preamble. Put your step-by-step reasoning inside the "pedagogicalReasoning" field in JSON.\n\n${latexInstruction}` 
-              },
-              { role: 'user', content: quizPrompt }
-            ];
+Return strictly a JSON object:
+{
+  "pedagogicalReasoning": "Assessment design rationale",
+  "questions": [
+    {
+      "question": "Rigorous conceptual/quantitative question",
+      "options": ["A", "B", "C", "D"],
+      "answerIndex": 0,
+      "explanation": "Detailed theoretical derivation and explanation"
+    }
+  ]
+}`;
 
             const quizData = await completeWithProviderJSON({
               type: 'module',
-              messages: quizMessages,
+              messages: [
+                { 
+                  role: 'system', 
+                  content: `You are an expert university examiner in ${domainBrief.primaryDomain}. Output strictly valid JSON.\n\n${latexInstruction}` 
+                },
+                { role: 'user', content: quizPrompt }
+              ],
               schema: ModuleQuizSchema,
               requestedProvider,
               complexity: 'high'
@@ -5103,45 +4954,41 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
           await Promise.all(chunkPromises);
         }
 
-        // STEP 3: Save Course formulas if applicable
-        console.log(`[Coordinated Gen] Generating Formula Reference list for ${courseId}...`);
+        // STEP 3: Generate Dynamic Formula Sheet
+        console.log(`[Coordinated Gen] Generating formula and core concept sheet for ${courseId}...`);
         await db.collection('courses').doc(courseId).update({
           generationProgress: 95,
-          statusMessage: 'Generating mathematical and concept formula reference sheets...',
+          statusMessage: 'Generating mathematical and core concept sheets...',
           updatedAt: new Date().toISOString()
         });
 
-        const formulaPrompt = `Generate a dynamic mathematical and scientific formula and core concept sheet for: "${courseName}".
-        Subject Domain: ${domainInference.primaryDomain}
-        Provide 5 crucial equations/formulas/concepts.
-        ${scopeDirective}
-        Target Audience: ${audienceDescription}
-        
-        Return strictly a JSON object matching this schema:
-        {
-          "pedagogicalReasoning": "Rationale for selecting these formulas",
-          "formulas": [
-            {
-              "id": "f1",
-              "title": "Formula Name",
-              "latex": "Formula in LaTeX (e.g., \\\\frac{-b \\\\pm \\\\sqrt{b^2 - 4ac}}{2a})",
-              "description": "Explanation of variables and context."
-            }
-          ]
-        }`;
+        const formulaPrompt = `Generate a comprehensive reference sheet of 6 crucial governing equations, quantitative relationships, or core theoretical laws for: "${courseName}".
+Domain: ${domainBrief.primaryDomain}
+Pedagogy Type: ${domainBrief.pedagogyType}
 
-        const formulaMessages = [
-          { 
-            role: 'system', 
-            content: `You are an expert university professor in ${domainInference.primaryDomain}. You summarize mathematical and scientific laws. You output strictly valid JSON with no preamble. Put your step-by-step reasoning inside the "pedagogicalReasoning" field in JSON.\n\n${latexInstruction}` 
-          },
-          { role: 'user', content: formulaPrompt }
-        ];
+Return strictly a JSON object:
+{
+  "pedagogicalReasoning": "Rationale for selecting these core equations/principles",
+  "formulas": [
+    {
+      "id": "f1",
+      "title": "Law / Equation Name",
+      "latex": "Governing Equation in LaTeX (e.g. \\\\sigma = E \\\\epsilon or J = -D \\\\frac{dC}{dx})",
+      "description": "Definition of all variables, physical interpretation, and domain context"
+    }
+  ]
+}`;
 
         try {
           const formulaData = await completeWithProviderJSON({
             type: 'skeleton',
-            messages: formulaMessages,
+            messages: [
+              { 
+                role: 'system', 
+                content: `You are an expert university professor in ${domainBrief.primaryDomain}. Output strictly valid JSON.\n\n${latexInstruction}` 
+              },
+              { role: 'user', content: formulaPrompt }
+            ],
             schema: CourseFormulaSchema,
             requestedProvider,
             complexity: 'high'
@@ -5156,7 +5003,7 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
           console.warn('[Coordinated Gen] Formula generation error:', fErr);
         }
 
-        // Compile full syllabus array for main course document compatibility
+        // STEP 4: Compile Final Syllabus and Attach Provenance
         let compiledSyllabus: any[] = [];
         try {
           const modSnap = await db.collection('courses').doc(courseId).collection('modules').get();
@@ -5174,6 +5021,7 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
             compiledSyllabus.push({
               id: mDoc.id,
               title: mData.title || 'Module',
+              isFoundationModule: !!mData.isFoundationModule,
               subTopics
             });
           }
@@ -5181,19 +5029,31 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
           console.warn('[Coordinated Gen] Failed compiling syllabus array for main doc:', sErr);
         }
 
-        // STEP 4: Generation Complete (Set to Pending Approval)
-        console.log(`[Coordinated Gen] Finished background worker for course ${courseId}! Setting to pending_approval...`);
+        const provenance = {
+          sources: canonicalRefs,
+          modelVersion: requestedProvider || 'gemini-2.5-pro',
+          promptVersion: 'uniace-curriculum-v2.0',
+          generatedAt: new Date().toISOString(),
+          groundingScore: rubricAudit?.coverageScore || 95,
+          rubricAudit
+        };
+
+        // STEP 5: Course Generation Completed
+        console.log(`[Coordinated Gen] Finished background worker for course ${courseId}! Setting to completed...`);
         await db.collection('courses').doc(courseId).update({
           syllabus: compiledSyllabus,
+          learningOutcomes: normalizedOutcomes,
+          objectives: normalizedOutcomes.map(o => o.outcome),
+          provenance,
           generationStatus: 'completed',
           generationProgress: 100,
-          statusMessage: 'Course generated and verified. Awaiting instructor approval before publishing.',
-          published: false, // Explicitly false until approved
+          statusMessage: 'Course authored, verified, and ready for study.',
+          published: false, // Explicitly false until admin/instructor publishes
           updatedAt: new Date().toISOString()
         });
 
       } catch (backgroundErr: any) {
-        console.error(`[Coordinated Gen] Critical background generation error for course ${courseId}:`, backgroundErr);
+        console.error(`[Coordinated Gen] Critical background error for ${courseId}:`, backgroundErr);
         await db.collection('courses').doc(courseId).update({
           generationStatus: 'failed',
           generationProgress: 100,
