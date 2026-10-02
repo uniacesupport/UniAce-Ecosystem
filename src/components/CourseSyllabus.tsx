@@ -135,7 +135,14 @@ export default function CourseSyllabus({
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
             {(syllabus || []).map((module, i) => {
               const Icon = getModuleIcon(module.id, module.title, i);
-              const isLockedModule = false; // Modules are no longer locked, only subtopics are locked
+              const isLockedModule = false; 
+              
+              const confidenceColors: Record<string, string> = {
+                'verified': 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200/50',
+                'needs_review': 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-200/50',
+                'failed': 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-200/50'
+              };
+
               return (
                 <motion.button
                   key={module.id || i}
@@ -161,16 +168,39 @@ export default function CourseSyllabus({
                   } ${isLockedModule ? 'opacity-70 grayscale-[0.5]' : ''}`}
                 >
                   <div className="relative z-10 flex flex-col h-full w-full">
-                    <div className={`text-white p-3 sm:p-4 rounded-xl sm:rounded-2xl w-fit transition-colors duration-500 mb-4 sm:mb-6 ${
-                      isEnrolled && !isLockedModule ? 'bg-slate-900 dark:bg-blue-950 group-hover:bg-emerald-500' : 'bg-slate-400 dark:bg-slate-700'
-                    }`}>
-                      {isLockedModule ? <Lock size={20} className="sm:w-6 sm:h-6" /> : <Icon size={20} className="sm:w-6 sm:h-6" />}
+                    <div className="flex justify-between items-start mb-4 sm:mb-6">
+                      <div className={`text-white p-3 sm:p-4 rounded-xl sm:rounded-2xl w-fit transition-colors duration-500 ${
+                        isEnrolled && !isLockedModule ? 'bg-slate-900 dark:bg-blue-950 group-hover:bg-emerald-500' : 'bg-slate-400 dark:bg-slate-700'
+                      }`}>
+                        {isLockedModule ? <Lock size={20} className="sm:w-6 sm:h-6" /> : <Icon size={20} className="sm:w-6 sm:h-6" />}
+                      </div>
+                      
+                      {module.confidenceState && (
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${confidenceColors[module.confidenceState] || confidenceColors.needs_review}`}>
+                          {module.confidenceState.replace('_', ' ')}
+                        </span>
+                      )}
                     </div>
+
                     <div className="flex-1 flex flex-col">
                       <h3 className="text-base sm:text-lg font-semibold text-slate-900 dark:text-white mb-1.5 break-words leading-snug pr-4">{module.title}</h3>
-                      <p className="text-slate-500 dark:text-blue-300 text-xs sm:text-sm leading-relaxed mb-6 flex-1">
+                      <p className="text-slate-500 dark:text-blue-300 text-xs sm:text-sm leading-relaxed mb-4 flex-1">
                         Explore {(module?.subTopics || []).length} key topics including {(module?.subTopics?.[0]?.title || 'core concepts').toLowerCase()}.
                       </p>
+                      
+                      {module.groundingReferences && module.groundingReferences.length > 0 && (
+                        <div className="mb-6 space-y-1.5">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Grounding Sources</p>
+                          <div className="flex flex-wrap gap-2">
+                            {module.groundingReferences.slice(0, 2).map((ref, idx) => (
+                              <span key={idx} className="text-[10px] font-medium text-slate-500 dark:text-blue-400 bg-slate-100 dark:bg-blue-800/50 px-2 py-0.5 rounded-lg border border-slate-200 dark:border-blue-700/50">
+                                {ref}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
                       <div className={`flex items-center gap-2 font-semibold text-xs sm:text-sm mt-auto ${
                         isEnrolled && !isLockedModule ? 'text-slate-900 dark:text-blue-100' : 'text-slate-400 dark:text-slate-500'
                       }`}>

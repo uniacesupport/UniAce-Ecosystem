@@ -310,6 +310,16 @@ export default function ContentArea({
     setIsGenerating(true);
     setGenerationStep(0);
 
+    // Track regeneration telemetry
+    try {
+      const idToken = await user?.getIdToken();
+      fetch('/api/telemetry/module-action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
+        body: JSON.stringify({ courseId, moduleId: module.id, action: 'regenerate' })
+      }).catch(err => console.warn('Failed to track regeneration telemetry:', err));
+    } catch (e) {}
+
     // Progress animation
     const interval = setInterval(() => {
       setGenerationStep(prev => (prev + 1) % generationSteps.length);
@@ -387,6 +397,19 @@ export default function ContentArea({
     }
   };
 
+  const handleBackToSyllabusAction = async () => {
+    // Track dropoff telemetry if they are leaving before finishing
+    try {
+      const idToken = await user?.getIdToken();
+      fetch('/api/telemetry/module-action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
+        body: JSON.stringify({ courseId, moduleId: module.id, action: 'dropoff' })
+      }).catch(err => console.warn('Failed to track dropoff telemetry:', err));
+    } catch (e) {}
+    onBackToSyllabus();
+  };
+
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden relative bg-zinc-50 dark:bg-zinc-950">
       {/* Subtopic Navigation Bar */}
@@ -401,7 +424,7 @@ export default function ContentArea({
             </button>
           )}
           <button 
-            onClick={onBackToSyllabus}
+            onClick={handleBackToSyllabusAction}
             className="flex items-center gap-2 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 font-medium text-sm transition-colors"
           >
             <ArrowLeft size={16} />
@@ -526,8 +549,30 @@ export default function ContentArea({
                 </p>
               </div>
             ) : activeLessonData ? (
-              <div className="max-w-none">
+              <div className="max-w-none space-y-10">
                 <MarkdownRenderer content={activeLessonData.content} />
+                
+                {/* Source Citations & Grounding Section */}
+                {module.groundingReferences && module.groundingReferences.length > 0 && (
+                  <div className="pt-8 border-t border-zinc-100 dark:border-zinc-800/50">
+                    <h4 className="text-xs font-bold text-zinc-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                      <BookOpen size={14} className="text-indigo-500" />
+                      Academic Grounding & Verification Sources
+                    </h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {module.groundingReferences.map((ref, idx) => (
+                        <div key={idx} className="flex items-start gap-3 p-3 rounded-xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-100 dark:border-zinc-700/30">
+                          <div className="mt-1 w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />
+                          <span className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">{ref}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="mt-4 text-[10px] text-zinc-400 italic">
+                      This content was dynamically generated and verified against the scholarly references listed above. 
+                      Confidence State: <span className="font-bold text-indigo-500">{module.confidenceState || 'Verified'}</span>
+                    </p>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">

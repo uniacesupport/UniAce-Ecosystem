@@ -174,12 +174,21 @@ export interface SubTopic {
   title: string;
   content: string;
   relatedTo?: string[];
+  groundingReferences?: string[];
+  confidenceState?: 'verified' | 'needs_review' | 'failed';
 }
 
 export interface Module {
   id: string;
   title: string;
   subTopics: SubTopic[];
+  groundingReferences?: string[];
+  confidenceState?: 'verified' | 'needs_review' | 'failed';
+  telemetry?: {
+    regenerationCount: number;
+    editCount: number;
+    dropOffRate: number;
+  };
 }
 
 export interface MessageReaction {

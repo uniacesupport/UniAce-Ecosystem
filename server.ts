@@ -2032,7 +2032,15 @@ const VerificationResultSchema = z.object({
     prerequisiteGaps: z.array(z.string()),
     workloadAssessment: z.string()
   }).optional(),
-  consistencyScore: z.number().min(0).max(100).optional().default(100)
+  consistencyScore: z.number().min(0).max(100).optional().default(100),
+  confidenceState: z.enum(['verified', 'needs_review', 'failed']).optional().default('needs_review')
+});
+
+const ModuleTelemetrySchema = z.object({
+  regenerationCount: z.number().default(0),
+  editCount: z.number().default(0),
+  dropOffRate: z.number().default(0),
+  studentFeedbackScore: z.number().default(0)
 });
 
 const RegressionTestSchema = z.object({
@@ -4597,6 +4605,7 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
               "workloadAssessment": "Brief workload comment"
             },
             "consistencyScore": 90,
+            "confidenceState": "verified" or "needs_review" or "failed",
             "preferredSkeleton": "A" or "B"
           }`;
 
@@ -4639,12 +4648,13 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
           primaryDomain: domainInference.primaryDomain,
           coverageScore: skeleton.verification.coverageScore,
           consistencyScore: skeleton.verification.consistencyScore,
+          confidenceState: skeleton.verification.confidenceState || (skeleton.verification.coverageScore >= 90 ? 'verified' : 'needs_review'),
           pedagogyAudit: skeleton.verification.pedagogyAudit,
           accreditationStandards: domainInference.accreditationStandards,
           groundingReferences: domainInference.groundingReferences,
           generationProgress: 20,
-          needsApproval: true, // Human-in-the-loop requirement
-          statusMessage: `Syllabus verified (Score: ${skeleton.verification.coverageScore}%, Consistency: ${skeleton.verification.consistencyScore}%). Starting parallel content generation...`,
+          needsApproval: true, 
+          statusMessage: `Syllabus verified (Score: ${skeleton.verification.coverageScore}%, State: ${skeleton.verification.confidenceState || 'needs_review'}). Starting content generation...`,
           updatedAt: new Date().toISOString()
         });
 
@@ -4671,7 +4681,14 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
 
             await db.collection('courses').doc(courseId).collection('modules').doc(moduleId).set({
               title: moduleSkeleton.title || `Module ${mIndex + 1}`,
-              order: mIndex + 1
+              order: mIndex + 1,
+              groundingReferences: domainInference.groundingReferences, // Module-level source citing
+              confidenceState: skeleton.verification.confidenceState || 'needs_review',
+              telemetry: {
+                regenerationCount: 0,
+                editCount: 0,
+                dropOffRate: 0
+              }
             });
 
             const topics = moduleSkeleton.topics || moduleSkeleton.lessons || moduleSkeleton.lessonTitles || [];
@@ -4926,6 +4943,39 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
   }
 });
 
+app.post('/api/telemetry/module-action', verifyAuth, async (req, res) => {
+  const { courseId, moduleId, action } = req.body; // action: 'edit', 'regenerate', 'dropoff'
+  if (!courseId || !moduleId || !action) {
+    return res.status(400).json({ error: 'courseId, moduleId, and action are required' });
+  }
+
+  const app = getAdminApp();
+  if (!app) return res.status(500).json({ error: 'Database service unavailable' });
+  const db = app.firestore();
+
+  try {
+    const modRef = db.collection('courses').doc(courseId).collection('modules').doc(moduleId);
+    const fieldMap: Record<string, string> = {
+      'edit': 'telemetry.editCount',
+      'regenerate': 'telemetry.regenerationCount',
+      'dropoff': 'telemetry.dropOffRate'
+    };
+
+    const field = fieldMap[action];
+    if (field) {
+      await modRef.update({
+        [field]: admin.firestore.FieldValue.increment(1),
+        updatedAt: new Date().toISOString()
+      });
+    }
+
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('Telemetry Error:', error);
+    res.status(500).json({ error: 'Failed to record telemetry' });
+  }
+});
+
 app.post('/api/course/:courseId/publish', verifyAuth, async (req, res) => {
   const { courseId } = req.params;
   const app = getAdminApp();
@@ -4938,6 +4988,17 @@ app.post('/api/course/:courseId/publish', verifyAuth, async (req, res) => {
     
     if (!doc.exists) {
       return res.status(404).json({ error: 'Course not found.' });
+    }
+
+    const courseData = doc.data() || {};
+    
+    // DRIFT MONITORING: Block publishing if confidence is "failed" or coverage is critically low
+    if (courseData.confidenceState === 'failed' || (courseData.coverageScore && courseData.coverageScore < 70)) {
+      return res.status(400).json({ 
+        error: 'Publishing Blocked: This course has failed quality/drift verification.',
+        reason: `Coverage Score (${courseData.coverageScore}%) is below the required threshold or Confidence State is "failed".`,
+        needsRegeneration: true
+      });
     }
 
     await courseRef.update({
@@ -4996,6 +5057,14 @@ app.post('/api/admin/regression-test', verifyAuth, async (req, res) => {
         testResult.error = `Domain mismatch: Expected "${tc.expectedDomain}", got "${domainInference.primaryDomain}"`;
       }
       
+      // DRIFT MONITORING: Check against history
+      const prevTest = await db.collection('system_tests').doc(tc.id).get();
+      const prevData = prevTest.data();
+      if (prevData && prevData.status === 'passed' && !isMatch) {
+        console.warn(`[Drift Warning] Regression test ${tc.id} ("${tc.title}") transitioned from passed to failed!`);
+        testResult.driftDetected = true;
+      }
+
       results.push(testResult);
       
       // Save result to firestore for audit

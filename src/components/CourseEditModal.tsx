@@ -37,6 +37,25 @@ export default function CourseEditModal({ course, onClose, onSave }: CourseEditM
         : academicStandard;
 
       const courseRef = doc(db, 'courses', course.id);
+      
+      // Track instructor edits telemetry
+      try {
+        const idToken = await (await import('firebase/auth')).getAuth().currentUser?.getIdToken();
+        if (idToken) {
+          // Find modules that were edited (simple comparison of syllabus array)
+          modules.forEach(m => {
+            const original = course.syllabus.find(om => om.id === m.id);
+            if (!original || JSON.stringify(original) !== JSON.stringify(m)) {
+              fetch('/api/telemetry/module-action', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
+                body: JSON.stringify({ courseId: course.id, moduleId: m.id, action: 'edit' })
+              }).catch(err => console.warn('Failed to track edit telemetry:', err));
+            }
+          });
+        }
+      } catch (e) {}
+
       await updateDoc(courseRef, {
         title,
         description,
