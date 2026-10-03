@@ -53,6 +53,8 @@ export interface Course {
   provenance?: CourseProvenance;
   deleted?: boolean;
   deletedAt?: string;
+  syllabusStatus?: 'pending' | 'generating' | 'ready' | 'failed';
+  syllabusStatusTimestamp?: string;
 }
 
 export type View = 'hub' | 'dashboard' | 'study' | 'past-questions' | 'quizzes' | 'module-topics' | 'course-syllabus' | 'mastery' | 'formulas' | 'ai-tutor' | 'notebook' | 'profile' | 'help-support' | 'admin-support' | 'admin-dashboard' | 'tutor-dashboard' | 'pricing' | 'flashcards' | 'arena' | 'concept-map' | 'study-plan';

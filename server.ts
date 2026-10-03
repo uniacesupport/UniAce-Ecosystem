@@ -113,7 +113,7 @@ const globalNvidiaBreaker = new CircuitBreaker(globalNvidiaProvider);
 // --- Resilient Task Coordinator (Rate Limit Shield & Backoff Queue) ---
 class ResilientTaskCoordinator {
   private lastRequestTime = 0;
-  private minSpacingMs = 800; // Delay consecutive calls slightly to stay under quota constraints
+  private minSpacingMs = 200; // Efficient spacing to prevent local socket bursts without blocking pipelines
 
   private async throttle(): Promise<void> {
     const now = Date.now();
@@ -129,8 +129,8 @@ class ResilientTaskCoordinator {
     task: () => Promise<T>,
     options: { maxRetries?: number; baseDelayMs?: number } = {}
   ): Promise<T> {
-    const maxRetries = options.maxRetries ?? 5;
-    const baseDelayMs = options.baseDelayMs ?? 1500;
+    const maxRetries = options.maxRetries ?? 2; // Strict fail-fast: at most 2 retries on transient errors
+    const baseDelayMs = options.baseDelayMs ?? 1000;
 
     await this.throttle();
 
@@ -139,19 +139,58 @@ class ResilientTaskCoordinator {
         return await task();
       } catch (error: any) {
         const errorMsg = error?.message || String(error);
-        const isRateLimit =
-          errorMsg.includes('429') ||
-          errorMsg.toLowerCase().includes('rate limit') ||
-          errorMsg.toLowerCase().includes('quota exceeded') ||
-          errorMsg.toLowerCase().includes('too many requests') ||
-          errorMsg.toLowerCase().includes('exhausted');
+        const lowerMsg = errorMsg.toLowerCase();
 
-        if (isRateLimit && attempt < maxRetries) {
-          const delay = baseDelayMs * Math.pow(2, attempt) + Math.random() * 800;
+        // 1. Fail fast immediately on non-retryable errors (400, 404, invalid model, invalid key, auth)
+        const isNonRetryable =
+          error?.status === 400 ||
+          error?.status === 404 ||
+          error?.statusCode === 400 ||
+          error?.statusCode === 404 ||
+          lowerMsg.includes('404') ||
+          lowerMsg.includes('not found') ||
+          lowerMsg.includes('does not exist') ||
+          lowerMsg.includes('unsupported model') ||
+          lowerMsg.includes('invalid argument') ||
+          lowerMsg.includes('invalid_api_key') ||
+          lowerMsg.includes('unauthorized') ||
+          lowerMsg.includes('permission denied');
+
+        if (isNonRetryable) {
+          console.warn(`[ResilientTaskCoordinator] Fail-fast on non-retryable error: ${errorMsg}`);
+          throw error;
+        }
+
+        // 2. Only retry transient errors (429 rate limits, 5xx server errors, network timeouts)
+        const isRateLimit =
+          error?.status === 429 ||
+          error?.statusCode === 429 ||
+          lowerMsg.includes('429') ||
+          lowerMsg.includes('rate limit') ||
+          lowerMsg.includes('quota exceeded') ||
+          lowerMsg.includes('too many requests') ||
+          lowerMsg.includes('exhausted');
+
+        const isServer5xx = (error?.status >= 500 && error?.status <= 599) || (error?.statusCode >= 500 && error?.statusCode <= 599);
+        const isNetworkTimeout = lowerMsg.includes('timeout') || lowerMsg.includes('econnreset') || lowerMsg.includes('fetch failed');
+
+        if ((isRateLimit || isServer5xx || isNetworkTimeout) && attempt < maxRetries) {
+          // Parse Retry-After if available
+          let delay = Math.min(baseDelayMs * Math.pow(2, attempt) + Math.random() * 500, 4000);
+          if (error?.headers?.get && typeof error.headers.get === 'function') {
+            const retryHeader = error.headers.get('retry-after');
+            if (retryHeader) {
+              const seconds = parseInt(retryHeader, 10);
+              if (!isNaN(seconds) && seconds > 0) {
+                delay = Math.min(seconds * 1000, 6000);
+              }
+            }
+          }
+
           console.warn(
-            `[Quota Shield] Rate limit or quota warning detected (attempt ${attempt + 1}/${maxRetries + 1}). Retrying in ${Math.round(
+            `[Quota Shield] Transient warning (attempt ${attempt + 1}/${maxRetries + 1}). Retrying in ${Math.round(
               delay
-            )}ms...`
+            )}ms: ${errorMsg}`
           );
           await new Promise((resolve) => setTimeout(resolve, delay));
           continue;
@@ -159,7 +198,7 @@ class ResilientTaskCoordinator {
         throw error;
       }
     }
-    throw new Error('Task execution aborted: quota exceeded or rate-limited repeatedly under system protection policies.');
+    throw new Error('Task execution aborted after maximum retry attempts.');
   }
 }
 
@@ -170,6 +209,56 @@ async function resilientEmbedContent(genAI: any, params: any) {
   return await globalResilientEmbed.execute(async () => {
     return await genAI.models.embedContent(params);
   });
+}
+
+// In-memory cancellation tracker for server jobs
+const activeCancelledJobs = new Set<string>();
+
+// Asynchronous decoupled knowledge base indexer
+function triggerAsyncLessonEmbedding(
+  db: admin.firestore.Firestore,
+  courseId: string,
+  moduleTitle: string,
+  lessonTitle: string,
+  lessonContent: string
+) {
+  setTimeout(async () => {
+    try {
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey || !lessonContent) return;
+      const chunks = chunkText(lessonContent, 1000, 100);
+      const kbBatch = db.batch();
+      const kbRef = db.collection('knowledge_base');
+      const genAI = new GoogleGenAI({ apiKey });
+
+      for (const chunk of chunks) {
+        try {
+          const embedRes = await genAI.models.embedContent({
+            model: 'text-embedding-004',
+            contents: [chunk]
+          });
+          const vector = embedRes.embeddings?.[0]?.values;
+          if (vector && Array.isArray(vector)) {
+            const docRef = kbRef.doc();
+            kbBatch.set(docRef, sanitizeForFirestore({
+              content: chunk,
+              course_code: courseId,
+              module_name: moduleTitle,
+              topic_name: lessonTitle,
+              embedding: admin.firestore.VectorValue.fromArray(vector),
+              createdAt: admin.firestore.FieldValue.serverTimestamp()
+            }));
+          }
+        } catch {
+          // Individual chunk indexing failure is non-fatal
+        }
+      }
+      await kbBatch.commit();
+      console.log(`[Async Indexing] Indexed ${chunks.length} chunks for "${lessonTitle}" in ${courseId}`);
+    } catch (err: any) {
+      console.warn(`[Async Indexing] Deferred indexing notice for "${lessonTitle}":`, err?.message || err);
+    }
+  }, 100);
 }
 
 // --- Telemetry Helper ---
@@ -4220,11 +4309,13 @@ app.all('/api/course/generate*', (req, res, next) => {
 
 // Centralized Provider LLM Completion Helper with Schema Validation & Zero-Fallback Enforcement
 interface CompleteProviderOptions<T> {
-  type: 'skeleton' | 'module' | 'lesson' | 'default';
+  type: 'skeleton' | 'module' | 'lesson' | 'default' | 'formulas';
   messages: Array<{ role: string; content: string }>;
   schema?: z.ZodSchema<T>;
   requestedProvider?: string;
   complexity?: 'standard' | 'high';
+  strictMode?: boolean;
+  timeoutMs?: number;
 }
 
 async function completeWithProviderJSON<T = any>(opts: CompleteProviderOptions<T>): Promise<T> {
@@ -4242,40 +4333,73 @@ async function completeWithProviderJSON<T = any>(opts: CompleteProviderOptions<T
 
   const providerMap: Record<string, any> = {
     gemini_direct: globalGeminiDirectBreaker,
-    mistral_direct: globalMistralDirectBreaker,
+    gemini: globalGeminiDirectBreaker,
     groq: globalGroqBreaker,
+    nvidia: globalNvidiaBreaker || globalNvidiaProvider,
+    mistral_direct: globalMistralDirectBreaker,
+    mistral: globalMistralDirectBreaker,
     cohere: globalCohereBreaker,
     huggingface: globalHuggingFaceBreaker,
-    gemini: globalGeminiDirectBreaker,
-    mistral: globalMistralDirectBreaker,
-    openrouter_free: globalOpenRouterFreeBreaker,
-    nvidia: globalNvidiaBreaker || globalNvidiaProvider
+    openrouter_free: globalOpenRouterFreeBreaker
   };
 
-  const primary = opts.requestedProvider || routingConfig[opts.type] || (opts.type === 'lesson' ? 'groq' : 'cohere');
-  const queue = [primary];
-  if (systemConfig.autoFallback !== false) {
-    const fallbacks = Object.keys(providerMap).filter(p => p !== primary);
-    fallbacks.sort(() => Math.random() - 0.5);
+  const rawRequested = (opts.requestedProvider || '').toLowerCase().trim();
+  const normalizedRequested = rawRequested === 'gemini' ? 'gemini_direct' : rawRequested === 'mistral' ? 'mistral_direct' : rawRequested;
+  const primaryKey = normalizedRequested || routingConfig[opts.type] || 'gemini_direct';
+  const normalizedPrimary = primaryKey === 'gemini' ? 'gemini_direct' : primaryKey === 'mistral' ? 'mistral_direct' : primaryKey;
+
+  // Strict mode: if requested or configured, fail fast rather than failing over
+  const isStrict = opts.strictMode === true || routingConfig.default_personality === 'strict_mode';
+
+  const distinctProviders = ['gemini_direct', 'groq', 'nvidia', 'mistral_direct', 'cohere', 'openrouter_free', 'huggingface'];
+  const queue = [normalizedPrimary];
+  if (!isStrict && systemConfig.autoFallback !== false) {
+    const fallbacks = distinctProviders.filter(p => p !== normalizedPrimary);
     queue.push(...fallbacks);
   }
-  const activeProviders = queue.map(name => providerMap[name]).filter(Boolean);
+
+  // Deduplicate breaker instances
+  const activeProviders: any[] = [];
+  const seenBreakers = new Set();
+  for (const name of queue) {
+    const breaker = providerMap[name];
+    if (breaker && !seenBreakers.has(breaker)) {
+      seenBreakers.add(breaker);
+      activeProviders.push(breaker);
+    }
+  }
 
   let lastError: any = null;
+  const timeoutLimit = opts.timeoutMs || (opts.type === 'lesson' ? 30000 : 25000);
+
   for (const prov of activeProviders) {
+    // Check circuit breaker state first! If open, skip immediately to avoid latency penalty
+    if (typeof prov.isOpen === 'function' && prov.isOpen()) {
+      console.log(`[AI Completion] Skipping ${prov.name} (circuit breaker is OPEN: ${prov.getReason?.() || 'cooling down'})`);
+      continue;
+    }
+
     try {
-      console.log(`[AI Completion] Invoking ${opts.type} with provider: ${prov.constructor.name}`);
-      const resp = await generateWithTelemetry(prov, opts.messages, {
-        complexity: opts.complexity || 'high',
-        jsonMode: true
-      });
+      console.log(`[AI Completion] Invoking ${opts.type} with provider: ${prov.name || prov.constructor.name}`);
+      const attemptTimeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`Attempt timeout: ${prov.name || 'provider'} exceeded ${timeoutLimit / 1000}s limit`)), timeoutLimit)
+      );
+
+      const resp = await Promise.race([
+        generateWithTelemetry(prov, opts.messages, {
+          complexity: opts.complexity || 'high',
+          jsonMode: true
+        }),
+        attemptTimeout
+      ]);
+
       if (resp && resp.text) {
         const parsed = parseRobustJSON<T>(resp.text);
         if (opts.schema) {
           const validation = opts.schema.safeParse(parsed);
           if (!validation.success) {
-            console.warn(`[AI Completion] Schema validation failed for ${opts.type} with ${prov.constructor.name}:`, validation.error.issues);
-            throw new Error(`Schema validation failed: ${validation.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ')}`);
+            console.warn(`[AI Completion] Schema validation failed for ${opts.type} with ${prov.name || prov.constructor.name}:`, validation.error.issues);
+            throw new Error(`Schema validation failed: ${validation.error.issues.map((i: any) => `${i.path.join('.')}: ${i.message}`).join('; ')}`);
           }
           return validation.data;
         }
@@ -4283,7 +4407,10 @@ async function completeWithProviderJSON<T = any>(opts: CompleteProviderOptions<T
       }
     } catch (err: any) {
       lastError = err;
-      console.warn(`[AI Completion] Provider ${prov.constructor.name} failed for ${opts.type}:`, err.message || err);
+      console.warn(`[AI Completion] Provider ${prov.name || prov.constructor.name} failed for ${opts.type}:`, err.message || err);
+      if (isStrict) {
+        throw err;
+      }
     }
   }
 
@@ -4602,8 +4729,14 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
       try {
         console.log(`[Coordinated Gen] Starting background worker for course ${courseId} (${rawDept})...`);
 
-        // Purge stale subcollections
-        await purgeCourseSubcollections(db, courseId);
+        // Check if this is a resume operation
+        const isResume = req.body.resume === true;
+        if (!isResume) {
+          // Purge stale subcollections on fresh generation
+          await purgeCourseSubcollections(db, courseId);
+        } else {
+          console.log(`[Coordinated Gen] Resuming course ${courseId}. Keeping completed lessons.`);
+        }
 
         // STEP 0: Infer Academic Domain & Canonical References
         console.log(`[Coordinated Gen] Inferring domain brief for ${courseName}...`);
@@ -4767,20 +4900,45 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
           updatedAt: new Date().toISOString()
         });
 
-        // STEP 2: Parallel Module Generation with Isolated Per-Lesson Retry
+        // STEP 2: Parallel Module Generation with Real Progress, Cancellation, and Resume Support
         const totalModules = skeleton.modules.length;
-        const CONCURRENCY_LIMIT = 3;
+        let totalLessonsCount = 0;
+        skeleton.modules.forEach((m: any) => {
+          const tList = m.lessonTitles || m.topics || (m.lessons ? m.lessons.map((l: any) => typeof l === 'string' ? l : l.title) : []) || [`Introduction to ${m.title || 'Module'}`];
+          totalLessonsCount += tList.length;
+        });
+
+        let completedLessonsCount = 0;
+        const jobStartTime = Date.now();
+
+        await db.collection('courses').doc(courseId).update({
+          totalLessons: totalLessonsCount,
+          completedLessons: 0,
+          generationProgress: 15,
+          statusMessage: `Curriculum verified. Authoring ${totalLessonsCount} lessons across ${totalModules} modules...`,
+          activeProvider: requestedProvider || 'auto',
+          updatedAt: new Date().toISOString()
+        });
+
+        // Adaptive concurrency: scale according to provider rate limits
+        const normReq = (requestedProvider || '').toLowerCase();
+        const CONCURRENCY_LIMIT = (normReq.includes('groq') || normReq.includes('openrouter')) ? 1 : 2;
 
         for (let i = 0; i < totalModules; i += CONCURRENCY_LIMIT) {
+          // Check server-side job cancellation
+          if (activeCancelledJobs.has(courseId)) {
+            console.log(`[Coordinated Gen] Job for ${courseId} cancelled by user. Terminating generation.`);
+            activeCancelledJobs.delete(courseId);
+            await db.collection('courses').doc(courseId).update({
+              generationStatus: 'cancelled',
+              statusMessage: 'Course generation cancelled by user.',
+              updatedAt: new Date().toISOString()
+            });
+            return;
+          }
+
           const chunk = skeleton.modules.slice(i, i + CONCURRENCY_LIMIT);
           const chunkEnd = Math.min(i + CONCURRENCY_LIMIT, totalModules);
-          
-          const progressPercent = 20 + Math.round((i / totalModules) * 70);
-          await db.collection('courses').doc(courseId).update({
-            generationProgress: progressPercent,
-            statusMessage: `Authoring comprehensive lessons for Modules ${i + 1}-${chunkEnd} of ${totalModules}...`,
-            updatedAt: new Date().toISOString()
-          });
 
           const chunkPromises = chunk.map(async (moduleSkeleton: any, idx: number) => {
             const mIndex = i + idx;
@@ -4799,13 +4957,55 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
                 editCount: 0,
                 dropOffRate: 0
               }
-            });
+            }, { merge: true });
 
             const topics = moduleSkeleton.lessonTitles || moduleSkeleton.topics || (moduleSkeleton.lessons ? moduleSkeleton.lessons.map((l: any) => typeof l === 'string' ? l : l.title) : []) || [`Core Concepts of ${moduleSkeleton.title}`];
-            
+
             for (let lIndex = 0; lIndex < topics.length; lIndex++) {
+              // Check cancellation before each lesson
+              if (activeCancelledJobs.has(courseId)) {
+                return;
+              }
+
               const topic = topics[lIndex];
               const lessonId = `m${mIndex + 1}-l${lIndex + 1}`;
+
+              // Idempotent resumption check: if lesson already generated, reuse it
+              const existingLessonSnap = await db.collection('courses').doc(courseId).collection('modules').doc(moduleId).collection('lessons').doc(lessonId).get().catch(() => null);
+              if (existingLessonSnap && existingLessonSnap.exists) {
+                const existingData = existingLessonSnap.data();
+                if (existingData?.content && existingData.content.length > 200) {
+                  console.log(`[Coordinated Gen] Lesson "${topic}" already exists. Reusing.`);
+                  completedLessonsCount++;
+                  const resumeElapsed = Math.round((Date.now() - jobStartTime) / 1000);
+                  const resumePct = Math.min(95, 15 + Math.round((completedLessonsCount / Math.max(1, totalLessonsCount)) * 75));
+                  await db.collection('courses').doc(courseId).update({
+                    generationProgress: resumePct,
+                    statusMessage: `Reused Lesson ${completedLessonsCount}/${totalLessonsCount}: "${topic}"`,
+                    currentModule: moduleSkeleton.title,
+                    currentLesson: topic,
+                    completedLessons: completedLessonsCount,
+                    totalLessons: totalLessonsCount,
+                    elapsedSeconds: resumeElapsed,
+                    updatedAt: new Date().toISOString()
+                  }).catch(() => {});
+                  continue;
+                }
+              }
+
+              const startLessonElapsed = Math.round((Date.now() - jobStartTime) / 1000);
+              const preLessonPct = Math.min(95, 15 + Math.round((completedLessonsCount / Math.max(1, totalLessonsCount)) * 75));
+              await db.collection('courses').doc(courseId).update({
+                generationProgress: preLessonPct,
+                statusMessage: `Authoring Lesson ${completedLessonsCount + 1}/${totalLessonsCount}: "${topic}" (${requestedProvider || 'auto'})`,
+                currentModule: moduleSkeleton.title,
+                currentLesson: topic,
+                completedLessons: completedLessonsCount,
+                totalLessons: totalLessonsCount,
+                activeProvider: requestedProvider || 'auto',
+                elapsedSeconds: startLessonElapsed,
+                updatedAt: new Date().toISOString()
+              }).catch(() => {});
 
               let targetOutcomeText = '';
               if (moduleSkeleton.learningOutcomeIds && moduleSkeleton.learningOutcomeIds.length > 0) {
@@ -4822,6 +5022,7 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
               let lessonErrors: string[] = [];
 
               while (lessonAttempts < 3) {
+                if (activeCancelledJobs.has(courseId)) return;
                 lessonAttempts++;
                 const lessonPrompt = buildLessonPrompt(
                   topic,
@@ -4863,7 +5064,6 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
                 lessonTitle = lessonData.title || topic;
                 lessonContent = lessonData.content || '';
 
-                // Lesson-level validator: KaTeX delimiters, markdown tables, depth
                 const syntaxValidation = validateLessonSyntax(lessonContent, domainBrief.pedagogyType);
                 if (syntaxValidation.isValid) {
                   break;
@@ -4873,46 +5073,38 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
                 }
               }
 
+              if (activeCancelledJobs.has(courseId)) return;
+
+              // Save lesson immediately with provenance
               await db.collection('courses').doc(courseId).collection('modules').doc(moduleId).collection('lessons').doc(lessonId).set({
                 title: lessonTitle,
                 content: lessonContent,
-                order: lIndex + 1
+                order: lIndex + 1,
+                provider: requestedProvider || 'auto',
+                generatedAt: new Date().toISOString()
               });
 
-              // Vector embedding ingestion for tutoring
-              try {
-                const apiKey = process.env.GEMINI_API_KEY;
-                if (apiKey) {
-                  const chunks = chunkText(lessonContent, 1000, 100);
-                  const kbBatch = db.batch();
-                  const kbRef = db.collection('knowledge_base');
-                  const genAI = new GoogleGenAI({ apiKey });
+              completedLessonsCount++;
+              const postLessonElapsed = Math.round((Date.now() - jobStartTime) / 1000);
+              const postLessonPct = Math.min(95, 15 + Math.round((completedLessonsCount / Math.max(1, totalLessonsCount)) * 75));
 
-                  for (const chunk of chunks) {
-                    const embedRes = await resilientEmbedContent(genAI, {
-                      model: 'gemini-embedding-2-preview',
-                      contents: [chunk]
-                    });
-                    const vector = embedRes.embeddings[0].values;
-                    const docRef = kbRef.doc();
-                    kbBatch.set(docRef, sanitizeForFirestore({
-                      content: chunk,
-                      course_code: courseId,
-                      module_name: moduleSkeleton.title,
-                      topic_name: lessonTitle,
-                      embedding: admin.firestore.VectorValue.fromArray(vector),
-                      createdAt: admin.firestore.FieldValue.serverTimestamp()
-                    }));
-                    await new Promise(resolve => setTimeout(resolve, 300));
-                  }
-                  await kbBatch.commit();
-                }
-              } catch (kbErr) {
-                console.warn(`[Coordinated Gen] Knowledge base ingestion note for "${topic}":`, kbErr);
-              }
+              await db.collection('courses').doc(courseId).update({
+                generationProgress: postLessonPct,
+                statusMessage: `Completed Lesson ${completedLessonsCount}/${totalLessonsCount}: "${lessonTitle}"`,
+                currentModule: moduleSkeleton.title,
+                currentLesson: lessonTitle,
+                completedLessons: completedLessonsCount,
+                totalLessons: totalLessonsCount,
+                elapsedSeconds: postLessonElapsed,
+                updatedAt: new Date().toISOString()
+              }).catch(() => {});
+
+              // Completely asynchronous background embedding: never blocks lesson authoring
+              triggerAsyncLessonEmbedding(db, courseId, moduleSkeleton.title, lessonTitle, lessonContent);
             }
 
-            // Generate Module Quiz (5 challenging multiple choice questions)
+            // Generate Module Quiz
+            if (activeCancelledJobs.has(courseId)) return;
             const quizPrompt = `Generate a university-level quiz with 5 rigorous multiple choice questions on: ${JSON.stringify(moduleSkeleton.quizTopics || topics)}.
 Course: ${courseName} (${domainBrief.primaryDomain})
 Module: ${moduleSkeleton.title}
@@ -4932,23 +5124,27 @@ Return strictly a JSON object:
   ]
 }`;
 
-            const quizData = await completeWithProviderJSON({
-              type: 'module',
-              messages: [
-                { 
-                  role: 'system', 
-                  content: `You are an expert university examiner in ${domainBrief.primaryDomain}. Output strictly valid JSON.\n\n${latexInstruction}` 
-                },
-                { role: 'user', content: quizPrompt }
-              ],
-              schema: ModuleQuizSchema,
-              requestedProvider,
-              complexity: 'high'
-            });
+            try {
+              const quizData = await completeWithProviderJSON({
+                type: 'module',
+                messages: [
+                  { 
+                    role: 'system', 
+                    content: `You are an expert university examiner in ${domainBrief.primaryDomain}. Output strictly valid JSON.\n\n${latexInstruction}` 
+                  },
+                  { role: 'user', content: quizPrompt }
+                ],
+                schema: ModuleQuizSchema,
+                requestedProvider,
+                complexity: 'high'
+              });
 
-            await db.collection('courses').doc(courseId).collection('modules').doc(moduleId).collection('quizzes').doc('default').set({
-              questions: quizData.questions || []
-            });
+              await db.collection('courses').doc(courseId).collection('modules').doc(moduleId).collection('quizzes').doc('default').set({
+                questions: quizData.questions || []
+              });
+            } catch (qErr) {
+              console.warn(`[Coordinated Gen] Quiz generation error for module ${moduleId}:`, qErr);
+            }
           });
 
           await Promise.all(chunkPromises);
@@ -5069,6 +5265,208 @@ Return strictly a JSON object:
     res.status(500).json({ error: 'Failed to start coordinated generation.' });
   }
 });
+
+// --- Cancel Course Generation Job ---
+app.post('/api/course/cancel-job', verifyAuth, async (req, res) => {
+  const { courseId } = req.body;
+  if (!courseId || typeof courseId !== 'string') {
+    return res.status(400).json({ error: 'Valid courseId is required.' });
+  }
+
+  console.log(`[Job Controller] Cancelling course generation job for ${courseId}...`);
+  activeCancelledJobs.add(courseId);
+
+  const app = getAdminApp();
+  if (app) {
+    const db = app.firestore();
+    await db.collection('courses').doc(courseId).update({
+      generationStatus: 'cancelled',
+      statusMessage: 'Course generation cancelled by user.',
+      updatedAt: new Date().toISOString()
+    }).catch((err) => console.warn('Could not update cancelled status in Firestore:', err));
+  }
+
+  res.json({ success: true, courseId, status: 'cancelled' });
+});
+
+// --- Live Provider Models Query Endpoint ---
+app.get('/api/admin/provider-models/:provider', verifyAuth, async (req, res) => {
+  const { provider } = req.params;
+  const app = getAdminApp();
+  if (!app) return res.status(500).json({ error: 'Database service unavailable' });
+  const db = app.firestore();
+
+  try {
+    const apiKeysDoc = await db.collection('system_settings').doc('api_keys').get();
+    const apiKeysData = apiKeysDoc.data() || {};
+    const normProv = (provider || '').toLowerCase().trim();
+
+    let models: string[] = [];
+
+    if (normProv === 'gemini' || normProv === 'gemini_direct') {
+      const keys = apiKeysData.gemini_direct?.keys?.map((k: any) => k.key).filter(Boolean) || [process.env.GEMINI_API_KEY];
+      if (keys.length > 0 && keys[0]) {
+        const ai = new GoogleGenAI({ apiKey: keys[0] });
+        const list = await ai.models.list();
+        for await (const m of list) {
+          if (m.name && (m.name.includes('gemini') || m.name.includes('flash') || m.name.includes('pro'))) {
+            models.push(m.name.replace(/^models\//, ''));
+          }
+        }
+      }
+    } else if (normProv === 'groq') {
+      const keys = apiKeysData.groq?.keys?.map((k: any) => k.key).filter(Boolean) || [process.env.GROQ_API_KEY];
+      if (keys.length > 0 && keys[0]) {
+        const groq = new Groq({ apiKey: keys[0], timeout: 15000 });
+        const list = await groq.models.list();
+        models = (list.data || []).filter((m: any) => m.active !== false).map((m: any) => m.id);
+      }
+    } else if (normProv === 'nvidia') {
+      const keys = apiKeysData.nvidia?.keys?.map((k: any) => k.key).filter(Boolean) || [process.env.NVIDIA_API_KEY];
+      if (keys.length > 0 && keys[0]) {
+        const openai = new OpenAI({ baseURL: "https://integrate.api.nvidia.com/v1", apiKey: keys[0], timeout: 15000 });
+        const list = await openai.models.list();
+        models = (list.data || []).map((m: any) => m.id);
+      }
+    } else if (normProv === 'mistral' || normProv === 'mistral_direct') {
+      const keys = apiKeysData.mistral_direct?.keys?.map((k: any) => k.key).filter(Boolean) || [process.env.MISTRAL_API_KEY];
+      if (keys.length > 0 && keys[0]) {
+        const resp = await fetch('https://api.mistral.ai/v1/models', {
+          headers: { 'Authorization': `Bearer ${keys[0]}` }
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          models = (data.data || []).map((m: any) => m.id);
+        }
+      }
+    }
+
+    res.json({ success: true, provider: normProv, models });
+  } catch (err: any) {
+    console.warn(`[Live Model Check] Error fetching live models for ${provider}:`, err);
+    res.status(500).json({ error: err.message || 'Failed to query live provider models' });
+  }
+});
+
+// --- Validate Model Against Live Provider Endpoint ---
+app.post('/api/admin/validate-model', verifyAuth, async (req, res) => {
+  const { provider, model } = req.body;
+  if (!provider || !model) {
+    return res.status(400).json({ valid: false, error: 'Provider and model are required.' });
+  }
+
+  const app = getAdminApp();
+  if (!app) return res.status(500).json({ valid: false, error: 'Database service unavailable' });
+  const db = app.firestore();
+
+  try {
+    const apiKeysDoc = await db.collection('system_settings').doc('api_keys').get();
+    const apiKeysData = apiKeysDoc.data() || {};
+    const normProv = (provider || '').toLowerCase().trim();
+    const targetModel = (model || '').trim();
+
+    let liveModels: string[] = [];
+
+    if (normProv === 'gemini' || normProv === 'gemini_direct') {
+      const keys = apiKeysData.gemini_direct?.keys?.map((k: any) => k.key).filter(Boolean) || [process.env.GEMINI_API_KEY];
+      if (keys.length > 0 && keys[0]) {
+        const ai = new GoogleGenAI({ apiKey: keys[0] });
+        const list = await ai.models.list();
+        for await (const m of list) {
+          if (m.name) {
+            liveModels.push(m.name.replace(/^models\//, ''));
+            liveModels.push(m.name);
+          }
+        }
+      }
+    } else if (normProv === 'groq') {
+      const keys = apiKeysData.groq?.keys?.map((k: any) => k.key).filter(Boolean) || [process.env.GROQ_API_KEY];
+      if (keys.length > 0 && keys[0]) {
+        const groq = new Groq({ apiKey: keys[0], timeout: 15000 });
+        const list = await groq.models.list();
+        liveModels = (list.data || []).filter((m: any) => m.active !== false).map((m: any) => m.id);
+      }
+    } else if (normProv === 'nvidia') {
+      const keys = apiKeysData.nvidia?.keys?.map((k: any) => k.key).filter(Boolean) || [process.env.NVIDIA_API_KEY];
+      if (keys.length > 0 && keys[0]) {
+        const openai = new OpenAI({ baseURL: "https://integrate.api.nvidia.com/v1", apiKey: keys[0], timeout: 15000 });
+        const list = await openai.models.list();
+        liveModels = (list.data || []).map((m: any) => m.id);
+      }
+    } else if (normProv === 'mistral' || normProv === 'mistral_direct') {
+      const keys = apiKeysData.mistral_direct?.keys?.map((k: any) => k.key).filter(Boolean) || [process.env.MISTRAL_API_KEY];
+      if (keys.length > 0 && keys[0]) {
+        const resp = await fetch('https://api.mistral.ai/v1/models', {
+          headers: { 'Authorization': `Bearer ${keys[0]}` }
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          liveModels = (data.data || []).map((m: any) => m.id);
+        }
+      }
+    }
+
+    const isValid = liveModels.some(m => m.toLowerCase() === targetModel.toLowerCase());
+
+    res.json({
+      valid: isValid,
+      provider: normProv,
+      model: targetModel,
+      message: isValid
+        ? `Verified: Model "${targetModel}" is active on ${normProv}.`
+        : `Warning: Model "${targetModel}" was not found in ${normProv} live active models list.`,
+      availableModels: liveModels.slice(0, 20)
+    });
+  } catch (err: any) {
+    res.status(500).json({ valid: false, error: err.message || 'Validation request failed' });
+  }
+});
+
+// --- Real-time Provider Health & Circuit Breaker Status ---
+app.get('/api/admin/provider-health', verifyAuth, async (req, res) => {
+  const app = getAdminApp();
+  if (!app) return res.status(500).json({ error: 'Database service unavailable' });
+  const db = app.firestore();
+
+  try {
+    const apiKeysDoc = await db.collection('system_settings').doc('api_keys').get();
+    const apiKeysData = apiKeysDoc.data() || {};
+    const routingDoc = await db.collection('system_config').doc('routing').get();
+    const routingData = routingDoc.data() || {};
+
+    const health = {
+      gemini_direct: {
+        circuitBreaker: globalGeminiDirectBreaker.getStatus(),
+        configuredModel: apiKeysData.gemini_direct?.model || 'gemini-2.5-flash',
+        keyCount: apiKeysData.gemini_direct?.keys?.length || (process.env.GEMINI_API_KEY ? 1 : 0),
+        taskRoutes: Object.entries(routingData).filter(([_, v]) => v === 'gemini_direct').map(([k]) => k)
+      },
+      groq: {
+        circuitBreaker: globalGroqBreaker.getStatus(),
+        configuredModel: apiKeysData.groq?.model || 'openai/gpt-oss-20b',
+        keyCount: apiKeysData.groq?.keys?.length || (process.env.GROQ_API_KEY ? 1 : 0),
+        taskRoutes: Object.entries(routingData).filter(([_, v]) => v === 'groq').map(([k]) => k)
+      },
+      nvidia: {
+        circuitBreaker: globalNvidiaBreaker.getStatus(),
+        configuredModel: apiKeysData.nvidia?.model || 'openai/gpt-oss-20b',
+        keyCount: apiKeysData.nvidia?.keys?.length || (process.env.NVIDIA_API_KEY ? 1 : 0),
+        taskRoutes: Object.entries(routingData).filter(([_, v]) => v === 'nvidia').map(([k]) => k)
+      },
+      mistral_direct: {
+        circuitBreaker: globalMistralDirectBreaker.getStatus(),
+        configuredModel: apiKeysData.mistral_direct?.model || 'mistral-small-latest',
+        keyCount: apiKeysData.mistral_direct?.keys?.length || (process.env.MISTRAL_API_KEY ? 1 : 0),
+        taskRoutes: Object.entries(routingData).filter(([_, v]) => v === 'mistral_direct').map(([k]) => k)
+      }
+    };
+
+    res.json({ success: true, timestamp: new Date().toISOString(), health });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Health check failed' });
+  }
+});
+
 
 app.post('/api/telemetry/module-action', verifyAuth, async (req, res) => {
   const { courseId, moduleId, action } = req.body; // action: 'edit', 'regenerate', 'dropoff'

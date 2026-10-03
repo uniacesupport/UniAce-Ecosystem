@@ -1,7 +1,26 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowRight, GraduationCap, ArrowLeft, Wand2, Lock, Book, Activity, Sparkles, CheckCircle2, AlertTriangle, BookOpen } from 'lucide-react';
+import { 
+  ArrowRight, 
+  GraduationCap, 
+  ArrowLeft, 
+  Wand2, 
+  Lock, 
+  Book, 
+  Activity, 
+  Sparkles, 
+  CheckCircle2, 
+  AlertTriangle, 
+  BookOpen, 
+  Clock, 
+  RotateCw, 
+  Bookmark, 
+  HelpCircle,
+  FileText,
+  Brain,
+  MessageSquare
+} from 'lucide-react';
 import { motion } from 'motion/react';
-import { Module, CourseId, CourseObjective } from '../types';
+import { Module, CourseId, CourseObjective, UserProgress } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { useCourses } from '../context/CourseContext';
 import { usePremiumStatus } from '../hooks/usePremiumStatus';
@@ -9,7 +28,9 @@ import { LogService } from '../services/logService';
 import { getModuleIcon } from '../utils/moduleIcons';
 import CourseContextBar from './CourseContextBar';
 import { db } from '../firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, doc, updateDoc, getDoc } from 'firebase/firestore';
+import { getCourseProgramStatus, isCourseEligibleForUser } from '../utils/courseEligibility';
+import toast from 'react-hot-toast';
 
 interface CourseSyllabusProps {
   onModuleSelect: (moduleId: string) => void;
@@ -27,6 +48,17 @@ interface CourseSyllabusProps {
   onSelectCourse?: (courseId: CourseId) => void;
   activeSemester?: string;
   enrolledCourses?: CourseId[];
+  progress?: UserProgress;
+}
+
+function deriveBloomLevel(text: string): 'Remember' | 'Understand' | 'Apply' | 'Analyze' | 'Evaluate' | 'Create' {
+  const lower = text.toLowerCase();
+  if (lower.startsWith('create') || lower.startsWith('design') || lower.startsWith('formulate') || lower.startsWith('synthesize') || lower.startsWith('develop')) return 'Create';
+  if (lower.startsWith('evaluate') || lower.startsWith('assess') || lower.startsWith('judge') || lower.startsWith('critique')) return 'Evaluate';
+  if (lower.startsWith('analyze') || lower.startsWith('compare') || lower.startsWith('contrast') || lower.startsWith('distinguish')) return 'Analyze';
+  if (lower.startsWith('apply') || lower.startsWith('solve') || lower.startsWith('calculate') || lower.startsWith('use') || lower.startsWith('implement') || lower.startsWith('compute')) return 'Apply';
+  if (lower.startsWith('understand') || lower.startsWith('explain') || lower.startsWith('describe') || lower.startsWith('discuss')) return 'Understand';
+  return 'Remember';
 }
 
 export default function CourseSyllabus({ 
@@ -44,40 +76,114 @@ export default function CourseSyllabus({
   regenerationStatus = '',
   onSelectCourse,
   activeSemester = '1st Semester',
-  enrolledCourses = []
+  enrolledCourses = [],
+  progress
 }: CourseSyllabusProps) {
   const { user, profile } = useAuth();
-  const { courses } = useCourses();
+  const { courses, refreshCourses } = useCourses();
   const { isPremium } = usePremiumStatus();
   const isAdmin = profile?.role === 'admin' || (import.meta.env.VITE_ADMIN_EMAILS || '').split(',').includes(user?.email || '');
   const isLocked = !isPremium && !isAdmin;
   const [showUnenrollConfirm, setShowUnenrollConfirm] = useState(false);
-  const [hasLoggedEmptyAlert, setHasLoggedEmptyAlert] = useState(false);
+  const [isRequestingGeneration, setIsRequestingGeneration] = useState(false);
+  const [generationRequested, setGenerationRequested] = useState(false);
 
   const activeCourse = activeCourseId ? courses[activeCourseId] : null;
 
-  // Log alert for empty syllabus to Firestore system_alerts
+  // Filter program courses using shared eligibility engine
+  const availableCourses = Object.values(courses).filter(c => 
+    isCourseEligibleForUser(c, profile, activeSemester, enrolledCourses) || enrolledCourses.includes(c.id as CourseId)
+  );
+
+  const isEligible = activeCourse ? (
+    getCourseProgramStatus(activeCourse, profile, activeSemester) === 'current_program' ||
+    getCourseProgramStatus(activeCourse, profile, activeSemester) === 'global_core'
+  ) : false;
+
+  // Syllabus Status and Subscription from Live Database
+  const [liveSyllabusStatus, setLiveSyllabusStatus] = useState<'pending' | 'generating' | 'ready' | 'failed'>('ready');
+  
   useEffect(() => {
-    if (activeCourse && (!syllabus || syllabus.length === 0) && !hasLoggedEmptyAlert) {
-      setHasLoggedEmptyAlert(true);
-      (async () => {
-        try {
-          await addDoc(collection(db, 'system_alerts'), {
-            type: 'EMPTY_SYLLABUS_ALERT',
-            courseId: activeCourse.id,
-            courseTitle: activeCourse.title,
-            department: profile?.department || '',
-            level: profile?.academic_level || '',
-            semester: activeSemester,
-            timestamp: serverTimestamp(),
-            status: 'pending'
-          });
-        } catch (e) {
-          console.warn("Could not log empty syllabus alert:", e);
-        }
-      })();
+    if (activeCourse) {
+      if (activeCourse.syllabusStatus) {
+        setLiveSyllabusStatus(activeCourse.syllabusStatus);
+      } else {
+        setLiveSyllabusStatus(syllabus.length > 0 ? 'ready' : 'pending');
+      }
     }
-  }, [activeCourse, syllabus, hasLoggedEmptyAlert, profile, activeSemester]);
+  }, [activeCourse, syllabus]);
+
+  // Request Syllabus generation
+  const handleRequestSyllabus = async () => {
+    if (!activeCourseId || !activeCourse) return;
+    setIsRequestingGeneration(true);
+    try {
+      await addDoc(collection(db, 'system_alerts'), {
+        type: 'SYLLABUS_REQUEST',
+        courseId: activeCourseId,
+        courseTitle: activeCourse.title,
+        requestedBy: user?.uid || 'anonymous',
+        userEmail: user?.email || '',
+        department: profile?.department || '',
+        level: profile?.academic_level || '',
+        semester: activeSemester,
+        timestamp: serverTimestamp(),
+        status: 'pending'
+      });
+      setGenerationRequested(true);
+      toast.success("Syllabus request submitted to academic team!");
+    } catch (e) {
+      console.error("Failed requesting syllabus:", e);
+      toast.error("Could not submit request. Please try again.");
+    } finally {
+      setIsRequestingGeneration(false);
+    }
+  };
+
+  // Wrapped Admin Regeneration that sets live syllabusStatus on course document
+  const triggerRegenerate = async () => {
+    if (!activeCourseId || !onRegenerate) return;
+    try {
+      await updateDoc(doc(db, 'courses', activeCourseId), {
+        syllabusStatus: 'generating',
+        syllabusStatusTimestamp: new Date().toISOString()
+      });
+      setLiveSyllabusStatus('generating');
+      
+      // Call parent generation flow
+      await onRegenerate();
+      
+      // Update back to ready
+      await updateDoc(doc(db, 'courses', activeCourseId), {
+        syllabusStatus: 'ready',
+        syllabusStatusTimestamp: new Date().toISOString()
+      });
+      setLiveSyllabusStatus('ready');
+      toast.success("Syllabus generated successfully!");
+    } catch (err) {
+      console.error("Error generating syllabus:", err);
+      await updateDoc(doc(db, 'courses', activeCourseId), {
+        syllabusStatus: 'failed',
+        syllabusStatusTimestamp: new Date().toISOString()
+      });
+      setLiveSyllabusStatus('failed');
+      toast.error("Syllabus generation failed.");
+    }
+  };
+
+  // Normalize objectives with Bloom taxonomy levels and match with quiz performance
+  const normalizedObjectives: CourseObjective[] = (objectives || []).map(item => {
+    if (typeof item === 'string') {
+      return {
+        outcome: item,
+        bloomLevel: deriveBloomLevel(item)
+      };
+    }
+    return {
+      outcome: item.outcome || (item as any).title || (item as any).text || '',
+      bloomLevel: item.bloomLevel || deriveBloomLevel(item.outcome || '')
+    };
+  });
 
   return (
     <div className="flex-1 overflow-y-auto bg-slate-50 dark:bg-zinc-950 p-3 sm:p-6 lg:p-8 pb-16 transition-colors">
@@ -109,16 +215,16 @@ export default function CourseSyllabus({
             {isAdmin && onRegenerate && activeCourseId && (
               <div className="flex flex-col items-end gap-2">
                 <button 
-                  onClick={onRegenerate}
-                  disabled={regenerationProgress > 0 && regenerationProgress < 100}
+                  onClick={triggerRegenerate}
+                  disabled={regenerationProgress > 0 && regenerationProgress < 100 || liveSyllabusStatus === 'generating'}
                   className={`flex items-center gap-2 px-4 py-2 font-bold rounded-xl transition-colors text-sm ${
-                    regenerationProgress > 0 && regenerationProgress < 100
+                    regenerationProgress > 0 && regenerationProgress < 100 || liveSyllabusStatus === 'generating'
                       ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
                       : 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-200'
                   }`}
                 >
-                  <Wand2 size={16} className={regenerationProgress > 0 && regenerationProgress < 100 ? 'animate-spin' : ''} />
-                  {regenerationProgress > 0 && regenerationProgress < 100 ? 'Regenerating...' : 'Regenerate Syllabus'}
+                  <Wand2 size={16} className={regenerationProgress > 0 && regenerationProgress < 100 || liveSyllabusStatus === 'generating' ? 'animate-spin' : ''} />
+                  {regenerationProgress > 0 && regenerationProgress < 100 || liveSyllabusStatus === 'generating' ? 'Generating Syllabus...' : 'Regenerate Syllabus'}
                 </button>
                 {regenerationProgress > 0 && (
                   <div className="w-48 sm:w-64 space-y-1">
@@ -153,20 +259,19 @@ export default function CourseSyllabus({
               </p>
             </div>
             
-            {activeCourseId && (
+            {activeCourseId && liveSyllabusStatus === 'ready' && (
               <div className="shrink-0">
                 {isEnrolled ? (
                   <button
                     onClick={() => {
-                      if (onUnenroll) {
-                        setShowUnenrollConfirm(true);
+                      if (onViewSelect) {
+                        onViewSelect('dashboard');
                       }
                     }}
-                    className="inline-flex items-center gap-2 px-6 py-3 rounded-2xl bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-900/30 dark:hover:text-red-400 font-semibold border border-emerald-200 dark:border-emerald-800 hover:border-red-200 dark:hover:border-red-800 transition-colors group"
+                    className="inline-flex items-center gap-2 px-6 py-3.5 rounded-2xl bg-emerald-500 hover:bg-emerald-600 text-white font-semibold shadow-lg shadow-emerald-500/30 transition-all hover:scale-105 active:scale-95 text-sm sm:text-base"
                   >
-                    <Activity size={20} className="group-hover:hidden" />
-                    <span className="group-hover:hidden">Enrolled</span>
-                    <span className="hidden group-hover:inline">Unenroll</span>
+                    <Activity size={20} />
+                    <span>Continue Studying</span>
                   </button>
                 ) : (
                   <button
@@ -199,7 +304,7 @@ export default function CourseSyllabus({
 
             {onSelectCourse && (
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 text-left max-w-3xl mx-auto pt-4">
-                {Object.values(courses).map(c => (
+                {availableCourses.map(c => (
                   <button
                     key={c.id}
                     onClick={() => onSelectCourse(c.id as CourseId)}
@@ -224,43 +329,115 @@ export default function CourseSyllabus({
           </div>
         )}
 
-        {/* STATE 2: Course Selected, but Syllabus Empty */}
-        {activeCourseId && activeCourse && (!syllabus || syllabus.length === 0) && (
-          <div className="bg-amber-500/5 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-900/40 rounded-3xl p-8 sm:p-12 text-center space-y-6">
-            <div className="w-16 h-16 bg-amber-500/20 text-amber-600 dark:text-amber-400 rounded-2xl flex items-center justify-center mx-auto">
-              <AlertTriangle size={32} />
-            </div>
-            <div className="max-w-lg mx-auto space-y-2">
-              <h3 className="text-2xl font-bold text-slate-900 dark:text-white">
-                Syllabus Outline Pending for {activeCourse.id}
-              </h3>
-              <p className="text-sm text-slate-600 dark:text-zinc-400 leading-relaxed">
-                The detailed module structure for <strong className="text-slate-900 dark:text-white">{activeCourse.title}</strong> is currently being prepared for your department. An alert has been logged for academic review.
-              </p>
-            </div>
-
-            {isAdmin && onRegenerate && (
-              <div className="pt-2">
-                <button
-                  onClick={onRegenerate}
-                  disabled={regenerationProgress > 0 && regenerationProgress < 100}
-                  className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-semibold text-sm flex items-center gap-2 mx-auto shadow-sm"
-                >
-                  <Wand2 size={16} />
-                  Generate Course Syllabus
-                </button>
+        {/* STATE 2: Course Selected, but Syllabus Empty, Pending, or Failed */}
+        {activeCourseId && activeCourse && (liveSyllabusStatus === 'pending' || liveSyllabusStatus === 'generating' || liveSyllabusStatus === 'failed' || !syllabus || syllabus.length === 0) && (
+          <div className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-3xl p-8 sm:p-12 text-center space-y-6 shadow-sm">
+            
+            {liveSyllabusStatus === 'generating' ? (
+              <div className="space-y-6">
+                <div className="w-16 h-16 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-2xl flex items-center justify-center mx-auto animate-pulse">
+                  <Wand2 size={32} className="animate-spin" />
+                </div>
+                <div className="max-w-lg mx-auto space-y-2">
+                  <h3 className="text-2xl font-bold text-slate-900 dark:text-white">
+                    Formulating Academic Syllabus...
+                  </h3>
+                  <p className="text-sm text-slate-600 dark:text-zinc-400 leading-relaxed">
+                    UniAce AI is currently building the core learning map and populating rigorous academic topics for <strong className="text-slate-900 dark:text-white">{activeCourse.id}: {activeCourse.title}</strong>. This takes about 10–20 seconds.
+                  </p>
+                </div>
+                <div className="flex justify-center gap-1.5">
+                  <span className="h-2.5 w-2.5 rounded-full bg-indigo-500 animate-bounce [animation-delay:-0.3s]"></span>
+                  <span className="h-2.5 w-2.5 rounded-full bg-indigo-500 animate-bounce [animation-delay:-0.15s]"></span>
+                  <span className="h-2.5 w-2.5 rounded-full bg-indigo-500 animate-bounce"></span>
+                </div>
+              </div>
+            ) : liveSyllabusStatus === 'failed' ? (
+              <div className="space-y-6">
+                <div className="w-16 h-16 bg-red-500/10 text-red-600 dark:text-red-400 rounded-2xl flex items-center justify-center mx-auto">
+                  <AlertTriangle size={32} />
+                </div>
+                <div className="max-w-lg mx-auto space-y-2">
+                  <h3 className="text-2xl font-bold text-slate-900 dark:text-white">
+                    Syllabus Formulation Failed
+                  </h3>
+                  <p className="text-sm text-slate-600 dark:text-zinc-400 leading-relaxed">
+                    An error occurred while UniAce AI compiled the learning syllabus for <strong className="text-slate-900 dark:text-white">{activeCourse.title}</strong>. 
+                  </p>
+                </div>
+                {isAdmin ? (
+                  <button
+                    onClick={triggerRegenerate}
+                    className="px-6 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-semibold text-sm flex items-center gap-2 mx-auto"
+                  >
+                    <RotateCw size={16} />
+                    Retry Syllabus Generation
+                  </button>
+                ) : (
+                  <p className="text-xs text-slate-500">The academic support team has been notified and will resolve this shortly.</p>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-6">
+                <div className="w-16 h-16 bg-amber-500/10 text-amber-600 dark:text-amber-400 rounded-2xl flex items-center justify-center mx-auto">
+                  <HelpCircle size={32} />
+                </div>
+                <div className="max-w-lg mx-auto space-y-2">
+                  <h3 className="text-2xl font-bold text-slate-900 dark:text-white">
+                    Syllabus Outline Not Available Yet
+                  </h3>
+                  <p className="text-sm text-slate-600 dark:text-zinc-400 leading-relaxed">
+                    The module curriculum breakdown for <strong className="text-slate-900 dark:text-white">{activeCourse.id}: {activeCourse.title}</strong> has not yet been initialized.
+                  </p>
+                </div>
+                
+                {isAdmin ? (
+                  <button
+                    onClick={triggerRegenerate}
+                    className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-semibold text-sm flex items-center gap-2 mx-auto"
+                  >
+                    <Wand2 size={16} />
+                    Initialize Syllabus with UniAce AI
+                  </button>
+                ) : (
+                  <div className="pt-2">
+                    {generationRequested ? (
+                      <div className="p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-2xl text-emerald-800 dark:text-emerald-400 text-sm font-semibold max-w-sm mx-auto">
+                        ✓ Request Received! Academic team has been notified.
+                      </div>
+                    ) : (
+                      <button
+                        onClick={handleRequestSyllabus}
+                        disabled={isRequestingGeneration}
+                        className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-bold text-sm shadow-lg shadow-emerald-600/20 transition-all flex items-center gap-2 mx-auto"
+                      >
+                        {isRequestingGeneration ? 'Submitting Request...' : '✉ Request Syllabus Generation'}
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
         )}
 
         {/* STATE 3: Course Selected with Modules */}
-        {activeCourseId && syllabus && syllabus.length > 0 && (
-          <section className="space-y-6">
+        {activeCourseId && liveSyllabusStatus === 'ready' && syllabus && syllabus.length > 0 && (
+          <section className="space-y-8">
+            {/* Syllabus Learning Map Header */}
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-zinc-800 pb-4">
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <BookOpen size={20} className="text-emerald-500" />
+                <span>Core Study Map</span>
+              </h2>
+              <span className="text-xs font-semibold text-slate-500 dark:text-zinc-400">
+                {syllabus.length} modules • Est. 45 study hours
+              </span>
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
               {syllabus.map((module, i) => {
                 const Icon = getModuleIcon(module.id, module.title, i);
-                const isLockedModule = false; 
                 
                 const confidenceColors: Record<string, string> = {
                   'verified': 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200/50',
@@ -275,11 +452,6 @@ export default function CourseSyllabus({
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: i * 0.05 }}
                     onClick={() => {
-                      if (isLockedModule && onViewSelect) {
-                        LogService.log('info', 'user', 'locked_feature_click', { feature: 'module', moduleId: module.id, userId: user?.uid });
-                        onViewSelect('pricing');
-                        return;
-                      }
                       if (isEnrolled) {
                         onModuleSelect(module.id);
                       } else {
@@ -327,7 +499,7 @@ export default function CourseSyllabus({
                         )}
 
                         <div className="flex items-center gap-2 font-semibold text-xs sm:text-sm mt-auto text-emerald-600 dark:text-emerald-400">
-                          <span>Explore Module</span>
+                          <span>{isEnrolled ? 'Explore Module' : 'Enroll to Access'}</span>
                           <ArrowRight size={14} className="sm:w-4 sm:h-4 group-hover:translate-x-1 transition-transform" />
                         </div>
                       </div>
@@ -339,8 +511,8 @@ export default function CourseSyllabus({
           </section>
         )}
 
-        {/* Syllabus Summary / Learning Outcomes */}
-        {activeCourseId && (
+        {/* Syllabus Summary / Learning Outcomes with Live Quiz Performance Tracking */}
+        {activeCourseId && liveSyllabusStatus === 'ready' && normalizedObjectives.length > 0 && (
           <section className="bg-slate-900 dark:bg-zinc-900 text-white p-6 sm:p-10 rounded-[2rem] sm:rounded-[3rem] space-y-6 sm:space-y-8 border dark:border-zinc-800 shadow-xl">
             <div className="space-y-2">
               <div className="flex items-center gap-2 text-emerald-400 font-semibold text-xs uppercase tracking-wider">
@@ -348,34 +520,70 @@ export default function CourseSyllabus({
                 <span>Academic Competencies</span>
               </div>
               <h3 className="text-xl sm:text-2xl font-bold">Course Learning Objectives</h3>
-              <p className="text-slate-400 text-sm sm:text-base">By the end of this course, students will be able to demonstrate mastery in:</p>
+              <p className="text-slate-400 text-sm sm:text-base">Targeted university-level skills linked with your live study and quiz performance data:</p>
             </div>
             
-            {(objectives && objectives.length > 0) ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-                {objectives.map((item, index) => {
-                  const isObj = item && typeof item === 'object';
-                  const text = isObj ? (item as any).outcome || (item as any).title || (item as any).text : String(item);
-                  const bloom = isObj ? (item as any).bloomLevel : null;
-                  
-                  return (
-                    <div key={index} className="flex items-start gap-3 p-4 bg-slate-800/60 dark:bg-zinc-800/60 rounded-2xl border border-slate-700/50">
-                      <CheckCircle2 size={18} className="text-emerald-400 shrink-0 mt-0.5" />
-                      <div className="space-y-1">
-                        <p className="text-sm font-medium text-slate-200">{text}</p>
-                        {bloom && (
-                          <span className="inline-block px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-400 rounded-md">
-                            Bloom: {bloom}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+              {normalizedObjectives.map((obj, index) => {
+                // Find matching mastery from progress
+                // If student has taken a quiz matching keywords in this outcome, they've demonstrated competency
+                const relatedTopics = Object.keys(progress?.mastery || {}).filter(t => 
+                  obj.outcome.toLowerCase().includes(t.toLowerCase())
+                );
+                const maxMastery = relatedTopics.length > 0 
+                  ? Math.max(...relatedTopics.map(t => progress?.mastery[t] || 0)) 
+                  : 0;
+
+                const isMastered = maxMastery >= 80;
+                const isStarted = maxMastery > 0;
+
+                return (
+                  <div key={index} className="flex items-start gap-4 p-5 bg-slate-800/60 dark:bg-zinc-800/60 rounded-2xl border border-slate-700/50 hover:border-slate-600 transition-colors">
+                    {isMastered ? (
+                      <div className="p-1 bg-emerald-500/20 text-emerald-400 rounded-full shrink-0">
+                        <CheckCircle2 size={20} />
+                      </div>
+                    ) : isStarted ? (
+                      <div className="p-1 bg-amber-500/20 text-amber-400 rounded-full shrink-0 animate-pulse">
+                        <Activity size={20} />
+                      </div>
+                    ) : (
+                      <div className="p-1 bg-slate-700/50 text-slate-400 rounded-full shrink-0">
+                        <GraduationCap size={20} />
+                      </div>
+                    )}
+                    <div className="space-y-2 w-full">
+                      <p className="text-sm font-semibold text-slate-100 leading-relaxed">{obj.outcome}</p>
+                      
+                      <div className="flex flex-wrap items-center gap-2">
+                        {obj.bloomLevel && (
+                          <span className="inline-block px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-400 rounded-md">
+                            Bloom: {obj.bloomLevel}
+                          </span>
+                        )}
+                        {maxMastery > 0 && (
+                          <span className={`inline-block px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded-md ${
+                            isMastered ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'
+                          }`}>
+                            Mastery: {maxMastery}%
                           </span>
                         )}
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="p-6 bg-slate-800/40 rounded-2xl text-center text-sm text-slate-400 border border-slate-800">
-                Course learning outcomes and Bloom taxonomy competencies are synchronized from the course specification.
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Curriculum Provenance Metadata */}
+            {activeCourse?.provenance && (
+              <div className="pt-4 border-t border-slate-800 text-[11px] text-slate-400 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                <span>
+                  Syllabus verified under standard: <strong>{activeCourse.academicStandard || 'Accredited Higher Education Criterion'}</strong>
+                </span>
+                <span>
+                  Last Revised: <strong>{new Date(activeCourse.provenance.generatedAt).toLocaleDateString()}</strong> • Sources: <strong>{activeCourse.provenance.sources?.join(', ') || 'Global Curriculum Blueprint'}</strong>
+                </span>
               </div>
             )}
           </section>

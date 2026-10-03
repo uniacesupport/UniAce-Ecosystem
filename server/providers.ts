@@ -34,7 +34,7 @@ const ProviderResponseSchema = z.object({
   }).optional().nullable()
 });
 
-async function fetchWithTimeout(url: string, options: any, timeout = 600000) {
+async function fetchWithTimeout(url: string, options: any, timeout = 60000) {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeout);
   try {
@@ -62,42 +62,70 @@ class ModelProviderError extends Error {
   }
 }
 
-async function retry<T>(fn: () => Promise<T>, providerName: string, retries = 3, delay = 2000): Promise<T> {
+async function retry<T>(fn: () => Promise<T>, providerName: string, retries = 2, delay = 1500): Promise<T> {
   try {
     return await fn();
   } catch (error: any) {
+    const rawMsg = (error.message || String(error)).toLowerCase();
     const statusCode = error.statusCode || error.status || (error.message?.match(/\b(\d{3})\b/)?.[1] ? parseInt(error.message.match(/\b(\d{3})\b/)[1]) : undefined);
-    
-    // Non-retryable errors
-    if (error.message === 'ALL_KEYS_EXHAUSTED') throw new Error('All API keys for ' + providerName + ' are exhausted or invalid. Please check your configuration.');
-    const isUnauthorized = statusCode === 401 || 
-                           error.message?.includes('invalid_api_key') || 
-                           error.message?.includes('Unauthorized') ||
-                           error.message?.includes('API key not valid') ||
-                           error.message?.includes('INVALID_ARGUMENT');
-    const isKeyLimit = statusCode === 403 && error.message?.includes('Key limit exceeded');
-    const isBadRequest = statusCode === 400 && !error.message?.includes('rate_limit') && !isUnauthorized;
-    const isNotFound = statusCode === 404;
-    
-    const isRetryable = (!isBadRequest && !isNotFound && retries > 0) || isUnauthorized || isKeyLimit;
 
-    if (!isRetryable || retries <= 0) {
+    // Fail-fast on non-retryable configuration and model errors
+    if (error.message === 'ALL_KEYS_EXHAUSTED') {
+      throw new ModelProviderError('All API keys for ' + providerName + ' are exhausted or invalid.', providerName, 401, false);
+    }
+
+    const isNotFound = statusCode === 404 || 
+                       rawMsg.includes('not found') || 
+                       rawMsg.includes('not_found') || 
+                       rawMsg.includes('does not exist') || 
+                       rawMsg.includes('is not supported') || 
+                       rawMsg.includes('unsupported model');
+
+    const isBadRequest = (statusCode === 400 || rawMsg.includes('bad request') || rawMsg.includes('invalid argument')) && 
+                         !rawMsg.includes('rate limit') && 
+                         !rawMsg.includes('too many requests') && 
+                         !rawMsg.includes('quota');
+
+    const isUnauthorized = statusCode === 401 || 
+                           statusCode === 403 || 
+                           rawMsg.includes('invalid_api_key') || 
+                           rawMsg.includes('unauthorized') || 
+                           rawMsg.includes('permission denied') || 
+                           rawMsg.includes('api key not valid');
+
+    // Fail fast immediately on configuration/model/auth errors: retrying is futile
+    if (isNotFound || isBadRequest || isUnauthorized) {
+      console.warn(`[${providerName}] Fail-fast triggered: non-retryable error (status: ${statusCode}): ${error.message}`);
       throw new ModelProviderError(error.message, providerName, statusCode, false);
     }
 
-    // Check for rate limit errors or timeouts
-    const isRateLimit = statusCode === 429 || 
-                        error.message?.toLowerCase().includes('rate_limit') || 
-                        error.message?.toLowerCase().includes('too many requests');
-    
-    const isTimeout = error.name === 'AbortError' || error.message?.toLowerCase().includes('timeout');
-    
-    // Exponential backoff with jitter
-    const jitter = Math.random() * 1000;
-    const waitTime = (isRateLimit ? delay * 3 : (isTimeout ? 1000 : delay)) + jitter;
-    
-    console.warn(`[${providerName}] Retrying AI request... (${retries} left) after ${Math.round(waitTime)}ms. Error: ${error.message}${isUnauthorized ? ' (Check if your API key is valid)' : ''}`);
-    
+    // Only retry transient errors: 429 (rate limits), 5xx (server errors), and network timeouts
+    const isRateLimit = statusCode === 429 || rawMsg.includes('rate limit') || rawMsg.includes('quota') || rawMsg.includes('too many requests');
+    const isServer5xx = statusCode && statusCode >= 500 && statusCode <= 599;
+    const isNetworkOrTimeout = error.name === 'AbortError' || rawMsg.includes('timeout') || rawMsg.includes('econnreset') || rawMsg.includes('fetch failed');
+
+    const canRetry = (isRateLimit || isServer5xx || isNetworkOrTimeout) && retries > 0;
+
+    if (!canRetry) {
+      throw new ModelProviderError(error.message, providerName, statusCode, false);
+    }
+
+    // Parse Retry-After header or delay if available
+    let retryAfterMs = 0;
+    if (error.headers && typeof error.headers.get === 'function') {
+      const headerVal = error.headers.get('retry-after');
+      if (headerVal) {
+        const parsedSec = parseInt(headerVal, 10);
+        if (!isNaN(parsedSec)) {
+          retryAfterMs = Math.min(parsedSec * 1000, 10000);
+        }
+      }
+    }
+
+    const jitter = Math.random() * 500;
+    const waitTime = retryAfterMs > 0 ? retryAfterMs : Math.min((isRateLimit ? delay * 2 : delay) + jitter, 6000);
+
+    console.warn(`[${providerName}] Retrying transient error (${retries} retries left) in ${Math.round(waitTime)}ms: ${error.message}`);
     await new Promise(resolve => setTimeout(resolve, waitTime));
     return retry(fn, providerName, retries - 1, waitTime * 1.5);
   }
@@ -369,16 +397,23 @@ export class GeminiDirectProvider implements ModelProvider {
       }
 
       const executeGenerate = async (targetModel: string) => {
-        const response = await ai.models.generateContent({
-          model: targetModel,
-          contents,
-          config: {
-            systemInstruction,
-            responseMimeType: options.jsonMode ? "application/json" : "text/plain",
-            temperature: 0.5,
-            maxOutputTokens: 8192,
-          }
-        });
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new ModelProviderError(`Gemini request timed out after 60s for model ${targetModel}`, 'gemini_direct', 408, true)), 60000)
+        );
+
+        const response = await Promise.race([
+          ai.models.generateContent({
+            model: targetModel,
+            contents,
+            config: {
+              systemInstruction,
+              responseMimeType: options.jsonMode ? "application/json" : "text/plain",
+              temperature: 0.5,
+              maxOutputTokens: 8192,
+            }
+          }),
+          timeoutPromise
+        ]);
 
         if (!response.text) throw new Error('Empty response from Gemini');
 
@@ -918,7 +953,7 @@ export class GroqProvider implements ModelProvider {
         );
       }
       const fallbackModel = (await this.rotator.getFallbackModel() || '').trim();
-      const groq = new Groq({ apiKey: apiKey });
+      const groq = new Groq({ apiKey: apiKey, timeout: 60000 });
 
       // Truncate messages for Groq to avoid TPM limits (especially for 8b model)
       // Free tier TPM is often 6000. We target 5000 to be safe and leave room for response.
@@ -987,7 +1022,7 @@ export class GroqProvider implements ModelProvider {
         );
       }
       const fallbackModel = (await this.rotator.getFallbackModel() || '').trim();
-      const groq = new Groq({ apiKey: apiKey });
+      const groq = new Groq({ apiKey: apiKey, timeout: 60000 });
 
       // Truncate messages for Groq to avoid TPM limits
       const maxTokens = options.complexity === 'high' ? 4000 : 2500;
@@ -1511,6 +1546,7 @@ export class NvidiaProvider implements ModelProvider {
       const openai = new OpenAI({
         baseURL: "https://integrate.api.nvidia.com/v1",
         apiKey: apiKey,
+        timeout: 60000,
       });
 
       if (options.jsonMode) {
@@ -1580,6 +1616,7 @@ export class NvidiaProvider implements ModelProvider {
       const openai = new OpenAI({
         baseURL: "https://integrate.api.nvidia.com/v1",
         apiKey: apiKey,
+        timeout: 60000,
       });
 
       const executeStream = async (targetModel: string) => {
@@ -1657,8 +1694,9 @@ export class NvidiaProvider implements ModelProvider {
 export class CircuitBreaker {
   private failures = 0;
   private lastFailureTime = 0;
-  private readonly threshold = 5;
-  private readonly resetTimeout = 60000; // 1 minute
+  private readonly threshold = 2; // Trip after 2 consecutive failures
+  private readonly resetTimeout = 120000; // 2 minutes cooldown
+  private trippedReason = '';
 
   constructor(private provider: ModelProvider) {}
 
@@ -1666,9 +1704,13 @@ export class CircuitBreaker {
     return this.provider.name;
   }
 
-  async generate(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean }): Promise<ModelResponse> {
+  getReason() {
+    return this.trippedReason;
+  }
+
+  async generate(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean, model?: string }): Promise<ModelResponse> {
     if (this.isOpen()) {
-      throw new Error(`Circuit breaker open for provider`);
+      throw new ModelProviderError(`Circuit breaker OPEN for ${this.provider.name} (${this.trippedReason || 'in cooldown'})`, this.provider.name, 503, false);
     }
 
     try {
@@ -1681,9 +1723,9 @@ export class CircuitBreaker {
     }
   }
 
-  async stream(messages: any[], options: { complexity: 'high' | 'standard' }, onChunk: (chunk: string) => void): Promise<ModelResponse> {
+  async stream(messages: any[], options: { complexity: 'high' | 'standard', model?: string }, onChunk: (chunk: string) => void): Promise<ModelResponse> {
     if (this.isOpen()) {
-      throw new Error(`Circuit breaker open for provider`);
+      throw new ModelProviderError(`Circuit breaker OPEN for ${this.provider.name} (${this.trippedReason || 'in cooldown'})`, this.provider.name, 503, false);
     }
 
     try {
@@ -1696,7 +1738,7 @@ export class CircuitBreaker {
     }
   }
 
-  private isOpen(): boolean {
+  public isOpen(): boolean {
     if (this.failures >= this.threshold) {
       const now = Date.now();
       if (now - this.lastFailureTime > this.resetTimeout) {
@@ -1709,19 +1751,34 @@ export class CircuitBreaker {
     return false;
   }
 
+  public getStatus() {
+    const open = this.isOpen();
+    return {
+      name: this.provider.name,
+      isOpen: open,
+      state: open ? 'OPEN' : (this.failures > 0 ? 'HALF_OPEN' : 'CLOSED'),
+      failures: this.failures,
+      threshold: this.threshold,
+      trippedReason: this.trippedReason,
+      cooldownRemainingSeconds: open ? Math.max(0, Math.round((this.resetTimeout - (Date.now() - this.lastFailureTime)) / 1000)) : 0
+    };
+  }
+
+  public reset() {
+    this.failures = 0;
+    this.trippedReason = '';
+    this.lastFailureTime = 0;
+  }
+
   private onSuccess() {
     this.failures = 0;
+    this.trippedReason = '';
   }
 
   private onFailure(error?: any) {
-    if (error) {
-      const status = error.status || error.statusCode;
-      if (status === 400 || status === 404) {
-        console.log(`[CircuitBreaker] Ignoring status ${status} error from provider ${this.provider.name} (not a general service failure)`);
-        return;
-      }
-    }
     this.failures++;
     this.lastFailureTime = Date.now();
+    this.trippedReason = error?.message || 'Consecutive failures';
+    console.warn(`[CircuitBreaker] Recorded failure ${this.failures}/${this.threshold} for ${this.provider.name}: ${this.trippedReason}`);
   }
 }

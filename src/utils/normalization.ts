@@ -111,3 +111,28 @@ export const normalizeSemester = (input: string): Semester | null => {
   if (lower.includes('2') || lower.includes('second')) return '2nd Semester';
   return null;
 };
+
+export interface NormalizedObjective {
+  text: string;
+  bloomLevel?: 'remembering' | 'understanding' | 'applying' | 'analyzing' | 'evaluating' | 'creating';
+  outcomeId?: string;
+}
+
+export const normalizeCourseObjective = (item: any): NormalizedObjective | null => {
+  if (!item) return null;
+  if (typeof item === 'string') {
+    const trimmed = item.trim();
+    if (!trimmed) return null;
+    return { text: trimmed };
+  }
+  if (typeof item === 'object') {
+    const text = item.text || item.outcome || item.title || item.description || item.objective || '';
+    if (!text || typeof text !== 'string') return null;
+    return {
+      text: text.trim(),
+      bloomLevel: item.bloomLevel || item.bloom || item.level || undefined,
+      outcomeId: item.id || item.outcomeId || undefined,
+    };
+  }
+  return null;
+};

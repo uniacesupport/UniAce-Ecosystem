@@ -201,6 +201,7 @@ export default function AdminDashboard() {
     error?: string;
     timestamp?: number;
   }>>({});
+  const [providerHealth, setProviderHealth] = useState<any>(null);
   const [isPingingAll, setIsPingingAll] = useState(false);
   const [pingingProvider, setPingingProvider] = useState<string | null>(null);
   const [autoPingEnabled, setAutoPingEnabled] = useState(false);
@@ -325,6 +326,14 @@ export default function AdminDashboard() {
   const [testKeyResult, setTestKeyResult] = useState<any>(null);
   const [isTestingKey, setIsTestingKey] = useState(false);
   const [routerTestTelemetry, setRouterTestTelemetry] = useState<{ loading: boolean; error?: string; data?: any } | null>(null);
+  const [generationJobDetails, setGenerationJobDetails] = useState<{
+    currentModule?: string;
+    currentLesson?: string;
+    completedLessons?: number;
+    totalLessons?: number;
+    activeProvider?: string;
+    elapsedSeconds?: number;
+  }>({});
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -363,6 +372,71 @@ export default function AdminDashboard() {
       fetchSystemHealth();
       fetchBroadcastHistory();
       fetchSystemAlerts();
+
+      // Check for active background course generation jobs to resume real-time tracking across reloads
+      const checkActiveGeneration = async () => {
+        try {
+          const q = query(collection(db, 'courses'), where('generationStatus', '==', 'generating'));
+          const snap = await getDocs(q);
+          if (!snap.empty) {
+            const activeCourseDoc = snap.docs[0];
+            const activeData = activeCourseDoc.data();
+            const activeCourseId = activeCourseDoc.id;
+            console.log(`[Admin] Resuming active course generation tracking: ${activeCourseId}`);
+            setQuickCourseCode(activeCourseId);
+            setQuickCourseName(activeData.title || activeCourseId);
+            setIsGeneratingQuick(true);
+            setGenerationStep('generating');
+            if (activeData.generationProgress) setGenerationProgress(activeData.generationProgress);
+            if (activeData.statusMessage) setStatusMessage(activeData.statusMessage);
+            setGenerationJobDetails({
+              currentModule: activeData.currentModule,
+              currentLesson: activeData.currentLesson,
+              completedLessons: activeData.completedLessons,
+              totalLessons: activeData.totalLessons,
+              activeProvider: activeData.activeProvider,
+              elapsedSeconds: activeData.elapsedSeconds
+            });
+
+            const unsub = onSnapshot(doc(db, 'courses', activeCourseId), (snapshot) => {
+              const live = snapshot.data();
+              if (live) {
+                if (live.generationProgress !== undefined) setGenerationProgress(live.generationProgress);
+                if (live.statusMessage) setStatusMessage(live.statusMessage);
+                setGenerationJobDetails({
+                  currentModule: live.currentModule,
+                  currentLesson: live.currentLesson,
+                  completedLessons: live.completedLessons,
+                  totalLessons: live.totalLessons,
+                  activeProvider: live.activeProvider,
+                  elapsedSeconds: live.elapsedSeconds
+                });
+
+                if (live.generationStatus === 'completed') {
+                  unsub();
+                  setIsGeneratingQuick(false);
+                  setUploadSuccess(true);
+                  setGenerationProgress(100);
+                  showToast('Course generated successfully!', 'success');
+                  refreshCourses();
+                } else if (live.generationStatus === 'failed') {
+                  unsub();
+                  setIsGeneratingQuick(false);
+                  setGenerationError(live.generationError || 'Generation failed on server.');
+                  setGenerationStep('error');
+                } else if (live.generationStatus === 'cancelled') {
+                  unsub();
+                  setIsGeneratingQuick(false);
+                  setGenerationStep('input');
+                }
+              }
+            });
+          }
+        } catch (err) {
+          console.warn('Could not query active generation jobs:', err);
+        }
+      };
+      checkActiveGeneration();
     }
   }, [user]);
 
@@ -793,6 +867,21 @@ export default function AdminDashboard() {
           }));
         }
         setLastAiUpdate(new Date());
+
+        // Fetch live circuit breaker & real-time provider health
+        try {
+          const healthRes = await fetch('/api/admin/provider-health', {
+            headers: { 'Authorization': `Bearer ${idToken}` }
+          });
+          if (healthRes.ok) {
+            const healthData = await healthRes.json();
+            if (healthData.health) {
+              setProviderHealth(healthData.health);
+            }
+          }
+        } catch (hErr) {
+          console.warn('Provider health fetch warning:', hErr);
+        }
       } else {
         const ct = res.headers.get('content-type') || '';
         if (ct.includes('application/json')) {
@@ -1076,7 +1165,30 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleFinalizeGeneration = async () => {
+  const handleCancelGeneration = async () => {
+    isCancelledRef.current = true;
+    try {
+      const courseId = quickCourseCode.replace(/\s+/g, '').toUpperCase();
+      const user = auth.currentUser;
+      const idToken = await user?.getIdToken();
+      await fetch('/api/course/cancel-job', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
+        body: JSON.stringify({ courseId })
+      });
+      showToast('Course generation cancelled.', 'info');
+    } catch (e: any) {
+      console.warn('Failed to call cancel endpoint:', e);
+    } finally {
+      setIsGeneratingQuick(false);
+      setGenerationStep('input');
+    }
+  };
+
+  const handleFinalizeGeneration = async (opts?: { resume?: boolean }) => {
     if (!courseSkeleton) return;
     if (!quickDepartment) {
       showToast('Please select a target Department before generating full content', 'error');
@@ -1087,8 +1199,8 @@ export default function AdminDashboard() {
     isCancelledRef.current = false;
     setGenerationError(null);
     setGenerationStep('generating');
-    setGenerationProgress(5);
-    setStatusMessage('Contacting server to coordinate course creation...');
+    setGenerationProgress(opts?.resume ? 20 : 5);
+    setStatusMessage(opts?.resume ? 'Resuming course generation from last saved checkpoint...' : 'Contacting server to coordinate course creation...');
     
     try {
       const courseId = quickCourseCode.replace(/\s+/g, '').toUpperCase();
@@ -1128,7 +1240,8 @@ export default function AdminDashboard() {
           domainBrief: courseSkeleton.domainBrief,
           learningOutcomes: courseSkeleton.learningOutcomes,
           coverageScore: courseSkeleton.coverageScore,
-          groundingReferences: courseSkeleton.groundingReferences
+          groundingReferences: courseSkeleton.groundingReferences,
+          resume: opts?.resume === true
         })
       });
 
@@ -1165,8 +1278,21 @@ export default function AdminDashboard() {
           if (data.statusMessage) {
             setStatusMessage(data.statusMessage);
           }
+          setGenerationJobDetails({
+            currentModule: data.currentModule,
+            currentLesson: data.currentLesson,
+            completedLessons: data.completedLessons,
+            totalLessons: data.totalLessons,
+            activeProvider: data.activeProvider,
+            elapsedSeconds: data.elapsedSeconds
+          });
 
-          if (data.generationStatus === 'completed') {
+          if (data.generationStatus === 'cancelled') {
+            unsubscribe();
+            setIsGeneratingQuick(false);
+            setGenerationStep('input');
+            showToast('Course generation was cancelled.', 'info');
+          } else if (data.generationStatus === 'completed') {
             unsubscribe();
             setIsGeneratingQuick(false);
             setUploadSuccess(true);
@@ -3598,7 +3724,7 @@ export default function AdminDashboard() {
                       Back to Input
                     </button>
                     <button
-                      onClick={handleFinalizeGeneration}
+                      onClick={() => handleFinalizeGeneration()}
                       className="flex-[2] py-3 rounded-xl font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-600/20 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
                     >
                       <Zap size={18} />
@@ -3615,34 +3741,69 @@ export default function AdminDashboard() {
                     <div 
                       className="absolute inset-0 border-4 border-indigo-600 rounded-full transition-all duration-500"
                       style={{ 
-                        clipPath: `inset(${100 - generationProgress}% 0 0 0)`,
+                        clipPath: `inset(${100 - Math.max(5, generationProgress)}% 0 0 0)`,
                         transform: 'rotate(-90deg)'
                       }}
                     />
-                    <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="absolute inset-0 flex items-center justify-center flex-col">
                       <span className="text-2xl font-black text-slate-900 dark:text-white">{generationProgress}%</span>
+                      {generationJobDetails.elapsedSeconds !== undefined && (
+                        <span className="text-[10px] font-mono text-slate-400">
+                          {Math.floor(generationJobDetails.elapsedSeconds / 60)}m {generationJobDetails.elapsedSeconds % 60}s
+                        </span>
+                      )}
                     </div>
                   </div>
                   
-                  <div>
-                    <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">{statusMessage}</h3>
-                    <p className="text-sm text-slate-500 dark:text-slate-400 max-w-md mx-auto">
-                      This process is mathematically rigorous. The AI is generating exhaustive lecture notes and quizzes for each module.
-                    </p>
+                  <div className="space-y-3">
+                    <h3 className="text-xl font-bold text-slate-900 dark:text-white">{statusMessage}</h3>
+                    
+                    {/* Live Server Job Telemetry Card */}
+                    <div className="max-w-md mx-auto p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 text-left space-y-2.5 text-xs shadow-sm">
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-slate-500 dark:text-slate-400">Active AI Provider:</span>
+                        <span className="font-mono px-2 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 font-bold uppercase">
+                          {generationJobDetails.activeProvider || aiProvider}
+                        </span>
+                      </div>
+                      {generationJobDetails.currentModule && (
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-slate-500 dark:text-slate-400">Current Module:</span>
+                          <span className="font-medium text-slate-900 dark:text-white truncate max-w-[240px]">
+                            {generationJobDetails.currentModule}
+                          </span>
+                        </div>
+                      )}
+                      {generationJobDetails.currentLesson && (
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-slate-500 dark:text-slate-400">Current Lesson:</span>
+                          <span className="font-medium text-slate-900 dark:text-white truncate max-w-[240px]">
+                            {generationJobDetails.currentLesson}
+                          </span>
+                        </div>
+                      )}
+                      <div className="flex items-center justify-between pt-1 border-t border-slate-200 dark:border-slate-800">
+                        <span className="font-semibold text-slate-500 dark:text-slate-400">Lessons Completed:</span>
+                        <span className="font-bold text-slate-900 dark:text-white">
+                          {generationJobDetails.completedLessons || 0} / {generationJobDetails.totalLessons || 0}
+                        </span>
+                      </div>
+                    </div>
                   </div>
 
                   <div className="w-full max-w-md mx-auto bg-slate-100 dark:bg-slate-700 rounded-full h-2 overflow-hidden">
                     <div 
                       className="bg-indigo-600 h-full rounded-full transition-all duration-500"
-                      style={{ width: `${generationProgress}%` }}
+                      style={{ width: `${Math.max(5, generationProgress)}%` }}
                     />
                   </div>
 
                   {!uploadSuccess && (
                     <button
-                      onClick={() => isCancelledRef.current = true}
-                      className="px-6 py-2 rounded-xl text-sm font-bold text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                      onClick={handleCancelGeneration}
+                      className="px-6 py-2.5 rounded-xl text-sm font-bold text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 border border-red-200 dark:border-red-900/30 transition-all flex items-center gap-2 mx-auto active:scale-95"
                     >
+                      <X size={16} />
                       Cancel Generation
                     </button>
                   )}
@@ -3656,25 +3817,32 @@ export default function AdminDashboard() {
                   </div>
                   
                   <div>
-                    <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Generation Failed</h3>
+                    <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Generation Interrupted</h3>
                     <p className="text-sm text-red-500 dark:text-red-400 max-w-md mx-auto">
                       {generationError}
                     </p>
                   </div>
 
-                  <div className="flex gap-4 justify-center">
+                  <div className="flex flex-wrap gap-3 justify-center">
                     <button
                       onClick={() => setGenerationStep('input')}
-                      className="px-6 py-3 rounded-xl font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                      className="px-5 py-3 rounded-xl font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                     >
                       Back to Start
                     </button>
                     <button
-                      onClick={handleFinalizeGeneration}
-                      className="px-6 py-3 rounded-xl font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-600/20 transition-all active:scale-[0.98] flex items-center gap-2"
+                      onClick={() => handleFinalizeGeneration({ resume: true })}
+                      className="px-6 py-3 rounded-xl font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/20 transition-all active:scale-[0.98] flex items-center gap-2"
+                    >
+                      <Zap size={18} />
+                      Resume Generation (Keep Saved Lessons)
+                    </button>
+                    <button
+                      onClick={() => handleFinalizeGeneration()}
+                      className="px-5 py-3 rounded-xl font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-600/20 transition-all active:scale-[0.98] flex items-center gap-2"
                     >
                       <RefreshCw size={18} />
-                      Retry Generation
+                      Regenerate From Scratch
                     </button>
                   </div>
                 </div>
@@ -5161,8 +5329,29 @@ export default function AdminDashboard() {
                     {aiProviderStatus.groq?.active ? 'Active' : 'Offline'}
                   </div>
                 </div>
-                <h3 className="font-bold text-slate-900 dark:text-white">Groq (Llama 3)</h3>
+                <h3 className="font-bold text-slate-900 dark:text-white">Groq</h3>
                 <div className="mt-4 space-y-2">
+                  {providerHealth?.groq?.circuitBreaker && (
+                    <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase items-center">
+                      <span>Breaker</span>
+                      <span className={`px-2 py-0.5 rounded font-mono ${
+                        providerHealth.groq.circuitBreaker.state === 'CLOSED'
+                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                          : 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400'
+                      }`}>
+                        {providerHealth.groq.circuitBreaker.state}
+                        {providerHealth.groq.circuitBreaker.cooldownRemainingSeconds > 0 && ` (${providerHealth.groq.circuitBreaker.cooldownRemainingSeconds}s)`}
+                      </span>
+                    </div>
+                  )}
+                  {providerHealth?.groq?.configuredModel && (
+                    <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase items-center">
+                      <span>Model</span>
+                      <span className="text-slate-900 dark:text-white font-mono truncate max-w-[120px]">
+                        {providerHealth.groq.configuredModel}
+                      </span>
+                    </div>
+                  )}
                   <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
                     <span>Keys</span>
                     <span className="text-slate-900 dark:text-white">
@@ -5250,6 +5439,27 @@ export default function AdminDashboard() {
                 </div>
                 <h3 className="font-bold text-slate-900 dark:text-white">Gemini</h3>
                 <div className="mt-4 space-y-2">
+                  {providerHealth?.gemini_direct?.circuitBreaker && (
+                    <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase items-center">
+                      <span>Breaker</span>
+                      <span className={`px-2 py-0.5 rounded font-mono ${
+                        providerHealth.gemini_direct.circuitBreaker.state === 'CLOSED'
+                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                          : 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400'
+                      }`}>
+                        {providerHealth.gemini_direct.circuitBreaker.state}
+                        {providerHealth.gemini_direct.circuitBreaker.cooldownRemainingSeconds > 0 && ` (${providerHealth.gemini_direct.circuitBreaker.cooldownRemainingSeconds}s)`}
+                      </span>
+                    </div>
+                  )}
+                  {providerHealth?.gemini_direct?.configuredModel && (
+                    <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase items-center">
+                      <span>Model</span>
+                      <span className="text-slate-900 dark:text-white font-mono truncate max-w-[120px]">
+                        {providerHealth.gemini_direct.configuredModel}
+                      </span>
+                    </div>
+                  )}
                   <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
                     <span>Keys</span>
                     <span className="text-slate-900 dark:text-white">
@@ -5337,6 +5547,27 @@ export default function AdminDashboard() {
                 </div>
                 <h3 className="font-bold text-slate-900 dark:text-white">NVIDIA NIM</h3>
                 <div className="mt-4 space-y-2">
+                  {providerHealth?.nvidia?.circuitBreaker && (
+                    <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase items-center">
+                      <span>Breaker</span>
+                      <span className={`px-2 py-0.5 rounded font-mono ${
+                        providerHealth.nvidia.circuitBreaker.state === 'CLOSED'
+                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                          : 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400'
+                      }`}>
+                        {providerHealth.nvidia.circuitBreaker.state}
+                        {providerHealth.nvidia.circuitBreaker.cooldownRemainingSeconds > 0 && ` (${providerHealth.nvidia.circuitBreaker.cooldownRemainingSeconds}s)`}
+                      </span>
+                    </div>
+                  )}
+                  {providerHealth?.nvidia?.configuredModel && (
+                    <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase items-center">
+                      <span>Model</span>
+                      <span className="text-slate-900 dark:text-white font-mono truncate max-w-[120px]">
+                        {providerHealth.nvidia.configuredModel}
+                      </span>
+                    </div>
+                  )}
                   <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
                     <span>Keys</span>
                     <span className="text-slate-900 dark:text-white">
