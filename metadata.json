@@ -1,8 +1,11 @@
 {
-  "name": "UniAce",
-  "description": "An elite, student-centric academic learning and adaptive mastery platform.",
-  "permissions": [],
-  "capabilities": [
+  "name": " UniAce Mastery Hub | One Hub Ecosystems 🎓",
+  "description": "A world-class educational ecosystem for a university courses. Featuring AI Study Companion 2.0 with image recognition, voice-to-math, and progressive tutor hints.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ],
+  "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
   ]
 }

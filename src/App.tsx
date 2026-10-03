@@ -454,9 +454,9 @@ function AppContent() {
           </div>
         )}
 
-        {/* Quick-Access Demo Reel Button for Admins (Positioned bottom right to prevent overlapping top header actions) */}
+        {/* Quick-Access Demo Reel Button for Admins */}
         {isAdmin && (
-          <div className="fixed bottom-20 lg:bottom-6 right-4 lg:right-6 z-[99] flex items-center gap-2">
+          <div className="absolute top-4 right-4 z-40 flex items-center gap-2">
             <button
               onClick={() => {
                 if (isRecording) {
@@ -465,14 +465,14 @@ function AppContent() {
                   startDemoReel('full_ecosystem', handleViewSelect);
                 }
               }}
-              className={`px-3.5 py-2.5 rounded-2xl font-bold text-xs shadow-2xl transition-all active:scale-95 flex items-center gap-2 border ${
+              className={`px-3.5 py-2 rounded-2xl font-bold text-xs shadow-lg transition-all active:scale-95 flex items-center gap-2 ${
                 isRecording
-                  ? 'bg-rose-600 text-white animate-pulse border-rose-400 shadow-rose-500/20'
-                  : 'bg-slate-900/90 dark:bg-zinc-900/90 text-white dark:text-white hover:bg-slate-800 dark:hover:bg-zinc-800 backdrop-blur-md border-slate-700/50 dark:border-zinc-800 shadow-slate-950/20'
+                  ? 'bg-rose-600 text-white animate-pulse border border-rose-400'
+                  : 'bg-slate-900/90 dark:bg-white/90 text-white dark:text-slate-900 hover:bg-slate-800 dark:hover:bg-white backdrop-blur-md border border-slate-700/50 dark:border-slate-200'
               }`}
               title={isRecording ? 'Click to finish and save demo reel' : 'Launch Auto Demo Reel'}
             >
-              <Video size={15} className={isRecording ? 'text-white' : 'text-rose-400 dark:text-rose-400'} />
+              <Video size={15} className={isRecording ? 'text-white' : 'text-rose-400 dark:text-rose-600'} />
               <span>{isRecording ? `🔴 REC (${elapsedSeconds}s)` : '🎬 Record Reel'}</span>
             </button>
           </div>
@@ -541,13 +541,101 @@ function AppContent() {
               
               setRegenerationProgress(5);
               setRegenerationStatus("Scanning structure...");
+
+              try {
+                // 1. Generate full skeleton (10 modules)
+                const existingTitlesForAI = (syllabus || []).map(m => m.title);
+                const fullSkeleton = await generateCourseSkeleton(activeCourse.title, activeCourse.description, undefined, undefined, existingTitlesForAI);
+                setRegenerationProgress(15);
+                
+                // 2. Identify tasks: New modules or Repairs
+                const tasks: { type: 'new' | 'repair', skeleton: any, id?: string }[] = [];
+                const existingTitles = (syllabus || []).map(m => m.title.toLowerCase().trim());
+                
+                // Check each module from the new skeleton
+                (fullSkeleton?.modules || []).forEach((moduleSkeleton: any) => {
+                  const title = moduleSkeleton.title.toLowerCase().trim();
+                  const existing = (syllabus || []).find(m => m.title.toLowerCase().trim() === title);
+                  
+                  if (!existing) {
+                    tasks.push({ type: 'new', skeleton: moduleSkeleton });
+                  } else {
+                    // Check if existing module needs repair (missing content)
+                    const isIncomplete = (existing.subTopics || []).some(st => !st.content || st.content.trim() === '');
+                    if (isIncomplete) {
+                      tasks.push({ type: 'repair', skeleton: moduleSkeleton, id: existing.id });
+                    }
+                  }
+                });
+
+                if (tasks.length === 0) {
+                  setRegenerationProgress(100);
+                  setRegenerationStatus("Syllabus is already complete and healthy!");
+                  setTimeout(() => {
+                    setRegenerationProgress(0);
+                    setRegenerationStatus("");
+                  }, 3000);
+                  return;
+                }
+
+                const totalTasks = tasks.length;
+                let completedTasks = 0;
+
+                setRegenerationStatus(`Processing ${totalTasks} updates...`);
+
+                const { db } = await import('./firebase');
+                const { doc, setDoc, collection, getDocs } = await import('firebase/firestore');
+
+                for (const task of tasks) {
+                  try {
+                    const isNew = task.type === 'new';
+                    setRegenerationStatus(`${isNew ? 'Generating' : 'Repairing'}: ${task.skeleton.title}`);
+                    
+                    const regeneratedModule = await generateModuleContent(activeCourse.title, task.skeleton, undefined, (msg) => console.log(msg));
+                    
+                    if (isNew) {
+                      // Add new module document with a fresh ID
+                      // We calculate the next ID based on current count
+                      const newModuleId = `m${syllabus.length + completedTasks + 1}`;
+                      await setDoc(doc(db, `courses/${activeCourseId}/modules`, newModuleId), {
+                        ...regeneratedModule,
+                        createdAt: new Date().toISOString()
+                      });
+                    } else if (task.id) {
+                      // Update existing module
+                      await setDoc(doc(db, `courses/${activeCourseId}/modules`, task.id), {
+                        ...regeneratedModule,
+                        updatedAt: new Date().toISOString()
+                      }, { merge: true });
+                    }
+                    
+                    completedTasks++;
+                    setRegenerationProgress(15 + (completedTasks / totalTasks) * 80);
+                  } catch (error) {
+                    console.error(`Failed to process task for ${task.skeleton.title}:`, error);
+                  }
+                }
+                
+                setRegenerationProgress(100);
+                setRegenerationStatus("All tasks complete!");
+                refreshCourses();
+                
+                setTimeout(() => {
+                  setRegenerationProgress(0);
+                  setRegenerationStatus("");
+                }, 5000);
+
+              } catch (error) {
+                console.error("Regeneration failed:", error);
+                setRegenerationStatus("Error occurred");
+                setRegenerationProgress(0);
+              }
             }}
             regenerationProgress={regenerationProgress}
             regenerationStatus={regenerationStatus}
             onSelectCourse={(cId) => setActiveCourseId(cId)}
             activeSemester={activeSemester}
             enrolledCourses={progress.enrolledCourses || []}
-            progress={progress}
           />
         )}
 
@@ -611,23 +699,12 @@ function AppContent() {
 
         {activeView === 'flashcards' && (
           <ErrorBoundary>
-            <FlashcardHub 
-              syllabus={syllabus} 
-              activeCourseId={activeCourseId}
-              onSelectCourse={handleCourseSelect}
-              activeSemester={activeSemester}
-              enrolledCourses={progress.enrolledCourses || []}
-            />
+            <FlashcardHub syllabus={syllabus} />
           </ErrorBoundary>
         )}
 
         {activeView === 'past-questions' && (
-          <PastQuestions 
-            activeCourseId={activeCourseId} 
-            onSelectCourse={handleCourseSelect}
-            activeSemester={activeSemester}
-            enrolledCourses={progress.enrolledCourses || []}
-          />
+          <PastQuestions activeCourseId={activeCourseId} />
         )}
 
         {activeView === 'mastery' && (
@@ -635,9 +712,6 @@ function AppContent() {
             progress={progress}
             onBack={() => handleViewSelect('dashboard')}
             activeCourseId={activeCourseId}
-            onSelectCourse={handleCourseSelect}
-            activeSemester={activeSemester}
-            enrolledCourses={progress.enrolledCourses || []}
             syllabus={syllabus}
           />
         )}
@@ -653,9 +727,6 @@ function AppContent() {
           <FormulaReference 
             onBack={() => handleViewSelect('dashboard')}
             activeCourseId={activeCourseId}
-            onSelectCourse={handleCourseSelect}
-            activeSemester={activeSemester}
-            enrolledCourses={progress.enrolledCourses || []}
             formulas={activeCourse?.formulas || []}
             onBookmark={(item) => addBookmark(item, 'formula')}
           />
