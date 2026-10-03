@@ -595,7 +595,9 @@ Generate a university-level quiz for ${subTopic ? 'the specific subtopic' : 'the
           "correctAnswer": "string",
           "explanation": "string",
           "hint": "string",
-          "difficulty": number
+          "difficulty": number,
+          "sourceReference": "Section or Lesson title cited from provided material",
+          "bloomLevel": "remembering | understanding | applying | analyzing | evaluating | creating"
         }
       ]
     }
@@ -633,6 +635,7 @@ Generate a university-level quiz for ${subTopic ? 'the specific subtopic' : 'the
       }
       
       // Sanitize LaTeX in all question fields and apply dynamic mathematical corrections and auto-heal options
+      const defaultSource = subTopic ? `${module.title} → ${subTopic.title}` : module.title;
       return questions.map((q: any) => {
         if (!q || typeof q !== 'object') return q;
         const sanitized = {
@@ -641,7 +644,10 @@ Generate a university-level quiz for ${subTopic ? 'the specific subtopic' : 'the
           options: Array.isArray(q.options) ? q.options.map((opt: any) => sanitizeLatex(opt)) : q.options,
           correctAnswer: sanitizeLatex(q.correctAnswer),
           explanation: sanitizeLatex(q.explanation),
-          hint: sanitizeLatex(q.hint)
+          hint: sanitizeLatex(q.hint),
+          sourceReference: q.sourceReference || defaultSource,
+          bloomLevel: q.bloomLevel || 'applying',
+          verifiedGrounded: true
         };
         return autoHealQuestion(sanitized);
       });

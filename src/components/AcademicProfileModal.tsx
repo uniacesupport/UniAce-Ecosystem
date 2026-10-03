@@ -6,6 +6,7 @@ import { Department, Level, Semester } from '../types';
 import { useInstitution } from '../context/InstitutionContext';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
+import { LogService } from '../services/logService';
 
 const LEVELS: Level[] = ['100', '200', '300', '400', '500'];
 const SEMESTERS: Semester[] = ['1st Semester', '2nd Semester'];
@@ -41,14 +42,20 @@ export default function AcademicProfileModal({ onClose }: { onClose?: () => void
 
     setIsSubmitting(true);
     try {
+      const wasAlreadyOnboarded = !!profile?.onboarding_completed;
+
       await updateProfileData({
         department,
         academic_level: level,
-        semester
+        semester,
+        onboarding_completed: true
       });
       
-      if (whatsappLink) {
+      await LogService.log('info', 'user', 'Academic profile updated', { department, level, semester });
+
+      if (!wasAlreadyOnboarded && whatsappLink) {
         setStep(2);
+        await LogService.log('info', 'user', 'whatsapp_promo_shown', { source: 'onboarding' });
       } else {
         if (onClose) onClose();
       }
@@ -57,6 +64,26 @@ export default function AcademicProfileModal({ onClose }: { onClose?: () => void
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleJoinWhatsApp = async () => {
+    try {
+      await updateProfileData({ has_seen_whatsapp: true });
+      await LogService.log('info', 'user', 'whatsapp_promo_clicked', { source: 'onboarding' });
+    } catch (e) {
+      console.error("Failed to update profile", e);
+    }
+    if (onClose) onClose();
+  };
+
+  const handleSkipWhatsApp = async () => {
+    try {
+      await updateProfileData({ has_seen_whatsapp: true });
+      await LogService.log('info', 'user', 'whatsapp_promo_skipped', { source: 'onboarding' });
+    } catch (e) {
+      console.error("Failed to update profile", e);
+    }
+    if (onClose) onClose();
   };
 
   return (
@@ -184,9 +211,7 @@ export default function AcademicProfileModal({ onClose }: { onClose?: () => void
                     href={whatsappLink}
                     target="_blank"
                     rel="noopener noreferrer"
-                    onClick={() => {
-                      if (onClose) setTimeout(onClose, 500); // Close shortly after clicking
-                    }}
+                    onClick={handleJoinWhatsApp}
                     className="w-full bg-[#25D366] hover:bg-[#20bd5a] text-white font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-3 shadow-lg shadow-green-500/30 hover:shadow-green-500/40 hover:-translate-y-0.5"
                   >
                     <MessageCircle size={24} />
@@ -194,7 +219,7 @@ export default function AcademicProfileModal({ onClose }: { onClose?: () => void
                   </a>
                   
                   <button
-                    onClick={onClose}
+                    onClick={handleSkipWhatsApp}
                     className="w-full text-slate-500 hover:text-slate-700 dark:text-zinc-400 dark:hover:text-zinc-200 font-medium py-3 rounded-xl transition-colors flex items-center justify-center gap-2"
                   >
                     Skip for now <ArrowRight size={16} />

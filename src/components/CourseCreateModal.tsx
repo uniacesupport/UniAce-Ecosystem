@@ -5,6 +5,7 @@ import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { LEVELS, SEMESTERS } from '../constants';
 import { useInstitution } from '../context/InstitutionContext';
+import { normalizeDeptId } from '../utils/normalization';
 
 interface CourseCreateModalProps {
   onClose: () => void;
@@ -40,6 +41,18 @@ export default function CourseCreateModal({ onClose, onSave }: CourseCreateModal
         ? (customStandard.trim() || 'Custom Dynamic Academic Benchmark')
         : academicStandard;
 
+      const targetDepts = scope === 'DEPARTMENT'
+        ? Array.from(new Set([department, ...departments].filter(Boolean)))
+        : (scope === 'GLOBAL' ? [] : departments);
+
+      const offerings = targetDepts.map(dept => ({
+        departmentId: normalizeDeptId(dept),
+        departmentName: dept,
+        level,
+        semester,
+        type: scope === 'GLOBAL' ? ('global' as const) : ('core' as const)
+      }));
+
       const courseRef = doc(db, 'courses', sanitizedId);
       await setDoc(courseRef, {
         id: sanitizedId,
@@ -51,7 +64,8 @@ export default function CourseCreateModal({ onClose, onSave }: CourseCreateModal
         scope,
         academicStandard: activeStandard,
         faculties: scope === 'FACULTY' ? faculties : [],
-        departments: scope === 'DEPARTMENT' ? departments : [],
+        departments: targetDepts,
+        offerings,
         syllabus: modules,
         createdAt: new Date().toISOString()
       });

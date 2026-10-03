@@ -144,6 +144,12 @@ service cloud.firestore {
              (!('rank' in data) || data.rank == null || (data.rank is number && data.rank >= 1));
     }
 
+    function isValidAnnouncement(data) {
+      return data.title is string && data.title.size() >= 2 && data.title.size() <= 200 &&
+             data.message is string && data.message.size() >= 5 && data.message.size() <= 2000 &&
+             data.active is bool;
+    }
+
     // ===============================================================
     // Collection Rules
     // ===============================================================
@@ -151,6 +157,13 @@ service cloud.firestore {
     match /curriculums/{curriculumId} {
       allow read: if isAuthenticated();
       allow write: if isAdmin();
+    }
+
+    match /announcements/{announcementId} {
+      allow read: if isAuthenticated();
+      allow create, delete: if isAdmin() && isValidAnnouncement(request.resource.data);
+      allow update: if (isAdmin() && isValidAnnouncement(request.resource.data)) ||
+                    (isAuthenticated() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['dismissalsCount', 'impressions']));
     }
 
     match /integrity_issues/{issueId} {
@@ -204,6 +217,11 @@ service cloud.firestore {
         allow create: if isOwner(userId) && isValidSpacedRepetition(request.resource.data);
         allow update: if isOwner(userId) && request.resource != null && resource != null && isValidSpacedRepetition(request.resource.data) && request.resource.data.userId == resource.data.userId;
         allow delete: if isAdmin();
+      }
+
+      match /dismissals/{announcementId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create, update, delete: if isOwner(userId);
       }
     }
 

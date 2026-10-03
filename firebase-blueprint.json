@@ -9,9 +9,28 @@
         "title": { "type": "string", "description": "Course title" },
         "description": { "type": "string", "description": "Course description" },
         "department": { "type": "string", "description": "Department area" },
-        "isAIGenerated": { "type": "boolean", "description": "Whether the content was AI generated" }
+        "isAIGenerated": { "type": "boolean", "description": "Whether the content was AI generated" },
+        "offerings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/entities/CourseOffering"
+          }
+        }
       },
       "required": ["id", "title", "department"]
+    },
+    "CourseOffering": {
+      "title": "CourseOffering",
+      "description": "An explicit offering record mapping a course to a department, level, and semester",
+      "type": "object",
+      "properties": {
+        "departmentId": { "type": "string" },
+        "departmentName": { "type": "string" },
+        "level": { "type": "string" },
+        "semester": { "type": "string" },
+        "type": { "type": "string", "enum": ["core", "elective", "global"] }
+      },
+      "required": ["departmentId", "level", "semester"]
     },
     "Module": {
       "title": "Module",
@@ -274,6 +293,39 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["messageId", "userId", "emoji"]
+    },
+    "Announcement": {
+      "title": "Announcement",
+      "description": "Global or targeted system announcement",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "active": { "type": "boolean" },
+        "severity": { "type": "string", "enum": ["info", "warning", "urgent"] },
+        "audience": { "type": "string", "enum": ["all", "department", "academic_level"] },
+        "targetDepartment": { "type": "string" },
+        "targetLevel": { "type": "string" },
+        "ctaLabel": { "type": "string" },
+        "ctaUrl": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "publishedBy": { "type": "string" },
+        "impressions": { "type": "number" },
+        "dismissalsCount": { "type": "number" }
+      },
+      "required": ["id", "title", "message", "active", "severity", "audience"]
+    },
+    "AnnouncementDismissal": {
+      "title": "AnnouncementDismissal",
+      "description": "Per-user record of dismissed announcements",
+      "type": "object",
+      "properties": {
+        "announcementId": { "type": "string" },
+        "dismissedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["announcementId", "dismissedAt"]
     }
   },
   "firestore": {
@@ -332,6 +384,14 @@
     "/users/{userId}/spaced_repetition/{topicId}": {
       "schema": "SpacedRepetition",
       "description": "User's spaced repetition data for specific topics"
+    },
+    "/users/{userId}/dismissals/{announcementId}": {
+      "schema": "AnnouncementDismissal",
+      "description": "Per-user server-side record of dismissed announcements"
+    },
+    "/announcements/{announcementId}": {
+      "schema": "Announcement",
+      "description": "Global and targeted system announcements"
     },
     "/affiliates/{affiliateId}": {
       "schema": "Affiliate",

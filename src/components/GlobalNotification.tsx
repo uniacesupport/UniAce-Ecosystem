@@ -1,92 +1,266 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { AlertCircle, X, Zap, MessageCircle } from 'lucide-react';
+import { AlertCircle, X, Zap, ExternalLink, Info, AlertTriangle } from 'lucide-react';
 import { db } from '../firebase';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { collection, doc, onSnapshot, query, where, setDoc, updateDoc, increment, serverTimestamp } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
+import toast from 'react-hot-toast';
+
+export interface AnnouncementDoc {
+  id: string;
+  title: string;
+  message: string;
+  active: boolean;
+  severity?: 'info' | 'warning' | 'urgent';
+  audience?: 'all' | 'department' | 'academic_level';
+  targetDepartment?: string;
+  targetLevel?: string;
+  ctaLabel?: string;
+  ctaUrl?: string;
+  createdAt?: any;
+  expiresAt?: string | null;
+  publishedBy?: string;
+  impressions?: number;
+  dismissalsCount?: number;
+}
 
 export default function GlobalNotification() {
-  const { user } = useAuth();
-  const [notification, setNotification] = useState<{ id?: string; message: string; active: boolean; whatsappLink?: string } | null>(null);
-  const [isVisible, setIsVisible] = useState(false);
+  const { user, profile } = useAuth();
+  const [announcements, setAnnouncements] = useState<AnnouncementDoc[]>([]);
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
+  const [loadingDismissals, setLoadingDismissals] = useState<boolean>(true);
+  const [isDismissing, setIsDismissing] = useState<boolean>(false);
 
+  // 1. Subscribe to user's server-side dismissals subcollection
   useEffect(() => {
     if (!db || !user) {
-      setIsVisible(false);
+      setDismissedIds(new Set());
+      setLoadingDismissals(false);
       return;
     }
 
-    const unsub = onSnapshot(doc(db, 'notifications', 'global_alert'), (doc) => {
-      if (doc.exists()) {
-        const data = doc.data() as { id?: string; message: string; active: boolean; whatsappLink?: string };
-        
-        // Check if this specific alert has been dismissed
-        const dismissedId = localStorage.getItem('dismissed_global_alert_id');
-        
-        if (data.active && data.id !== dismissedId) {
-          setNotification(data);
-          setIsVisible(true);
-        } else {
-          setIsVisible(false);
-        }
-      }
+    setLoadingDismissals(true);
+    const dismissalsRef = collection(db, 'users', user.uid, 'dismissals');
+    
+    const unsub = onSnapshot(dismissalsRef, (snapshot) => {
+      const ids = new Set<string>();
+      snapshot.docs.forEach(docSnap => {
+        ids.add(docSnap.id);
+      });
+      setDismissedIds(ids);
+      setLoadingDismissals(false);
     }, (error) => {
-      console.warn("GlobalNotification: Listener permission error (likely not authenticated yet):", error);
-      setIsVisible(false);
+      console.error("GlobalNotification: Listener error for user dismissals:", error);
+      setLoadingDismissals(false);
     });
 
     return () => unsub();
   }, [user]);
 
-  const handleDismiss = () => {
-    setIsVisible(false);
-    if (notification?.id) {
-      localStorage.setItem('dismissed_global_alert_id', notification.id);
+  // 2. Subscribe to active announcements collection
+  useEffect(() => {
+    if (!db || !user) {
+      setAnnouncements([]);
+      return;
+    }
+
+    const announcementsRef = collection(db, 'announcements');
+    const q = query(announcementsRef, where('active', '==', true));
+
+    const unsub = onSnapshot(q, (snapshot) => {
+      const items: AnnouncementDoc[] = [];
+      const now = new Date();
+
+      snapshot.docs.forEach(docSnap => {
+        const data = docSnap.data();
+        const docId = docSnap.id;
+
+        // Strict ID validation guard: If doc has no valid ID, do not display and log error
+        if (!docId) {
+          console.error("GlobalNotification Security Warning: Announcement missing document ID at read time.", data);
+          return;
+        }
+
+        // Check expiration date if present
+        if (data.expiresAt) {
+          const expireDate = new Date(data.expiresAt);
+          if (!isNaN(expireDate.getTime()) && expireDate < now) {
+            return; // Expired announcement
+          }
+        }
+
+        // Check audience targeting
+        if (data.audience && data.audience !== 'all') {
+          if (data.audience === 'department' && profile?.department && data.targetDepartment) {
+            if (profile.department.toLowerCase() !== data.targetDepartment.toLowerCase()) return;
+          }
+          if (data.audience === 'academic_level' && profile?.academic_level && data.targetLevel) {
+            if (profile.academic_level.toLowerCase() !== data.targetLevel.toLowerCase()) return;
+          }
+        }
+
+        items.push({
+          id: docId,
+          title: data.title || 'Global Announcement',
+          message: data.message || '',
+          active: data.active !== false,
+          severity: data.severity || 'info',
+          audience: data.audience || 'all',
+          targetDepartment: data.targetDepartment,
+          targetLevel: data.targetLevel,
+          ctaLabel: data.ctaLabel,
+          ctaUrl: data.ctaUrl,
+          createdAt: data.createdAt,
+          expiresAt: data.expiresAt,
+          publishedBy: data.publishedBy,
+          impressions: data.impressions || 0,
+          dismissalsCount: data.dismissalsCount || 0
+        });
+      });
+
+      // Sort newest first
+      items.sort((a, b) => (b.id > a.id ? 1 : -1));
+      setAnnouncements(items);
+    }, (error) => {
+      console.error("GlobalNotification: Listener error for announcements collection:", error);
+    });
+
+    return () => unsub();
+  }, [user, profile]);
+
+  // Wait until user dismissals are fully loaded to prevent banner flash/flicker on login
+  if (loadingDismissals || !user) {
+    return null;
+  }
+
+  // Find first active announcement that user hasn't dismissed yet
+  const activeAnnouncement = announcements.find(a => !dismissedIds.has(a.id));
+
+  if (!activeAnnouncement) {
+    return null;
+  }
+
+  // Handle server-side dismissal write with error handling
+  const handleDismiss = async () => {
+    if (isDismissing) return;
+    setIsDismissing(true);
+
+    const announcementId = activeAnnouncement.id;
+
+    // Optimistic local update
+    setDismissedIds(prev => new Set(prev).add(announcementId));
+
+    try {
+      if (db && user) {
+        // Write to user's subcollection: users/{uid}/dismissals/{announcementId}
+        const dismissalRef = doc(db, 'users', user.uid, 'dismissals', announcementId);
+        await setDoc(dismissalRef, {
+          announcementId,
+          dismissedAt: serverTimestamp()
+        });
+
+        // Increment dismissalsCount metric on announcement document
+        const announcementRef = doc(db, 'announcements', announcementId);
+        updateDoc(announcementRef, {
+          dismissalsCount: increment(1)
+        }).catch(() => {});
+      }
+    } catch (err: any) {
+      console.error("GlobalNotification: Failed to save dismissal server-side:", err);
+      // Revert optimistic update and inform user
+      setDismissedIds(prev => {
+        const next = new Set(prev);
+        next.delete(announcementId);
+        return next;
+      });
+      toast.error("Could not save announcement dismissal. Please try again.");
+    } finally {
+      setIsDismissing(false);
     }
   };
 
+  const getSeverityStyles = (severity?: string) => {
+    switch (severity) {
+      case 'urgent':
+        return {
+          bg: 'bg-rose-950/90 border-rose-500/40 shadow-rose-500/10',
+          badge: 'bg-rose-500 text-white',
+          title: 'text-rose-400',
+          icon: <AlertTriangle size={18} className="text-rose-400" />
+        };
+      case 'warning':
+        return {
+          bg: 'bg-amber-950/90 border-amber-500/40 shadow-amber-500/10',
+          badge: 'bg-amber-500 text-slate-950',
+          title: 'text-amber-400',
+          icon: <AlertCircle size={18} className="text-amber-400" />
+        };
+      default:
+        return {
+          bg: 'bg-slate-900/95 border-emerald-500/30 shadow-emerald-500/10',
+          badge: 'bg-emerald-500 text-slate-950',
+          title: 'text-emerald-400',
+          icon: <Zap size={18} className="text-emerald-400" />
+        };
+    }
+  };
+
+  const styles = getSeverityStyles(activeAnnouncement.severity);
+
   return (
     <AnimatePresence>
-      {isVisible && notification && (
-        <motion.div
-          initial={{ y: -100, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          exit={{ y: -100, opacity: 0 }}
-          className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] w-[90%] max-w-2xl"
-        >
-          <div className="bg-slate-900 border border-amber-500/30 rounded-2xl p-4 shadow-2xl shadow-amber-500/20 flex flex-col sm:flex-row items-center gap-4">
-            <div className="flex items-center gap-4 flex-1 w-full">
-              <div className="bg-amber-500 p-2 rounded-xl shrink-0">
-                <Zap size={20} className="text-slate-900" fill="currentColor" />
-              </div>
-              <div className="flex-1">
-                <p className="text-xs font-semibold text-amber-500 uppercase tracking-wider mb-0.5">Global Announcement</p>
-                <p className="text-sm font-bold text-white leading-tight">{notification.message}</p>
-              </div>
+      <motion.div
+        initial={{ y: -80, opacity: 0, scale: 0.98 }}
+        animate={{ y: 0, opacity: 1, scale: 1 }}
+        exit={{ y: -80, opacity: 0, scale: 0.98 }}
+        transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+        className="fixed top-16 sm:top-20 left-1/2 -translate-x-1/2 z-[90] w-[92%] max-w-2xl pointer-events-auto"
+      >
+        <div className={`${styles.bg} backdrop-blur-md border rounded-2xl p-4 shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-white transition-all`}>
+          <div className="flex items-start gap-3 flex-1 min-w-0">
+            <div className="p-2 rounded-xl shrink-0 bg-slate-800/80 border border-slate-700/50 mt-0.5 sm:mt-0">
+              {styles.icon}
             </div>
-
-            <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-              {notification.whatsappLink && (
-                <a 
-                  href={notification.whatsappLink}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all active:scale-95 shadow-lg shadow-emerald-500/20 whitespace-nowrap"
-                >
-                  <MessageCircle size={16} />
-                  JOIN WHATSAPP
-                </a>
-              )}
-              <button 
-                onClick={handleDismiss}
-                className="p-2 hover:bg-slate-800 rounded-xl text-slate-400 hover:text-white transition-colors"
-              >
-                <X size={20} />
-              </button>
+            <div className="flex-1 min-w-0 pr-2">
+              <div className="flex items-center gap-2 mb-0.5">
+                <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${styles.badge}`}>
+                  {activeAnnouncement.severity || 'Announcement'}
+                </span>
+                <span className={`text-xs font-bold truncate ${styles.title}`}>
+                  {activeAnnouncement.title}
+                </span>
+              </div>
+              <p className="text-xs font-medium text-slate-200 leading-relaxed line-clamp-2">
+                {activeAnnouncement.message}
+              </p>
             </div>
           </div>
-        </motion.div>
-      )}
+
+          <div className="flex items-center gap-2.5 w-full sm:w-auto justify-end pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-800 shrink-0">
+            {/* Data-driven CTA Button: only shown if ctaUrl is present */}
+            {activeAnnouncement.ctaUrl && activeAnnouncement.ctaUrl.trim() !== '' && (
+              <a
+                href={activeAnnouncement.ctaUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 px-3.5 py-1.5 rounded-xl text-xs font-extrabold transition-all active:scale-95 shadow-md shadow-emerald-500/20 whitespace-nowrap"
+              >
+                <span>{activeAnnouncement.ctaLabel && activeAnnouncement.ctaLabel.trim() !== '' ? activeAnnouncement.ctaLabel : 'Learn More'}</span>
+                <ExternalLink size={13} />
+              </a>
+            )}
+
+            <button
+              onClick={handleDismiss}
+              disabled={isDismissing}
+              title="Dismiss announcement"
+              className="p-1.5 hover:bg-slate-800/80 active:bg-slate-800 text-slate-400 hover:text-white rounded-xl transition-colors shrink-0"
+            >
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+      </motion.div>
     </AnimatePresence>
   );
 }

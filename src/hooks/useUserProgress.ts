@@ -9,6 +9,7 @@ import { DEPARTMENT_TO_FACULTY } from '../constants';
 import { CurriculumIntegrityService } from '../services/curriculumIntegrity';
 import { useProgressStore } from '../lib/progressStore';
 import { LogService } from '../services/logService';
+import { isCourseEligibleForUser } from '../utils/courseEligibility';
 import { CourseService } from '../services/courseService';
 import { generateCourseContent } from '../services/aiCourseGenerator';
 
@@ -564,38 +565,12 @@ export function useUserProgress() {
       return explicit;
     }
 
-    const normalize = (s: any) => String(s || '').toLowerCase().trim().replace(/\s+/g, ' ');
-    const extractLevel = (lvl: any) => String(lvl || '').match(/\d+/)?.[0] || '';
-    
-    const userDept = normalize(profile.department);
-    const derivedFaculty = profile.faculty || DEPARTMENT_TO_FACULTY[profile.department as Department] || '';
-    const userFaculty = normalize(derivedFaculty);
-    const userLevel = extractLevel(profile.academic_level);
-    const userSemester = normalize(profile.semester);
-
-    const autoEnrolled = Object.values(courses)
-      .filter(c => {
-        // 1. Check Level (Mandatory for all scopes)
-        const levelMatch = extractLevel(c.level) === userLevel;
-        
-        if (!levelMatch) return false;
-
-        // 2. Check Scope
-        const scope = c.scope || 'DEPARTMENT';
-        
-        if (scope === 'GLOBAL') return true;
-        
-        if (scope === 'FACULTY') {
-          const courseFaculties = c.faculties || [];
-          return courseFaculties.some(f => normalize(f) === userFaculty);
-        }
-        
-        // Default: DEPARTMENT scope
-        const courseDepts = c.departments || ((c as any).department ? [(c as any).department] : []);
-        return courseDepts.some(d => normalize(d) === userDept);
-      })
+    const activeSemester = profile.semester;
+    const programCourses = Object.values(courses)
+      .filter(c => isCourseEligibleForUser(c, profile, activeSemester, explicit))
       .map(c => c.id as CourseId);
-    return Array.from(new Set([...explicit, ...autoEnrolled]));
+
+    return Array.from(new Set([...explicit, ...programCourses]));
   }, [progress.enrolledCourses, profile, courses]);
 
   const effectiveProgress = useMemo(() => ({

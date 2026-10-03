@@ -21,6 +21,14 @@ export interface CourseProvenance {
   groundingScore?: number;
 }
 
+export interface CourseOffering {
+  departmentId: string;
+  departmentName?: string;
+  level: Level;
+  semester: Semester;
+  type?: 'core' | 'elective' | 'global';
+}
+
 export interface Course {
   id: CourseId;
   title: string;
@@ -32,6 +40,7 @@ export interface Course {
   learningOutcomes?: CourseObjective[];
   departments?: Department[];
   faculties?: string[];
+  offerings?: CourseOffering[];
   scope?: CourseScope;
   level?: Level;
   semester?: Semester;
@@ -44,6 +53,8 @@ export interface Course {
   provenance?: CourseProvenance;
   deleted?: boolean;
   deletedAt?: string;
+  syllabusStatus?: 'pending' | 'generating' | 'ready' | 'failed';
+  syllabusStatusTimestamp?: string;
 }
 
 export type View = 'hub' | 'dashboard' | 'study' | 'past-questions' | 'quizzes' | 'module-topics' | 'course-syllabus' | 'mastery' | 'formulas' | 'ai-tutor' | 'notebook' | 'profile' | 'help-support' | 'admin-support' | 'admin-dashboard' | 'tutor-dashboard' | 'pricing' | 'flashcards' | 'arena' | 'concept-map' | 'study-plan';
@@ -138,6 +149,8 @@ export interface UserProfile {
   referredBy?: string;
   referral_count?: number;
   ai_sparks?: number;
+  has_seen_whatsapp?: boolean;
+  onboarding_completed?: boolean;
 }
 
 export interface LearningProfile {
@@ -251,6 +264,25 @@ export interface QuizQuestion {
   explanation: string;
   hint: string;
   difficulty?: number; // 1 to 5
+  sourceReference?: string;
+  bloomLevel?: 'remembering' | 'understanding' | 'applying' | 'analyzing' | 'evaluating' | 'creating';
+  learningOutcomeId?: string;
+  verifiedGrounded?: boolean;
+}
+
+export interface QuizAttempt {
+  id: string;
+  userId: string;
+  courseId: string;
+  moduleId?: string;
+  subTopicId?: string;
+  mode: 'practice' | 'exam' | 'adaptive' | 'custom';
+  score: number;
+  totalQuestions: number;
+  accuracyPercentage: number;
+  timeSpentSeconds?: number;
+  completedAt: string;
+  weakTopics?: string[];
 }
 
 export interface Quiz {

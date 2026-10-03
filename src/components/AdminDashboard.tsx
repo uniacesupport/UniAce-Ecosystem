@@ -1262,19 +1262,42 @@ export default function AdminDashboard() {
 
   const handleSendNotification = async () => {
     if (!notificationText || !db) return;
+    const msgClean = notificationText.trim();
+    const urlClean = whatsappLink.trim();
+
+    if (msgClean.length < 5) {
+      showToast("Announcement message must be at least 5 characters.", "error");
+      return;
+    }
+    if (urlClean && !/^https?:\/\//i.test(urlClean)) {
+      showToast("CTA URL must begin with http:// or https://", "error");
+      return;
+    }
+
     setIsSendingNotification(true);
     try {
-      const alertId = Date.now().toString();
-      await setDoc(doc(collection(db, 'notifications'), 'global_alert'), {
-        id: alertId,
-        message: notificationText,
-        whatsappLink: whatsappLink,
-        timestamp: new Date().toISOString(),
-        type: 'admin_alert',
-        active: true
+      const announcementRef = doc(collection(db, 'announcements'));
+      const aud = targetAudience === 'students' ? 'all' : (targetAudience as any) || 'all';
+
+      await setDoc(announcementRef, {
+        id: announcementRef.id,
+        title: 'System Announcement',
+        message: msgClean,
+        active: true,
+        severity: 'info',
+        audience: aud,
+        ctaUrl: urlClean || null,
+        ctaLabel: urlClean ? 'Join WhatsApp' : null,
+        createdAt: serverTimestamp(),
+        publishedBy: user?.email || 'admin',
+        impressions: 0,
+        dismissalsCount: 0
       });
 
-      // Also send individual notifications for persistence in Notification Center
+      // Deactivate legacy global_alert
+      await setDoc(doc(db, 'notifications', 'global_alert'), { active: false }, { merge: true }).catch(() => {});
+
+      // Send individual inbox notifications
       try {
         let usersQuery = collection(db, 'users');
         const usersSnapshot = await getDocs(usersQuery);
@@ -1289,7 +1312,6 @@ export default function AdminDashboard() {
             case 'students': shouldSend = userData.role === 'student'; break;
             case 'tutors': shouldSend = userData.role === 'tutor'; break;
             case 'moderators': shouldSend = userData.role === 'moderator'; break;
-            case 'department': shouldSend = userData.department === 'Mathematics'; break; // To be implemented dynamically later
             default: shouldSend = true;
           }
 
@@ -1298,8 +1320,8 @@ export default function AdminDashboard() {
             batch.set(notifRef, {
               userId: userDoc.id,
               title: 'Admin Announcement',
-              message: notificationText,
-              link: whatsappLink,
+              message: msgClean,
+              link: urlClean,
               type: 'info',
               read: false,
               createdAt: serverTimestamp()
@@ -1311,32 +1333,13 @@ export default function AdminDashboard() {
         console.error("Error sending batch notifications:", batchError);
       }
 
-      // Phase 2: Secure WhatsApp Broadcast via Backend
-      try {
-        const idToken = await user?.getIdToken();
-        fetch('/api/admin/broadcast-whatsapp', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${idToken}`
-          },
-          body: JSON.stringify({
-            message: notificationText,
-            whatsappLink: whatsappLink,
-            targetAudience // Pass audience to backend
-          })
-        }).catch(e => console.error('WhatsApp broadcast error:', e));
-      } catch (backendError) {
-        console.error("Backend broadcast error:", backendError);
-      }
-
-      showToast("Global notification sent!", "success");
-      LogService.log('info', 'admin', `Sent global notification to ${targetAudience}: ${notificationText.substring(0, 50)}...`);
+      showToast("Dynamic announcement published successfully!", "success");
+      LogService.log('info', 'admin', `Published announcement (${announcementRef.id}) to ${targetAudience}: ${msgClean.substring(0, 50)}...`);
       setNotificationText('');
       setWhatsappLink('');
     } catch (error) {
       console.error("Error sending notification:", error);
-      showToast("Failed to send notification.", "error");
+      showToast("Failed to publish announcement.", "error");
     } finally {
       setIsSendingNotification(false);
     }

@@ -48,6 +48,7 @@ interface UserProfile {
     fastMode?: boolean;
   };
   has_seen_whatsapp?: boolean;
+  onboarding_completed?: boolean;
   referralCode?: string;
   referredBy?: string;
   referral_count?: number;
@@ -205,7 +206,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         academic_level: userDoc.exists() ? userDoc.data().academic_level : undefined,
         semester: userDoc.exists() ? userDoc.data().semester : undefined,
         learningProfile: userDoc.exists() ? userDoc.data().learningProfile : undefined,
-        has_seen_whatsapp: userDoc.exists() ? userDoc.data().has_seen_whatsapp : false,
+        has_seen_whatsapp: userDoc.exists() 
+          ? (userDoc.data().has_seen_whatsapp !== undefined ? userDoc.data().has_seen_whatsapp : true)
+          : false,
+        onboarding_completed: userDoc.exists()
+          ? (userDoc.data().onboarding_completed ?? (!!userDoc.data().department && !!userDoc.data().academic_level && !!userDoc.data().semester))
+          : false,
         referralCode,
         referredBy,
       };

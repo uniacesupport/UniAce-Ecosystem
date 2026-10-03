@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { MessageCircle, ArrowRight } from 'lucide-react';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
+import { LogService } from '../services/logService';
+import toast from 'react-hot-toast';
 
-export default function WhatsAppPromoModal() {
+export default function WhatsAppPromoModal({ onClose }: { onClose?: () => void }) {
   const [whatsappLink, setWhatsappLink] = useState('');
   const [isVisible, setIsVisible] = useState(true);
-  const { user } = useAuth();
+  const { user, updateProfileData } = useAuth();
 
   useEffect(() => {
     const fetchLink = async () => {
@@ -24,21 +26,26 @@ export default function WhatsAppPromoModal() {
     fetchLink();
   }, []);
 
-  const markAsSeen = async () => {
+  const handleDismiss = async (action: 'clicked' | 'skipped') => {
     setIsVisible(false);
-    if (user) {
+    if (user && updateProfileData) {
       try {
-        await updateDoc(doc(db, 'users', user.uid), { has_seen_whatsapp: true });
+        await updateProfileData({ has_seen_whatsapp: true });
+        await LogService.log('info', 'user', `whatsapp_promo_${action}`, { source: 'promo_modal' });
       } catch (e) {
-        console.error("Failed to update profile", e);
+        console.error("Failed to update user profile dismissal:", e);
+        toast.error("Failed to save preference. Please try again.");
       }
     }
+    if (onClose) onClose();
   };
 
   const handleJoin = () => {
-    setTimeout(() => {
-      markAsSeen();
-    }, 500);
+    handleDismiss('clicked');
+  };
+
+  const handleSkip = () => {
+    handleDismiss('skipped');
   };
 
   if (!whatsappLink || !isVisible) return null;
@@ -51,7 +58,7 @@ export default function WhatsAppPromoModal() {
         className="bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200 dark:border-zinc-800 p-8 text-center relative"
       >
         <button 
-          onClick={markAsSeen}
+          onClick={handleSkip}
           className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 bg-slate-100 dark:bg-zinc-800 rounded-full transition-colors"
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
@@ -79,7 +86,7 @@ export default function WhatsAppPromoModal() {
           </a>
           
           <button
-            onClick={markAsSeen}
+            onClick={handleSkip}
             className="w-full text-slate-500 hover:text-slate-700 dark:text-zinc-400 dark:hover:text-zinc-200 font-medium py-3 rounded-xl transition-colors flex items-center justify-center gap-2"
           >
             Skip for now <ArrowRight size={16} />

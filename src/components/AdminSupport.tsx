@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { db, auth } from '../firebase';
 import { collection, query, orderBy, onSnapshot, doc, updateDoc, addDoc, setDoc, serverTimestamp, where, writeBatch, getDocs } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
+import toast from 'react-hot-toast';
 
 enum OperationType {
   GET = 'get',
@@ -108,10 +109,44 @@ export default function AdminSupport({ onBack }: AdminSupportProps) {
 
   const handleSendBroadcast = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!notifTitle.trim() || !notifMessage.trim()) return;
+    const titleClean = notifTitle.trim();
+    const messageClean = notifMessage.trim();
+    const ctaUrlClean = notifWhatsappLink.trim();
+
+    if (titleClean.length < 2) {
+      toast.error("Title must be at least 2 characters.");
+      return;
+    }
+    if (messageClean.length < 5) {
+      toast.error("Message content must be at least 5 characters.");
+      return;
+    }
+    if (ctaUrlClean && !/^https?:\/\//i.test(ctaUrlClean)) {
+      toast.error("CTA Link must begin with http:// or https://");
+      return;
+    }
 
     setIsSendingNotif(true);
     try {
+      const announcementRef = doc(collection(db, 'announcements'));
+      const severity = notifType === 'error' ? 'urgent' : notifType === 'warning' ? 'warning' : 'info';
+
+      await setDoc(announcementRef, {
+        id: announcementRef.id,
+        title: titleClean,
+        message: messageClean,
+        active: true,
+        severity,
+        audience: 'all',
+        ctaUrl: ctaUrlClean || null,
+        ctaLabel: ctaUrlClean ? 'Join WhatsApp' : null,
+        createdAt: serverTimestamp(),
+        publishedBy: user?.email || 'admin',
+        impressions: 0,
+        dismissalsCount: 0
+      });
+
+      // Send individual notifications for notification center inbox
       const usersSnapshot = await getDocs(collection(db, 'users'));
       const batch = writeBatch(db);
       
@@ -119,33 +154,22 @@ export default function AdminSupport({ onBack }: AdminSupportProps) {
         const notifRef = doc(collection(db, 'notifications'));
         batch.set(notifRef, {
           userId: userDoc.id,
-          title: notifTitle,
-          message: notifMessage,
-          link: notifWhatsappLink,
+          title: titleClean,
+          message: messageClean,
+          link: ctaUrlClean,
           type: notifType,
           read: false,
           createdAt: serverTimestamp()
         });
       });
 
-      // Also update global alert for the banner
-      const alertId = Date.now().toString();
-      batch.set(doc(db, 'notifications', 'global_alert'), {
-        id: alertId,
-        message: notifMessage,
-        whatsappLink: notifWhatsappLink,
-        timestamp: new Date().toISOString(),
-        type: 'admin_alert',
-        active: true
-      });
-      
+      // Clear legacy single alert doc if present
+      batch.set(doc(db, 'notifications', 'global_alert'), { active: false }, { merge: true });
       await batch.commit();
 
-      // Also send push and WhatsApp notifications via backend
+      // Backend broadcasts
       try {
         const idToken = await user?.getIdToken();
-        
-        // Push Notifications
         fetch('/api/admin/broadcast-push', {
           method: 'POST',
           headers: {
@@ -153,35 +177,22 @@ export default function AdminSupport({ onBack }: AdminSupportProps) {
             'Authorization': `Bearer ${idToken}`
           },
           body: JSON.stringify({
-            title: notifTitle,
-            message: notifMessage,
+            title: titleClean,
+            message: messageClean,
             type: notifType
           })
         }).catch(e => console.error('Push error:', e));
-
-        // WhatsApp Broadcast (Phase 2 Full-Stack)
-        fetch('/api/admin/broadcast-whatsapp', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${idToken}`
-          },
-          body: JSON.stringify({
-            message: notifMessage
-          })
-        }).catch(e => console.error('WhatsApp error:', e));
-
       } catch (error) {
         console.error('Error sending backend broadcasts:', error);
       }
 
+      toast.success("Broadcast published as a dynamic global announcement!");
       setNotifTitle('');
       setNotifMessage('');
       setNotifWhatsappLink('');
-      alert('Broadcast sent successfully to ' + usersSnapshot.size + ' users!');
     } catch (error) {
       console.error('Error sending broadcast:', error);
-      alert('Failed to send broadcast. Check console for details.');
+      toast.error("Failed to send broadcast");
     } finally {
       setIsSendingNotif(false);
     }

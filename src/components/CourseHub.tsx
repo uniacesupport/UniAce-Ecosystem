@@ -13,6 +13,7 @@ import AcademicProfileModal from './AcademicProfileModal';
 import { useDebounce } from 'use-debounce';
 import { formatDistanceToNow } from 'date-fns';
 import { useAppStore } from '../lib/store';
+import { isCourseEligibleForUser, getCourseProgramStatus } from '../utils/courseEligibility';
 
 interface CourseHubProps {
   onSelectCourse: (id: CourseId) => void;
@@ -69,35 +70,11 @@ export default function CourseHub({ onSelectCourse, onProfileClick, onViewSelect
 
     // Apply Tab Filter
     if (activeTab === 'your-courses') {
-      // Filter by user's active semester
-      if (activeSemester) {
-        const userSemester = normalize(activeSemester);
-        result = result.filter(c => normalize(c.semester) === userSemester);
-      }
-      
-      // Filter by user's level
-      if (profile?.academic_level) {
-        const userLevel = extractLevel(profile.academic_level);
-        result = result.filter(c => {
-          const courseLevel = extractLevel(c.level);
-          return courseLevel === userLevel;
-        });
-      }
-
-      result = result.filter(c => enrolledCourses.includes(c.id as CourseId));
+      result = result.filter(c => isCourseEligibleForUser(c, profile, activeSemester, enrolledCourses));
     } else if (activeTab === 'explore' && !isAdmin) {
-      // Filter by user's department/faculty
       result = result.filter(c => {
-        if (c.scope === 'GLOBAL') return true;
-        if (c.scope === 'FACULTY') {
-          if (profile?.faculty && c.faculties?.includes(profile.faculty)) return true;
-          if (profile?.department && c.departments?.includes(profile.department as Department)) return true;
-          return false;
-        }
-        if (c.scope === 'DEPARTMENT') {
-          return profile?.department && c.departments?.includes(profile.department as Department);
-        }
-        return true;
+        const status = getCourseProgramStatus(c, profile, activeSemester);
+        return status === 'current_program' || status === 'global_core' || status === 'elective';
       });
     }
 

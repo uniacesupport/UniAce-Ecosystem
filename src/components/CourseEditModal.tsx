@@ -5,6 +5,7 @@ import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { LEVELS, SEMESTERS } from '../constants';
 import { useInstitution } from '../context/InstitutionContext';
+import { normalizeDeptId } from '../utils/normalization';
 
 interface CourseEditModalProps {
   course: Course;
@@ -56,6 +57,18 @@ export default function CourseEditModal({ course, onClose, onSave }: CourseEditM
         }
       } catch (e) {}
 
+      const targetDepts = scope === 'DEPARTMENT'
+        ? Array.from(new Set([(course.department || ''), ...departments].filter(Boolean)))
+        : (scope === 'GLOBAL' ? [] : departments);
+
+      const offerings = targetDepts.map(dept => ({
+        departmentId: normalizeDeptId(dept),
+        departmentName: dept,
+        level: level || '100',
+        semester: semester || '1st Semester',
+        type: scope === 'GLOBAL' ? ('global' as const) : ('core' as const)
+      }));
+
       await updateDoc(courseRef, {
         title,
         description,
@@ -64,7 +77,8 @@ export default function CourseEditModal({ course, onClose, onSave }: CourseEditM
         scope,
         academicStandard: activeStandard,
         faculties: scope === 'FACULTY' ? faculties : [],
-        departments: scope === 'DEPARTMENT' ? departments : [],
+        departments: targetDepts,
+        offerings,
         syllabus: modules
       });
       onSave();

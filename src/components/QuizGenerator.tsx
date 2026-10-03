@@ -342,6 +342,26 @@ export default function QuizGenerator({
       triggerMilestoneCelebration();
     }
 
+    // Persist Quiz Attempt to Firestore for Mastery Telemetry & Weak Spot tracking
+    if (user && courseId) {
+      try {
+        const { addDoc, collection } = await import('firebase/firestore');
+        await addDoc(collection(db, `users/${user.uid}/quizAttempts`), {
+          userId: user.uid,
+          courseId,
+          moduleId: module.id,
+          moduleTitle: module.title,
+          subTopicId: subTopic?.id,
+          mode,
+          score: percentage,
+          totalQuestions: questions.length,
+          completedAt: new Date().toISOString()
+        });
+      } catch (err) {
+        console.warn("Could not record quiz attempt:", err);
+      }
+    }
+
     // Update Spaced Repetition System
     if (courseId && subTopic) {
       try {
