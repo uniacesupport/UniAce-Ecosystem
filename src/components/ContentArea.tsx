@@ -10,6 +10,7 @@ import MiniTeacherModal from './MiniTeacherModal';
 import QuickSummaryModal from './QuickSummaryModal';
 import { AIService } from '../services/ai';
 import { generateLessonContent, sanitizeLatex } from '../services/aiCourseGenerator';
+import { sanitizeForFirestore } from '../services/courseService';
 import { LogService } from '../services/logService';
 import { db } from '../firebase';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
@@ -228,10 +229,10 @@ export default function ContentArea({
            // Update Firestore
            try {
               let lessonPath = `courses/${courseId}/modules/${module.id}/lessons/${activeSubTopic.id}`;
-              await setDoc(doc(db, lessonPath), {
+              await setDoc(doc(db, lessonPath), sanitizeForFirestore({
                 content: newContent,
-                metadata: fetchedLesson.metadata || {}
-              }, { merge: true });
+                metadata: fetchedLesson?.metadata || {}
+              }), { merge: true });
               console.log("[Auto-Upgrade] Successfully updated Firestore with real FLUX images!");
            } catch (e) {
              console.error("[Auto-Upgrade] Failed to save upgraded content to Firestore:", e);
@@ -337,12 +338,16 @@ export default function ContentArea({
 
       // Save to Firestore
       const lessonRef = doc(db, `courses/${courseId}/modules/${module.id}/lessons`, activeSubTopic.id);
-      await setDoc(lessonRef, { content: lesson.content, metadata: lesson.metadata }, { merge: true });
+      const cleanData = sanitizeForFirestore({ 
+        content: lesson.content || '', 
+        metadata: lesson.metadata || {} 
+      });
+      await setDoc(lessonRef, cleanData, { merge: true });
 
       LogService.log('success', 'ai', `Generated lesson content for ${activeSubTopic.title}`, { courseId, moduleId: module.id, lessonId: activeSubTopic.id });
 
       // Update local state
-      setFetchedLesson({ id: activeSubTopic.id, content: lesson.content, metadata: lesson.metadata });
+      setFetchedLesson({ id: activeSubTopic.id, content: lesson.content, metadata: (cleanData.metadata as PipelineMetadata) || {} });
       onLessonContentChange?.(lesson.content);
 
       // Update global state to reflect new content

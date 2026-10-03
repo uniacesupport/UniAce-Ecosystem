@@ -23,6 +23,7 @@ export interface GeneratedCourse {
 import { jsonrepair } from 'jsonrepair';
 import { PipelineMetadata } from '../types';
 import { autoHealQuestion } from './validators/aiSchemas';
+import { sanitizeForFirestore } from './courseService';
 import { auth } from '../firebase';
 
 const getAuthToken = async () => {
@@ -616,10 +617,16 @@ export async function generateLessonContent(
     console.warn(`[AI Course Generator] Potential off-topic drift detected in lesson "${lessonTitle}" for course "${courseName}" (${targetDept}):`, driftCheck.hits);
   }
 
+  const cleanMetadata: PipelineMetadata = {
+    hasMath: Boolean(result?.metadata?.hasMath),
+    hasCode: Boolean(result?.metadata?.hasCode),
+    ...(result?.metadata && typeof result.metadata === 'object' ? sanitizeForFirestore(result.metadata) : {})
+  };
+
   return {
     title: lessonTitle,
     content: sanitizedContent,
-    metadata: result.metadata
+    metadata: cleanMetadata
   };
 }
 

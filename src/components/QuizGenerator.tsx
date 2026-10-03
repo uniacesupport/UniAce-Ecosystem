@@ -351,7 +351,7 @@ export default function QuizGenerator({
           courseId,
           moduleId: module.id,
           moduleTitle: module.title,
-          subTopicId: subTopic?.id,
+          subTopicId: subTopic?.id || null,
           mode,
           score: percentage,
           totalQuestions: questions.length,
