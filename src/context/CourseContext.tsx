@@ -25,12 +25,12 @@ export function CourseProvider({ children }: { children: React.ReactNode }) {
       const querySnapshot = await getDocs(collection(db, 'courses'));
       if (!querySnapshot.empty) {
         const firestoreCourses: Record<string, Course> = {};
-        querySnapshot.forEach((doc: any) => {
-          const data = doc.data() as Course & { deleted?: boolean };
-          if (data.id) {
-            if (!data.deleted) {
-              firestoreCourses[data.id] = data;
-            }
+        querySnapshot.forEach((docSnap: any) => {
+          const data = docSnap.data() as Course & { deleted?: boolean };
+          const courseId = docSnap.id;
+          data.id = courseId as CourseId;
+          if (!data.deleted) {
+            firestoreCourses[courseId] = data;
           }
         });
         setCourses(firestoreCourses);
@@ -53,7 +53,8 @@ export function CourseProvider({ children }: { children: React.ReactNode }) {
       if (!user) return;
       
       // Check if user is admin based on email (matching firestore rules)
-      const isAdmin = (import.meta.env.VITE_ADMIN_EMAILS || '').split(',').includes(user.email);
+      const adminEmails = (import.meta.env.VITE_ADMIN_EMAILS || '').split(',').map((e: string) => e.trim().toLowerCase()).filter(Boolean);
+      const isAdmin = Boolean(user.email && adminEmails.includes(user.email.toLowerCase()));
       if (!isAdmin) return;
 
       try {

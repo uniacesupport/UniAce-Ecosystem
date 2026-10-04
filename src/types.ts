@@ -330,4 +330,21 @@ export interface Curriculum {
   updatedBy: string;
 }
 
-export type PipelineMetadata = Record<string, any>;
+export interface LessonRelevance {
+  department: string;
+  concept: string;
+  application: string;
+}
+
+export interface PipelineMetadata {
+  hasMath?: boolean;
+  hasCode?: boolean;
+  audience?: string[];
+  audienceHash?: string;
+  promptVersion?: string;
+  modelId?: string;
+  generatedAt?: string;
+  relevance?: LessonRelevance[];
+  keyConcepts?: string[];
+  [key: string]: any;
+}

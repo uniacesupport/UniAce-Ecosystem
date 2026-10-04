@@ -17,7 +17,7 @@ export interface ModelResponse {
 export interface ModelProvider {
   readonly name: string;
   generate(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean, model?: string }): Promise<ModelResponse>;
-  stream(messages: any[], options: { complexity: 'high' | 'standard', model?: string }, onChunk: (chunk: string) => void): Promise<ModelResponse>;
+  stream(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean, model?: string }, onChunk: (chunk: string) => void): Promise<ModelResponse>;
 }
 
 const ProviderResponseSchema = z.object({
@@ -62,15 +62,30 @@ class ModelProviderError extends Error {
   }
 }
 
-async function retry<T>(fn: () => Promise<T>, providerName: string, retries = 2, delay = 1500): Promise<T> {
+function isKeyInvalidOrExhaustedError(error: any): boolean {
+  const status = error?.status || error?.statusCode;
+  const rawMsg = (error?.message || String(error)).toLowerCase();
+  return (
+    status === 401 ||
+    status === 403 ||
+    status === 429 ||
+    rawMsg.includes('api key not valid') ||
+    rawMsg.includes('api_key_invalid') ||
+    rawMsg.includes('invalid_api_key') ||
+    rawMsg.includes('unauthorized') ||
+    rawMsg.includes('permission denied')
+  );
+}
+
+async function retry<T>(fn: () => Promise<T>, providerName: string, retries = 3, delay = 1200): Promise<T> {
   try {
     return await fn();
   } catch (error: any) {
     const rawMsg = (error.message || String(error)).toLowerCase();
     const statusCode = error.statusCode || error.status || (error.message?.match(/\b(\d{3})\b/)?.[1] ? parseInt(error.message.match(/\b(\d{3})\b/)[1]) : undefined);
 
-    // Fail-fast on non-retryable configuration and model errors
-    if (error.message === 'ALL_KEYS_EXHAUSTED') {
+    // Fail-fast when all keys in the rotator pool are exhausted
+    if (error.message === 'ALL_KEYS_EXHAUSTED' || rawMsg.includes('no valid api keys available')) {
       throw new ModelProviderError('All API keys for ' + providerName + ' are exhausted or invalid.', providerName, 401, false);
     }
 
@@ -81,25 +96,34 @@ async function retry<T>(fn: () => Promise<T>, providerName: string, retries = 2,
                        rawMsg.includes('is not supported') || 
                        rawMsg.includes('unsupported model');
 
-    const isBadRequest = (statusCode === 400 || rawMsg.includes('bad request') || rawMsg.includes('invalid argument')) && 
-                         !rawMsg.includes('rate limit') && 
-                         !rawMsg.includes('too many requests') && 
-                         !rawMsg.includes('quota');
-
     const isUnauthorized = statusCode === 401 || 
                            statusCode === 403 || 
                            rawMsg.includes('invalid_api_key') || 
+                           rawMsg.includes('api_key_invalid') ||
                            rawMsg.includes('unauthorized') || 
                            rawMsg.includes('permission denied') || 
                            rawMsg.includes('api key not valid');
 
-    // Fail fast immediately on configuration/model/auth errors: retrying is futile
-    if (isNotFound || isBadRequest || isUnauthorized) {
+    const isBadRequest = !isUnauthorized &&
+                         (statusCode === 400 || rawMsg.includes('bad request') || rawMsg.includes('invalid argument')) && 
+                         !rawMsg.includes('rate limit') && 
+                         !rawMsg.includes('too many requests') && 
+                         !rawMsg.includes('quota');
+
+    // Fail fast immediately on model/request syntax errors
+    if (isNotFound || isBadRequest) {
       console.warn(`[${providerName}] Fail-fast triggered: non-retryable error (status: ${statusCode}): ${error.message}`);
       throw new ModelProviderError(error.message, providerName, statusCode, false);
     }
 
-    // Only retry transient errors: 429 (rate limits), 5xx (server errors), and network timeouts
+    // If a key failed with auth/invalid_api_key, rotate immediately to the next key in the pool if retries remain
+    if (isUnauthorized && retries > 0) {
+      console.warn(`[${providerName}] Invalid/unauthorized API key encountered, rotating to next key in pool (${retries} attempts left)...`);
+      await new Promise(resolve => setTimeout(resolve, 150));
+      return retry(fn, providerName, retries - 1, delay);
+    }
+
+    // Retry transient errors: 429 (rate limits), 5xx (server errors), and network timeouts
     const isRateLimit = statusCode === 429 || rawMsg.includes('rate limit') || rawMsg.includes('quota') || rawMsg.includes('too many requests');
     const isServer5xx = statusCode && statusCode >= 500 && statusCode <= 599;
     const isNetworkOrTimeout = error.name === 'AbortError' || rawMsg.includes('timeout') || rawMsg.includes('econnreset') || rawMsg.includes('fetch failed');
@@ -236,7 +260,11 @@ export class DynamicKeyRotator {
 
   async getNextKey(): Promise<string> {
     await this.fetchKeys();
-    const allKeys = [...this.fallbackKeys, ...this.dbKeys];
+    // Prioritize Admin-configured Firestore dbKeys first; only append fallback env keys after dbKeys
+    const combinedKeys = this.dbKeys.length > 0
+      ? [...this.dbKeys, ...this.fallbackKeys]
+      : [...this.fallbackKeys];
+    const allKeys = Array.from(new Set(combinedKeys));
     
     // Filter out obvious placeholders
     const activeKeys = allKeys.filter(k => 
@@ -244,6 +272,7 @@ export class DynamicKeyRotator {
       k.length > 5 && 
       !k.includes('TODO') && 
       !k.includes('YOUR_') && 
+      !k.includes('MY_GEMINI_API_KEY') &&
       !k.includes('PLACEHOLDER') &&
       !k.includes('<') &&
       !k.includes('>')
@@ -311,6 +340,14 @@ export class GeminiDirectProvider implements ModelProvider {
 
   constructor(apiKey: string = '') {
     this.rotator = new DynamicKeyRotator('gemini_direct', apiKey);
+  }
+
+  public async getApiKey(): Promise<string> {
+    return await this.rotator.getNextKey();
+  }
+
+  public async markKeyExhausted(key: string): Promise<void> {
+    await this.rotator.markKeyExhausted(key);
   }
 
   private transformMessagesToGemini(messages: any[]) {
@@ -432,28 +469,26 @@ export class GeminiDirectProvider implements ModelProvider {
         return await executeGenerate(primaryModel);
       } catch (error: any) {
         const status = error.status || error.statusCode;
-        if (fallbackModel && fallbackModel !== primaryModel && (status === 404 || status === 429)) {
+        if (isKeyInvalidOrExhaustedError(error)) {
+          await this.rotator.markKeyExhausted(apiKey);
+        }
+        if (fallbackModel && fallbackModel !== primaryModel && (status === 404 || status === 429 || status === 503)) {
           console.warn(`[GeminiDirect] Primary model '${primaryModel}' failed with status ${status}. Attempting configured fallback '${fallbackModel}'...`);
           try {
             return await executeGenerate(fallbackModel);
           } catch (fallbackErr: any) {
-            const fbStatus = fallbackErr.status || fallbackErr.statusCode;
-            if (fbStatus === 401 || fbStatus === 403 || fbStatus === 429) {
-              this.rotator.markKeyExhausted(apiKey);
+            if (isKeyInvalidOrExhaustedError(fallbackErr)) {
+              await this.rotator.markKeyExhausted(apiKey);
             }
             throw fallbackErr;
           }
-        }
-
-        if (status === 401 || status === 403 || status === 429) {
-          this.rotator.markKeyExhausted(apiKey);
         }
         throw error;
       }
     }, 'GeminiDirect');
   }
 
-  async stream(messages: any[], options: { complexity: 'high' | 'standard', model?: string }, onChunk: (chunk: string) => void): Promise<ModelResponse> {
+  async stream(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean, model?: string }, onChunk: (chunk: string) => void): Promise<ModelResponse> {
     return retry(async () => {
       const apiKey = await this.rotator.getNextKey();
       const primaryModel = (options.model || await this.rotator.getModel() || '').trim();
@@ -467,6 +502,9 @@ export class GeminiDirectProvider implements ModelProvider {
       }
       const fallbackModel = (await this.rotator.getFallbackModel() || '').trim();
       const ai = new GoogleGenAI({ apiKey });
+      if (options?.jsonMode) {
+        this.ensureJsonInMessages(messages);
+      }
       const { contents, systemInstruction } = this.transformMessagesToGemini(messages);
 
       const executeStream = async (targetModel: string) => {
@@ -475,6 +513,7 @@ export class GeminiDirectProvider implements ModelProvider {
           contents,
           config: {
             systemInstruction,
+            responseMimeType: options?.jsonMode ? "application/json" : "text/plain",
             temperature: 0.5,
             maxOutputTokens: 8192,
           }
@@ -500,21 +539,19 @@ export class GeminiDirectProvider implements ModelProvider {
         return await executeStream(primaryModel);
       } catch (error: any) {
         const status = error.status || error.statusCode;
-        if (fallbackModel && fallbackModel !== primaryModel && (status === 404 || status === 429)) {
+        if (isKeyInvalidOrExhaustedError(error)) {
+          await this.rotator.markKeyExhausted(apiKey);
+        }
+        if (fallbackModel && fallbackModel !== primaryModel && (status === 404 || status === 429 || status === 503)) {
           console.warn(`[GeminiDirect Stream] Primary model '${primaryModel}' failed with status ${status}. Attempting configured fallback '${fallbackModel}'...`);
           try {
             return await executeStream(fallbackModel);
           } catch (fallbackErr: any) {
-            const fbStatus = fallbackErr.status || fallbackErr.statusCode;
-            if (fbStatus === 401 || fbStatus === 403 || fbStatus === 429) {
-              this.rotator.markKeyExhausted(apiKey);
+            if (isKeyInvalidOrExhaustedError(fallbackErr)) {
+              await this.rotator.markKeyExhausted(apiKey);
             }
             throw fallbackErr;
           }
-        }
-
-        if (status === 401 || status === 403 || status === 429) {
-          this.rotator.markKeyExhausted(apiKey);
         }
         throw error;
       }
@@ -1723,7 +1760,7 @@ export class CircuitBreaker {
     }
   }
 
-  async stream(messages: any[], options: { complexity: 'high' | 'standard', model?: string }, onChunk: (chunk: string) => void): Promise<ModelResponse> {
+  async stream(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean, model?: string }, onChunk: (chunk: string) => void): Promise<ModelResponse> {
     if (this.isOpen()) {
       throw new ModelProviderError(`Circuit breaker OPEN for ${this.provider.name} (${this.trippedReason || 'in cooldown'})`, this.provider.name, 503, false);
     }

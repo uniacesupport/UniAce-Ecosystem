@@ -27,30 +27,57 @@ const getAuthToken = async () => {
 };
 
 export const callAI = async (prompt: any, systemInstruction?: string, responseFormat?: 'json', maxTokens?: number, complexity: 'standard' | 'high' | 'quiz' = 'standard', taskType: string = 'chat', preferredProvider?: string) => {
-  const token = await getAuthToken();
-  const response = await fetch('/api/ai/generate', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-    },
-    body: JSON.stringify({
-      prompt: typeof prompt === 'string' ? prompt : JSON.stringify(prompt),
-      systemInstruction,
-      responseFormat,
-      maxTokens,
-      complexity,
-      taskType,
-      preferredProvider
-    })
-  });
-  
-  if (!response.ok) {
-    throw new Error(`AI API Error: ${response.statusText}`);
+  const maxAttempts = 3;
+  let lastErr: any = null;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const token = await getAuthToken();
+      const response = await fetch('/api/ai/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          prompt: typeof prompt === 'string' ? prompt : JSON.stringify(prompt),
+          systemInstruction,
+          responseFormat,
+          maxTokens,
+          complexity,
+          taskType,
+          preferredProvider
+        })
+      });
+
+      const ct = response.headers.get('content-type') || '';
+      if (!ct.includes('application/json') || response.status === 502 || response.status === 503 || response.status === 504) {
+        if (attempt < maxAttempts) {
+          await new Promise(resolve => setTimeout(resolve, 1500 * attempt));
+          continue;
+        }
+      }
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || `AI API Error: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      return { text: data.text, meta: data.meta };
+    } catch (err: any) {
+      lastErr = err;
+      const msg = (err?.message || String(err)).toLowerCase();
+      const isNetworkOrTransient = msg.includes('failed to fetch') || msg.includes('network') || msg.includes('load failed');
+      if (isNetworkOrTransient && attempt < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, 1500 * attempt));
+        continue;
+      }
+      throw err;
+    }
   }
-  
-  const data = await response.json();
-  return { text: data.text, meta: data.meta };
+
+  throw lastErr || new Error('Failed to reach AI service.');
 };
 
 const extractJSON = (text: string) => {

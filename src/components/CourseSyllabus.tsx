@@ -82,7 +82,7 @@ export default function CourseSyllabus({
   const { user, profile } = useAuth();
   const { courses, refreshCourses } = useCourses();
   const { isPremium } = usePremiumStatus();
-  const isAdmin = profile?.role === 'admin' || (import.meta.env.VITE_ADMIN_EMAILS || '').split(',').includes(user?.email || '');
+  const isAdmin = Boolean(user && profile?.role === 'admin');
   const isLocked = !isPremium && !isAdmin;
   const [showUnenrollConfirm, setShowUnenrollConfirm] = useState(false);
   const [isRequestingGeneration, setIsRequestingGeneration] = useState(false);
@@ -142,7 +142,7 @@ export default function CourseSyllabus({
 
   // Wrapped Admin Regeneration that sets live syllabusStatus on course document
   const triggerRegenerate = async () => {
-    if (!activeCourseId || !onRegenerate) return;
+    if (!isAdmin || !activeCourseId || !onRegenerate) return;
     try {
       await updateDoc(doc(db, 'courses', activeCourseId), {
         syllabusStatus: 'generating',

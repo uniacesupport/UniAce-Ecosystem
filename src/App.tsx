@@ -53,6 +53,9 @@ import { Menu, Mic, Video } from 'lucide-react';
 import { Toaster } from 'react-hot-toast';
 import { View, ChatMessage, CourseId, Department, Semester } from './types';
 import { generateModuleContent, generateCourseSkeleton } from './services/aiCourseGenerator';
+import { db } from './firebase';
+import { doc, setDoc, updateDoc } from 'firebase/firestore';
+import { sanitizeForFirestore } from './services/courseService';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { InstitutionProvider } from './context/InstitutionContext';
@@ -81,7 +84,7 @@ function AppContent() {
   const { courses, refreshCourses } = useCourses();
   const { progress, addXp, updateMastery, recordQuizScore, recordStudyTime, addBookmark, removeBookmark, enrollCourse, unenrollCourse, updateAIPersonality, isOnline, checkAndUpdateStreak } = useUserProgress();
   const { isRecording, startDemoReel, stopAndSaveReel, elapsedSeconds } = useDemoReel();
-  const isAdmin = profile?.role === 'admin' || (import.meta.env.VITE_ADMIN_EMAILS || '').split(',').includes(user?.email || '');
+  const isAdmin = Boolean(user && profile?.role === 'admin');
   
   // Activate advanced self-healing for robust dynamic client-state integrity
   useSelfHealing();
@@ -363,7 +366,6 @@ function AppContent() {
   }
 
   if (window.location.pathname === '/admin/login') {
-    const isAdmin = profile?.role === 'admin' || (import.meta.env.VITE_ADMIN_EMAILS || '').split(',').includes(user?.email || '');
     if (!isAdmin) {
       window.location.href = '/';
       return null;
@@ -381,7 +383,6 @@ function AppContent() {
   }
 
   if (window.location.pathname === '/admin/dashboard') {
-    const isAdmin = profile?.role === 'admin' || (import.meta.env.VITE_ADMIN_EMAILS || '').split(',').includes(user?.email || '');
     if (!isAdmin) {
       window.location.href = '/';
       return null;
@@ -536,12 +537,92 @@ function AppContent() {
                 handleViewSelect('hub');
               }
             }}
-            onRegenerate={async () => {
-              if (!activeCourseId || !activeCourse || regenerationProgress > 0) return;
-              
-              setRegenerationProgress(5);
-              setRegenerationStatus("Scanning structure...");
-            }}
+            onRegenerate={isAdmin ? async () => {
+              if (!isAdmin || !activeCourseId || !activeCourse || regenerationProgress > 0) return;
+              if (!db) return;
+
+              try {
+                setRegenerationProgress(15);
+                setRegenerationStatus("Establishing canonical domain taxonomy...");
+
+                const skeletonData = await generateCourseSkeleton(
+                  activeCourse.title || activeCourse.id,
+                  activeCourse.description || `University course on ${activeCourse.title}`,
+                  undefined,
+                  undefined,
+                  [],
+                  activeCourse.level || 'Undergraduate',
+                  activeCourse.semester || activeSemester,
+                  activeCourse.department || 'General',
+                  undefined,
+                  'academic',
+                  'standard',
+                  undefined,
+                  activeCourse.academicStandard || 'Globally Adaptive (Universal University Standard)',
+                  activeCourse.scope || 'DEPARTMENT',
+                  activeCourse.faculties || [],
+                  activeCourse.departments || [],
+                  activeCourse.id
+                );
+
+                if (skeletonData && skeletonData.modules) {
+                  setRegenerationProgress(75);
+                  setRegenerationStatus("Structuring module curriculum...");
+
+                  const updatedModules = skeletonData.modules.map((m: any, idx: number) => ({
+                    id: m.id || `m${idx + 1}`,
+                    title: m.title || `Module ${idx + 1}`,
+                    isFoundationModule: idx === 0 || !!m.isFoundationModule,
+                    subTopics: (m.lessonTitles || m.topics || []).map((t: any, tIdx: number) => ({
+                      id: typeof t === 'object' && t.id ? t.id : `m${idx + 1}-l${tIdx + 1}`,
+                      title: typeof t === 'object' && t.title ? t.title : String(t),
+                      completed: false
+                    }))
+                  }));
+
+                  const outcomesList = skeletonData.learningOutcomes || [];
+                  const cleanUpdate = sanitizeForFirestore({
+                    syllabus: updatedModules,
+                    learningOutcomes: outcomesList,
+                    objectives: outcomesList.map((o: any) => typeof o === 'string' ? o : o.outcome).filter(Boolean),
+                    description: skeletonData.description || activeCourse.description,
+                    domainBrief: skeletonData.domainBrief || null,
+                    syllabusStatus: 'ready',
+                    syllabusStatusTimestamp: new Date().toISOString()
+                  });
+
+                  await setDoc(doc(db, 'courses', activeCourseId), cleanUpdate, { merge: true });
+                  // Sync module headers in subcollection for consistency
+                  await Promise.all(
+                    updatedModules.map((mod: any, mIdx: number) =>
+                      setDoc(doc(db, `courses/${activeCourseId}/modules`, mod.id), sanitizeForFirestore({
+                        title: mod.title,
+                        order: mIdx + 1,
+                        isFoundationModule: !!mod.isFoundationModule
+                      }), { merge: true }).catch(() => {})
+                    )
+                  );
+                  await refreshCourses();
+                  setRegenerationProgress(100);
+                  setRegenerationStatus("Syllabus ready!");
+                  setTimeout(() => {
+                    setRegenerationProgress(0);
+                    setRegenerationStatus('');
+                  }, 1200);
+                }
+              } catch (err: any) {
+                console.error("Syllabus regeneration error:", err);
+                setRegenerationProgress(0);
+                setRegenerationStatus('');
+                if (db) {
+                  await updateDoc(doc(db, 'courses', activeCourseId), {
+                    syllabusStatus: 'failed',
+                    syllabusStatusTimestamp: new Date().toISOString()
+                  }).catch(() => {});
+                }
+                throw err;
+              }
+            } : undefined}
             regenerationProgress={regenerationProgress}
             regenerationStatus={regenerationStatus}
             onSelectCourse={(cId) => setActiveCourseId(cId)}
@@ -703,8 +784,6 @@ function AppContent() {
 
         {activeView === 'admin-dashboard' && (
           (() => {
-            const isAdmin = profile?.role === 'admin' || (import.meta.env.VITE_ADMIN_EMAILS || '').split(',').includes(user?.email || '');
-            
             if (!isAdmin) {
               return <Dashboard 
                 activeDepartment={activeDepartment}

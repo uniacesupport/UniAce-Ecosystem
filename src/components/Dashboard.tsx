@@ -53,7 +53,7 @@ export default function Dashboard({ onModuleSelect, onSubTopicSelect, onViewSele
   const { courses } = useCourses();
   const { isPremium, isTrialActive, daysRemaining } = usePremiumStatus();
   const { notifications, sendNotification, permissionStatus, requestNotificationPermission } = useNotifications();
-  const isAdmin = profile?.role === 'admin' || (import.meta.env.VITE_ADMIN_EMAILS || '').split(',').includes(user?.email || '');
+  const isAdmin = Boolean(user && profile?.role === 'admin');
   const isLocked = !isPremium && !isAdmin;
   const [dailyMission, setDailyMission] = useState<SmartMission | null>(null);
   const [missionCourseId, setMissionCourseId] = useState<CourseId | null>(null);

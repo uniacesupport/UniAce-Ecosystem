@@ -24,7 +24,7 @@ export default function ModuleTopics({ module, onBack, onSubTopicSelect, onTakeQ
   const { user, profile } = useAuth();
   const { isPremium } = usePremiumStatus();
   
-  const isAdmin = profile?.role === 'admin' || (import.meta.env.VITE_ADMIN_EMAILS || '').split(',').includes(user?.email || '');
+  const isAdmin = Boolean(user && profile?.role === 'admin');
   const isLocked = !isPremium && !isAdmin;
 
   const getMasteryLevel = (subTopicId: string) => {

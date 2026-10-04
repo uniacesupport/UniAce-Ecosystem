@@ -43,7 +43,8 @@ export class MailService {
       this.transporter = nodemailer.createTransport({
         host,
         port,
-        secure: port === 465, // true for 465, false for other ports
+        secure: port === 465, // true for 465, false for 587 (STARTTLS)
+        family: 4, // Strict IPv4 socket resolution scoped to this transport (prevents ENETUNREACH in IPv6-disabled containers)
         auth: {
           user,
           pass,
@@ -51,14 +52,6 @@ export class MailService {
         connectionTimeout: 15000,
         greetingTimeout: 15000,
         socketTimeout: 15000,
-        // THE ULTIMATE FIX FOR RENDER IPv6 ENETUNREACH:
-        // We intercept the DNS lookup and force it to ONLY return an IPv4 address.
-        // This completely bypasses Render's broken IPv6 outbound routing.
-        lookup: (hostname: string, options: any, callback: any) => {
-          dns.lookup(hostname, { family: 4 }, (err, address, family) => {
-            callback(err, address, family);
-          });
-        },
         tls: {
           rejectUnauthorized: false,
           servername: host

@@ -75,11 +75,10 @@ export default function ContentArea({
   const [fetchedLesson, setFetchedLesson] = useState<{ id: string; content: string; metadata: PipelineMetadata } | null>(null);
   const [isFetchingContent, setIsFetchingContent] = useState(false);
   const contentScrollRef = useRef<HTMLDivElement>(null);
-  const { refreshCourses } = useCourses();
+  const { courses, refreshCourses } = useCourses();
   const { user, profile } = useAuth();
   const { isPremium } = usePremiumStatus();
-  const adminEmails = (import.meta.env.VITE_ADMIN_EMAILS || '').split(',').map((e: string) => e.trim().toLowerCase());
-  const isAdmin = profile?.role === 'admin' || (user?.email && adminEmails.includes(user.email.toLowerCase()));
+  const isAdmin = Boolean(user && profile?.role === 'admin');
   const isLocked = !isPremium && !isAdmin;
 
   const subTopics = module?.subTopics || [];
@@ -88,7 +87,7 @@ export default function ContentArea({
 
   // Derive active lesson content synchronously on render to guarantee content availability precedes render
   const activeLessonData = activeSubTopic?.content
-    ? { id: activeSubTopic.id, content: sanitizeLatex(stripThinkTags(activeSubTopic.content)), metadata: {} }
+    ? { id: activeSubTopic.id, content: sanitizeLatex(stripThinkTags(activeSubTopic.content)), metadata: {} as PipelineMetadata }
     : (fetchedLesson?.id === activeSubTopic?.id ? fetchedLesson : null);
 
   const isCurrentLessonLoading = isFetchingContent || (!activeLessonData && !isGenerating);
@@ -101,6 +100,22 @@ export default function ContentArea({
     "Adding real-world examples...",
     "Finalizing your personalized lesson..."
   ];
+
+  const [selectedRelevanceDept, setSelectedRelevanceDept] = useState<string>('');
+
+  const relevanceList = (activeLessonData?.metadata as PipelineMetadata)?.relevance || [];
+
+  useEffect(() => {
+    if (Array.isArray(relevanceList) && relevanceList.length > 0) {
+      const studentDept = profile?.department?.toLowerCase().trim();
+      const matched = relevanceList.find((r: any) => r.department?.toLowerCase().trim() === studentDept);
+      setSelectedRelevanceDept(matched ? matched.department : relevanceList[0].department);
+    }
+  }, [relevanceList, profile?.department]);
+
+  const activeRelevance = Array.isArray(relevanceList)
+    ? (relevanceList.find((r: any) => r.department === selectedRelevanceDept) || relevanceList[0])
+    : null;
 
   // Proactive Mini Teacher Check-in (Smart Timer)
   const isMiniTeacherOpenRef = useRef(isMiniTeacherOpen);
@@ -148,6 +163,9 @@ export default function ContentArea({
         } else {
           console.log(`[ContentArea] Lesson NOT found at ${lessonPath}`);
           setFetchedLesson(null);
+          if (!profile) {
+            return;
+          }
           if (isAdmin) {
             console.log(`[ContentArea] User is admin, triggering generation...`);
             handleGenerateLesson();
@@ -168,11 +186,11 @@ export default function ContentArea({
     };
 
     loadContent();
-  }, [activeSubTopic.id, courseId, module.id, isAdmin]);
+  }, [activeSubTopic.id, courseId, module.id, isAdmin, profile?.role]);
 
   // On-Demand Auto-Upgrade for placeholder images
   useEffect(() => {
-    if (!fetchedLesson || isGenerating || isFetchingContent) return;
+    if (!isAdmin || !fetchedLesson || isGenerating || isFetchingContent) return;
     
     let isMounted = true;
     
@@ -306,7 +324,7 @@ export default function ContentArea({
   };
 
   const handleGenerateLesson = async () => {
-    if (!courseId || !db) return;
+    if (!isAdmin || !courseId || !db) return;
     
     setIsGenerating(true);
     setGenerationStep(0);
@@ -327,13 +345,14 @@ export default function ContentArea({
     }, 3000);
 
     try {
+      const currentCourse = courseId ? courses[courseId] : null;
+      const courseInput = currentCourse || { id: courseId, title: courseTitle };
+
       const lesson = await generateLessonContent(
-        courseTitle,
+        courseInput,
         module.title,
         activeSubTopic.title,
-        undefined,
-        profile?.academic_level,
-        profile?.department
+        undefined
       );
 
       // Save to Firestore
@@ -344,7 +363,7 @@ export default function ContentArea({
       });
       await setDoc(lessonRef, cleanData, { merge: true });
 
-      LogService.log('success', 'ai', `Generated lesson content for ${activeSubTopic.title}`, { courseId, moduleId: module.id, lessonId: activeSubTopic.id });
+      LogService.log('success', 'ai', `Generated lesson content for ${activeSubTopic.title}`, { courseId, moduleId: module.id, lessonId: activeSubTopic.id, audience: (lesson.metadata as any)?.audience });
 
       // Update local state
       setFetchedLesson({ id: activeSubTopic.id, content: lesson.content, metadata: (cleanData.metadata as PipelineMetadata) || {} });
@@ -352,7 +371,7 @@ export default function ContentArea({
 
       // Update global state to reflect new content
       await refreshCourses();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Lesson Generation Error:', error);
     } finally {
       clearInterval(interval);
@@ -435,7 +454,7 @@ export default function ContentArea({
             <ArrowLeft size={16} />
             <span>Syllabus</span>
           </button>
-          {profile?.role === 'admin' && (
+          {isAdmin && (
             <button 
               onClick={handleGenerateLesson}
               disabled={isGenerating}
@@ -554,7 +573,55 @@ export default function ContentArea({
                 </p>
               </div>
             ) : activeLessonData ? (
-              <div className="max-w-none space-y-10">
+              <div className="max-w-none space-y-8">
+                {/* Dynamic Program Applications & Disciplinary Relevance Overlay */}
+                {Array.isArray(relevanceList) && relevanceList.length > 0 && activeRelevance && (
+                  <div className="p-5 rounded-2xl bg-gradient-to-br from-indigo-50/80 to-purple-50/50 dark:from-indigo-950/30 dark:to-purple-950/20 border border-indigo-100 dark:border-indigo-900/40">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                      <div className="flex items-center gap-2">
+                        <Sparkles size={16} className="text-indigo-600 dark:text-indigo-400" />
+                        <h3 className="text-xs font-bold uppercase tracking-wider text-indigo-900 dark:text-indigo-300">
+                          Disciplinary Applications & Program Relevance
+                        </h3>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {relevanceList.map((rel: any) => {
+                          const isSelected = rel.department === activeRelevance.department;
+                          const isUserDept = profile?.department && rel.department?.toLowerCase() === profile.department.toLowerCase();
+                          return (
+                            <button
+                              key={rel.department}
+                              onClick={() => setSelectedRelevanceDept(rel.department)}
+                              className={`text-xs px-2.5 py-1 rounded-lg font-semibold transition-all ${
+                                isSelected
+                                  ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/30'
+                                  : 'bg-white/80 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-white dark:hover:bg-zinc-700 border border-zinc-200/60 dark:border-zinc-700/50'
+                              }`}
+                            >
+                              {rel.department}
+                              {isUserDept && (
+                                <span className="ml-1.5 text-[9px] px-1 py-0.2 rounded bg-indigo-500/20 text-indigo-200">
+                                  Your Program
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <div className="p-4 rounded-xl bg-white dark:bg-zinc-900 border border-indigo-100/80 dark:border-zinc-800 space-y-2">
+                      <div className="flex items-center gap-2 text-xs font-bold text-indigo-600 dark:text-indigo-400">
+                        <span className="px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-900/40 border border-indigo-200/50 dark:border-indigo-800/50">
+                          Applied Concept: {activeRelevance.concept}
+                        </span>
+                      </div>
+                      <p className="text-xs sm:text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed">
+                        {activeRelevance.application}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
                 <MarkdownRenderer content={activeLessonData.content} />
                 
                 {/* Source Citations & Grounding Section */}
@@ -585,12 +652,18 @@ export default function ContentArea({
                   <BookOpen size={32} className="text-zinc-400 dark:text-zinc-500" />
                 </div>
                 <p className="text-zinc-500 dark:text-zinc-400">This lesson is currently empty.</p>
-                <button 
-                  onClick={handleGenerateLesson}
-                  className="bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 px-6 py-2 rounded-xl font-semibold hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-all text-sm"
-                >
-                  Generate Content Now
-                </button>
+                {isAdmin ? (
+                  <button 
+                    onClick={handleGenerateLesson}
+                    className="bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 px-6 py-2 rounded-xl font-semibold hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-all text-sm"
+                  >
+                    Generate Content Now
+                  </button>
+                ) : (
+                  <p className="text-xs text-zinc-400 dark:text-zinc-500 max-w-md">
+                    This lesson content hasn't been generated yet. Please contact your instructor or administrator to generate the course content.
+                  </p>
+                )}
               </div>
             )}
           </motion.div>

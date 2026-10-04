@@ -245,15 +245,33 @@ async function callGenerateAPI(prompt: string, type: 'skeleton' | 'module' | 'le
   const timeoutId = setTimeout(() => controller.abort(), 600000);
 
   try {
-    const response = await fetch('/api/course/generate', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-      },
-      body: JSON.stringify({ prompt, type, provider }),
-      signal: controller.signal
-    });
+    let response: Response | null = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        response = await fetch('/api/course/generate', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify({ prompt, type, provider }),
+          signal: controller.signal
+        });
+        const ct = response.headers.get('content-type') || '';
+        if ((!ct.includes('application/json') || response.status === 502 || response.status === 503 || response.status === 504) && attempt < 3) {
+          await new Promise(resolve => setTimeout(resolve, 2000 * attempt));
+          continue;
+        }
+        break;
+      } catch (fetchErr: any) {
+        if (fetchErr?.name === 'AbortError' || attempt === 3) throw fetchErr;
+        await new Promise(resolve => setTimeout(resolve, 2000 * attempt));
+      }
+    }
+
+    if (!response) {
+      throw new Error('Could not connect to generation server.');
+    }
 
     clearTimeout(timeoutId);
 
@@ -463,55 +481,74 @@ export async function generateCourseSkeleton(
   academicStandard: string = 'Globally Adaptive (Universal University Standard)',
   scope?: string,
   selectedFaculties: string[] = [],
-  selectedDepartments: string[] = []
+  selectedDepartments: string[] = [],
+  courseCode?: string
 ): Promise<any> {
-  const token = await getAuthToken();
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 600000); // 10 minutes for multi-agent audit
 
   try {
-    const res = await fetch('/api/course/generate-skeleton', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-      },
-      body: JSON.stringify({
-        courseName,
-        courseCode: courseName,
-        department,
-        scope,
-        level,
-        semester,
-        tone,
-        depth,
-        outline,
-        sourceText: sourceContext,
-        academicStandard,
-        provider,
-        selectedFaculties,
-        selectedDepartments
-      }),
-      signal: controller.signal
-    });
-    clearTimeout(timeoutId);
+    let lastError: any = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const token = await getAuthToken();
+        const res = await fetch('/api/course/generate-skeleton', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify({
+            courseName,
+            courseCode: courseCode || courseName,
+            department,
+            scope,
+            level,
+            semester,
+            tone,
+            depth,
+            outline,
+            sourceText: sourceContext,
+            academicStandard,
+            provider,
+            selectedFaculties,
+            selectedDepartments
+          }),
+          signal: controller.signal
+        });
 
-    const ct = res.headers.get('content-type') || '';
-    if (!ct.includes('application/json')) {
-      const text = await res.text().catch(() => '');
-      if (text.includes('<!doctype') || text.includes('Starting Server') || !res.ok) {
-        throw new Error('Application server is warming up or temporarily unavailable. Please retry in a few moments.');
+        const ct = res.headers.get('content-type') || '';
+        if (!ct.includes('application/json')) {
+          const text = await res.text().catch(() => '');
+          if (attempt < 3 && (text.includes('<!doctype') || text.includes('Starting Server') || res.status === 502 || res.status === 503 || res.status === 504)) {
+            await new Promise(resolve => setTimeout(resolve, 2000 * attempt));
+            continue;
+          }
+          if (text.includes('<!doctype') || text.includes('Starting Server') || !res.ok) {
+            throw new Error('Application server is warming up or temporarily unavailable. Please retry in a few moments.');
+          }
+          throw new Error(`Unexpected server response format (${res.status}).`);
+        }
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || `Server failed to generate course structure (${res.status}).`);
+        }
+
+        clearTimeout(timeoutId);
+        const data = await res.json();
+        return data;
+      } catch (err: any) {
+        lastError = err;
+        const msg = (err?.message || String(err)).toLowerCase();
+        if (err?.name !== 'AbortError' && attempt < 3 && (msg.includes('failed to fetch') || msg.includes('network') || msg.includes('warming up'))) {
+          await new Promise(resolve => setTimeout(resolve, 2000 * attempt));
+          continue;
+        }
+        throw err;
       }
-      throw new Error(`Unexpected server response format (${res.status}).`);
     }
-
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({}));
-      throw new Error(errData.error || `Server failed to generate course structure (${res.status}).`);
-    }
-
-    const data = await res.json();
-    return data;
+    throw lastError || new Error('Failed to generate course structure.');
   } catch (err: any) {
     clearTimeout(timeoutId);
     console.warn('generateCourseSkeleton error:', err?.message || err);
@@ -519,8 +556,37 @@ export async function generateCourseSkeleton(
   }
 }
 
+import { z } from 'zod';
+
+export const RelevanceSchema = z.object({
+  department: z.string(),
+  concept: z.string().min(3),
+  application: z.string().min(20)
+});
+
+export const LessonOutputSchema = z.object({
+  introduction: z.string().min(1),
+  keyConcepts: z.array(z.string()).min(1),
+  body: z.string().min(1),
+  relevance: z.array(RelevanceSchema).default([])
+});
+
+export interface CourseContext {
+  id?: string;
+  title: string;
+  department?: string;
+  departments?: string[];
+  faculties?: string[];
+  scope?: string;
+  level?: string;
+  academicStandard?: string;
+  tone?: string;
+  depth?: string;
+  sourceContext?: string;
+}
+
 export async function generateLessonContent(
-  courseName: string,
+  courseContext: CourseContext | string,
   moduleTitle: string,
   lessonTitle: string,
   provider?: string,
@@ -531,96 +597,158 @@ export async function generateLessonContent(
   sourceContext?: string,
   academicStandard: string = 'Globally Adaptive (Universal University Standard)'
 ): Promise<{ title: string, content: string, metadata: PipelineMetadata }> {
-  const targetDept = department?.trim() || 'the specified academic discipline';
+  // 1. Extract course metadata from CourseContext object or parameters
+  const isContextObj = typeof courseContext === 'object' && courseContext !== null;
+  const courseName: string = typeof courseContext === 'string' 
+    ? courseContext 
+    : (courseContext.title || courseContext.id || 'Academic Course');
+  const courseCode: string = isContextObj ? (courseContext.id || courseName) : courseName;
+  const effectiveLevel = isContextObj ? courseContext.level || level || 'University Undergraduate' : level || 'University Undergraduate';
+  const effectiveStandard = isContextObj ? courseContext.academicStandard || academicStandard : academicStandard;
+  const effectiveTone = isContextObj ? courseContext.tone || tone : tone;
+  const effectiveDepth = isContextObj ? courseContext.depth || depth : depth;
+  const effectiveSourceContext = isContextObj ? courseContext.sourceContext || sourceContext : sourceContext;
 
-  const comparisonInstruction = `Enforce Comparative and Multi-Dimensional Explanations: You MUST structure complex topics using clear Comparison Tables relevant specifically to "${targetDept}" and "${courseName}" — for example, compare the core theoretical models, methodologies, classifications, structural frameworks, or empirical systems that an accredited university student of "${courseName}" under "${academicStandard}" must contrast, using ONLY "${targetDept}" terminology and relevant domain frameworks. Ensure all Markdown tables follow standard GFM format with a proper header row, separator row (|---|), and data rows. Never compress tables into a single line.`;
+  // 2. Extract audience strictly from course metadata
+  let audienceList: string[] = [];
+  if (isContextObj) {
+    audienceList = [
+      ...(Array.isArray(courseContext.departments) ? courseContext.departments : []),
+      ...(courseContext.department ? [courseContext.department] : []),
+      ...(Array.isArray(courseContext.faculties) ? courseContext.faculties : [])
+    ].map(s => String(s).trim()).filter(Boolean);
+  } else if (department && department.trim()) {
+    audienceList = [department.trim()];
+  }
 
-  const caseStudyInstruction = `Incorporate Domain-Specific Case Studies: You MUST inject at least one comprehensive case study, empirical/clinical scenario, laboratory derivation, or concrete real-world application strictly native to "${courseName}" within "${targetDept}" (anchoring only the theory of this specific academic discipline).`;
+  // Deduplicate audience list
+  const uniqueAudience = Array.from(new Set(audienceList));
 
-  const positiveFidelityInstruction = `AUTHORITATIVE SUBJECT & DOMAIN FIDELITY:
-  - The subject matter of "${courseName}" is authoritative and non-negotiable.
-  - You MUST teach the authentic core principles, terminology, theories, derivations, and case studies belonging directly to "${courseName}".
-  - Tailor your explanations, pacing, and relatable examples for students in "${targetDept}", but NEVER dilute, evade, or substitute the real disciplinary content of "${courseName}".`;
+  if (uniqueAudience.length === 0) {
+    throw new Error(`Course audience not defined for "${courseName}". Please configure course departments/faculties in Course Settings before generating lesson content.`);
+  }
+
+  const audienceLabel = uniqueAudience.join(', ');
 
   const lessonPrompt = `
-    You are an expert university professor in the domain of "${courseName}". Your task is to write an extremely comprehensive, long-form academic lesson for the topic "${lessonTitle}" which is part of the module "${moduleTitle}" in the university course "${courseName}".
+    You are an expert university professor authoring a rigorous, accredited university lesson for:
+    COURSE: "${courseName}" (${courseCode}), Level: ${effectiveLevel}
+    SUB-TOPIC: "${moduleTitle}" > "${lessonTitle}"
+    ACADEMIC STANDARD: "${effectiveStandard}"
     
-    ACADEMIC STANDARD & CURRICULUM BENCHMARK:
-    Calibrate all content, pedagogical depth, vocabulary, and assessment criteria to the academic standard: "${academicStandard}".
-    
-    ${positiveFidelityInstruction}
+    ENROLLED PROGRAMS (FROM COURSE CURRICULUM):
+    ${uniqueAudience.map(dept => `- ${dept}`).join('\n    ')}
 
-    CRITICAL LECTURER GUIDELINES & GLOBALLY ADAPTIVE FRAMEWORK:
-    You MUST dynamically adapt the content to ensure it is deeply educational, blending world-class university standards with rigorous accreditation criteria under "${academicStandard}":
-    1. Structure: Follow an accredited university curriculum outline for the topic, dynamically adapted to "${academicStandard}" in "${targetDept}" to ensure absolute exam relevance, professional depth, and international applicability.
-    2. Depth: Calibrated to "${academicStandard}", use top-tier international depth (top-tier global standards such as MIT, Stanford, Oxford, Cambridge) with step-by-step teaching, rigorous derivations, and extensive conceptual breakdowns to ensure true mastery.
-    3. Pedagogical Framework: Apply Bloom's Taxonomy aligned with "${academicStandard}". Every lesson MUST include:
-       - Learning Objectives (What will the student know?)
-       - The "Why" Before the "How" Introduction: Introduce this chapter by stating why understanding these concepts and interrelationships is essential for professionals and scholars in "${targetDept}", moving away from dry definitions to practical importance.
-       - Key Vocabulary (In-depth definitions of core terms aligned with "${academicStandard}").
-       - Detailed Lesson Body: Break down key concepts with deep, thoughtful explanations.
-       - ${comparisonInstruction}
-       - ${caseStudyInstruction}
-       - Active Learning: Conclude with a thorough summary and 3 high-quality "Quick Check" review questions.
-    
-    [IF PROVIDED] RELEVANT COURSE CONTEXT/OUTLINE TO FOLLOW: 
-    ${sourceContext || `General academic standards for this level calibrated to ${academicStandard}.`}
-    
-    Course: ${courseName}
-    Module: ${moduleTitle}
-    Lesson: ${lessonTitle}
-    Academic Standard: ${academicStandard}
-    Tone: ${tone}
-    Depth: ${depth}
-    Level: ${level || 'University Undergraduate'}
-    Department: ${targetDept}
-    
-    Requirements:
-    1. Write in DETAILED Markdown format. Do NOT hold back on length; make it as thorough as a university lecture transcript.
-    2. Target length: 1200-2000+ words. Focus on core concepts, deep-dive qualitative explanations, structured study notes, case studies, and practical examples strictly within ${targetDept}.
-    3. Use a professional, academic tone suitable for a top-tier university, adapted to the requested Tone: ${tone} and Academic Standard: ${academicStandard}.
-    4. Ensure all concepts are explained clearly and logically, using step-by-step breakdowns and multiple real-world examples to ensure deep understanding.
-    5. Prioritize qualitative descriptions, conceptual definitions, and highly descriptive explanatory text. Avoid over-cluttering the lesson notes with unnecessary or excessive mathematical formulas, unless the topic is specifically and strictly quantitative or mathematical. For general science or humanities topics, balance mathematical equations with detailed qualitative "why" and "how" study notes.
-    6. Use LaTeX only where absolutely necessary for core mathematical equations, variables, or scientific notation, and make sure every formula is accompanied by full text-based explanation.
-    
-    CRITICAL LATEX & CLEAN FORMATTING SAFETY INSTRUCTIONS:
-    1. You MUST use LaTeX for ALL mathematical formulas, variables, and equations.
-    2. Use $ ... $ for inline math and $$ ... $$ for block math.
-    3. Ensure absolute compatibility with mathematical notation ($ ... $ and $$ ... $$) and clean Markdown so that complex formulas render seamlessly in the layout. Always verify that all inline $ and block $$ delimiters are perfectly closed and balanced to prevent rendering issues or broken containers.
-    4. You are outputting data to a JSON parser. You MUST double-escape all LaTeX backslashes. 
-       For example, output \\\\frac instead of \\frac, and \\\\begin instead of \\begin.
-    5. Do NOT use \\label{...} as it is not supported. Use \\tag{...} for equation numbering if needed.
-    6. Ensure all LaTeX environments (like align, matrix, etc.) are wrapped in $$ ... $$ delimiters.
-    7. Double check that every backslash in your LaTeX is escaped with another backslash (e.g., \\\\alpha, \\\\beta).
-    
-    6. CRITICAL: Output ONLY valid JSON matching this structure:
+    ${effectiveSourceContext ? `SOURCE CONTEXT: ${effectiveSourceContext.substring(0, 1500)}` : ''}
+
+    AUTHORITATIVE SUBJECT & DOMAIN FIDELITY:
+    - The subject matter of "${courseName}" is authoritative and non-negotiable.
+    - You MUST teach the authentic core principles, terminology, theories, derivations, and case studies belonging directly to "${courseName}".
+
+    TASK:
+    1. "introduction": Explain why this sub-topic matters to a student of "${courseName}" in general. Keep it strictly audience-neutral and motivational. Do NOT name or favor any single enrolled program in the introduction.
+    2. "keyConcepts": An array of specific technical and theoretical concepts taught in THIS lesson.
+    3. "body": The full comprehensive university lecture note (target length 1200-2000+ words). Must include:
+       - Learning Objectives (Bloom's Taxonomy)
+       - Key Vocabulary Definitions
+       - Deep Theoretical Explanations and mathematical derivations
+       - Comparison Tables formatted in standard GitHub-Flavored Markdown (|---|)
+       - Concrete Empirical Case Studies and real-world mechanisms
+       - Summary & 3 Quick Check review questions with full answers
+    4. "relevance": For the enrolled programs listed above, add an entry ONLY IF you can name:
+       (a) a concept from your keyConcepts, and
+       (b) a specific mechanism, device, process, or practical case where it applies in that program.
+       If you cannot name a concrete, specific mechanism, OMIT the program. Fewer entries is correct and expected. Never pad with generic text. Never invent connections to balance coverage.
+
+    CRITICAL LATEX & CLEAN FORMATTING SAFETY:
+    - Use $ ... $ for inline math and $$ ... $$ for display block math.
+    - You MUST double-escape all LaTeX backslashes for JSON compatibility (e.g., \\\\frac, \\\\alpha, \\\\begin, \\\\end).
+    - Ensure all $ and $$ delimiters are closed and balanced.
+
+    Return STRICTLY valid JSON matching this schema:
     {
-      "content": "The raw markdown content including Introduction, Learning Objectives, Key Vocabulary, Body, Summary, and Quick Check questions...",
-      "metadata": {
-        "hasMath": boolean,
-        "hasCode": boolean
-      }
+      "introduction": "Audience-neutral 'Why Before How' conceptual introduction...",
+      "keyConcepts": ["Concept A", "Concept B", "Concept C"],
+      "body": "Full detailed markdown lesson body with LaTeX and tables...",
+      "relevance": [
+        {
+          "department": "Exact Department Name from enrolled list",
+          "concept": "Specific concept from keyConcepts",
+          "application": "Specific mechanism, device, process, or application in this discipline..."
+        }
+      ]
     }
-    CRITICAL: Do NOT wrap the JSON in markdown blocks. Output raw JSON only.
-    CRITICAL: Ensure all double quotes inside the "content" string are properly escaped (e.g., \\"word\\").
-    7. CRITICAL: Ensure the lesson is COMPLETE and does not cut off abruptly.
-    8. CRITICAL: Calibrate the depth and complexity to the student's level (${level || 'University Level'}), academic standard (${academicStandard}), and requested Depth: ${depth}.
   `;
 
   const result = await callGenerateAPI(lessonPrompt, 'lesson', provider);
 
-  const sanitizedContent = sanitizeLatex(result.content);
+  // Parse structured response or fallback gracefully
+  let parsedOutput: any = null;
+  if (typeof result === 'object' && result !== null) {
+    parsedOutput = result;
+  } else if (typeof result === 'string') {
+    try {
+      parsedOutput = JSON.parse(result);
+    } catch (_) {
+      try {
+        parsedOutput = JSON.parse(jsonrepair(result));
+      } catch (e) {
+        parsedOutput = { body: result, introduction: '', keyConcepts: [], relevance: [] };
+      }
+    }
+  }
+
+  const introduction = String(parsedOutput?.introduction || '').trim();
+  const rawBody = String(parsedOutput?.body || parsedOutput?.content || (typeof result === 'string' ? result : '')).trim();
+  const rawKeyConcepts = Array.isArray(parsedOutput?.keyConcepts) ? parsedOutput.keyConcepts : [];
+  const rawRelevance = Array.isArray(parsedOutput?.relevance) ? parsedOutput.relevance : [];
+
+  // Deterministic Relevance Validation:
+  // 1. Department must be in uniqueAudience (case-insensitive)
+  // 2. No duplicate departments
+  // 3. Minimum length requirements
+  const seenDepts = new Set<string>();
+  const validatedRelevance = rawRelevance.filter((entry: any) => {
+    if (!entry || typeof entry !== 'object') return false;
+    const dept = String(entry.department || '').trim();
+    const concept = String(entry.concept || '').trim();
+    const application = String(entry.application || '').trim();
+
+    if (!dept || concept.length < 3 || application.length < 20) return false;
+
+    // Check if department is in course audience
+    const matchedDept = uniqueAudience.find(a => a.toLowerCase() === dept.toLowerCase());
+    if (!matchedDept) return false;
+
+    if (seenDepts.has(matchedDept.toLowerCase())) return false;
+    seenDepts.add(matchedDept.toLowerCase());
+
+    entry.department = matchedDept; // Normalize casing
+    return true;
+  });
+
+  // Assemble full lesson markdown: introduction + body
+  const fullLessonMarkdown = introduction && !rawBody.startsWith('# Introduction')
+    ? `### Introduction: The Why Before the How\n\n${introduction}\n\n---\n\n${rawBody}`
+    : rawBody;
+
+  const sanitizedContent = sanitizeLatex(fullLessonMarkdown);
 
   // Post-generation off-topic drift check
-  const driftCheck = flagOffTopicDrift(sanitizedContent, courseName, targetDept);
+  const driftCheck = flagOffTopicDrift(sanitizedContent, courseName, audienceLabel);
   if (driftCheck.hasDrift) {
-    console.warn(`[AI Course Generator] Potential off-topic drift detected in lesson "${lessonTitle}" for course "${courseName}" (${targetDept}):`, driftCheck.hits);
+    console.warn(`[AI Course Generator] Potential off-topic drift detected in lesson "${lessonTitle}" for course "${courseName}" (${audienceLabel}):`, driftCheck.hits);
   }
 
   const cleanMetadata: PipelineMetadata = {
-    hasMath: Boolean(result?.metadata?.hasMath),
-    hasCode: Boolean(result?.metadata?.hasCode),
-    ...(result?.metadata && typeof result.metadata === 'object' ? sanitizeForFirestore(result.metadata) : {})
+    hasMath: Boolean(sanitizedContent.includes('$')),
+    hasCode: Boolean(sanitizedContent.includes('```')),
+    audience: uniqueAudience,
+    audienceHash: uniqueAudience.slice().sort().join(':'),
+    promptVersion: '2.2.0-relevance-overlay',
+    keyConcepts: rawKeyConcepts,
+    relevance: validatedRelevance,
+    generatedAt: new Date().toISOString()
   };
 
   return {

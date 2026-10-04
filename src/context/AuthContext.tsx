@@ -94,8 +94,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       let userRole: 'student' | 'admin' | 'editor' = 'student';
       
       // Default admin emails
-      const adminEmails = (import.meta.env.VITE_ADMIN_EMAILS || '').split(',');
-      if (currentUser.email && adminEmails.includes(currentUser.email)) {
+      const adminEmails = (import.meta.env.VITE_ADMIN_EMAILS || '').split(',').map((e: string) => e.trim().toLowerCase()).filter(Boolean);
+      if (currentUser.email && adminEmails.includes(currentUser.email.toLowerCase())) {
         userRole = 'admin';
       }
 

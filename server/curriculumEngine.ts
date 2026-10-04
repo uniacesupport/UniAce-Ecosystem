@@ -368,11 +368,22 @@ export function buildLessonPrompt(
 - Include comparison tables and practical case studies.`;
   }
 
+  const audienceList = [
+    ...(Array.isArray(options.selectedDepartments) ? options.selectedDepartments : []),
+    ...(options.department ? [options.department] : []),
+    ...(Array.isArray(options.selectedFaculties) ? options.selectedFaculties : [])
+  ].map(s => String(s).trim()).filter(Boolean);
+
+  const uniqueAudience = Array.from(new Set(audienceList));
+  const audienceText = uniqueAudience.length > 0 ? uniqueAudience.join(', ') : (department || domainBrief.primaryDomain);
+  const isMultiAudience = uniqueAudience.length > 1;
+
   return `Write a comprehensive, rigorous, university-level study guide and lesson for the topic: "${topicTitle}"
 within Module ${moduleOrder}: "${moduleTitle}" of the course "${courseName}".
 
 AUTHORITATIVE DOMAIN: ${domainBrief.primaryDomain}
-DEPARTMENT: ${department || domainBrief.primaryDomain}
+TARGET ENROLLED AUDIENCE: ${audienceText}
+${isMultiAudience ? `AUDIENCE DIRECTIVE: This course serves a multi-department cohort (${audienceText}). Frame the foundational significance and applied case studies across these disciplines without narrowing the context exclusively to a single department.` : ''}
 LEVEL: ${level}
 TONE: ${tone}
 DEPTH: ${depth}

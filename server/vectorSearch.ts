@@ -1,7 +1,8 @@
 
 import { GoogleGenAI } from '@google/genai';
-import { Course } from '../src/types';
+import admin from 'firebase-admin';
 import { getDb } from './firebaseAdmin';
+import { DynamicKeyRotator } from './providers';
 
 export interface SearchResult {
   content: string;
@@ -10,106 +11,91 @@ export interface SearchResult {
   score: number;
 }
 
-let indexedItems: { id: string; content: string; source: string; type: 'question' | 'syllabus' | 'formula'; embedding: number[] }[] = [];
+const geminiKeyRotator = new DynamicKeyRotator('gemini_direct', process.env.GEMINI_API_KEY || '');
 
-let aiInstance: GoogleGenAI | null = null;
-
-function getAI() {
-  if (!aiInstance) {
-    const apiKey = process.env.GEMINI_API_KEY?.trim();
-    if (!apiKey) {
-      throw new Error('GEMINI_API_KEY is missing. Please check your environment variables.');
-    }
-    aiInstance = new GoogleGenAI({ apiKey });
-  }
-  return aiInstance;
+async function getAI(): Promise<{ ai: GoogleGenAI; apiKey: string }> {
+  const apiKey = await geminiKeyRotator.getNextKey();
+  return { ai: new GoogleGenAI({ apiKey }), apiKey };
 }
 
-export function addVectorItem(id: string, content: string, source: string, type: 'question' | 'syllabus' | 'formula', embedding: number[]) {
-  // Remove if it already exists to handle updates
-  removeVectorItem(id);
-  indexedItems.push({ id, content, source, type, embedding });
+export function addVectorItem(_id: string, _content: string, _source: string, _type: 'question' | 'syllabus' | 'formula', _embedding: number[]) {
+  // Direct writes are handled atomically in Firestore documents with VectorValue.
 }
 
-export function removeVectorItem(id: string) {
-  indexedItems = indexedItems.filter(item => item.id !== id);
+export function removeVectorItem(_id: string) {
+  // Deletions are handled directly in Firestore documents.
 }
 
 /**
- * Loads embeddings from the Firestore knowledge_base collection.
+ * Initializes Vector Store verification against Firestore knowledge_base.
+ * Uses zero in-memory heap caching to prevent OOM on Cloud Run containers.
  */
 export async function initializeVectorStore() {
-  indexedItems = []; // Reset
-
-  console.log('Starting Vector Store Initialization from Firestore...');
-  
   try {
     const db = getDb();
-    const knowledgeBaseRef = db.collection('knowledge_base');
-    const snapshot = await knowledgeBaseRef.get();
-    
-    snapshot.forEach(doc => {
-      const data = doc.data();
-      if (data.embedding && data.content) {
-        // Convert VectorValue to array if necessary
-        const embeddingArray = typeof data.embedding.toArray === 'function' 
-          ? data.embedding.toArray() 
-          : data.embedding;
-
-        indexedItems.push({
-          id: doc.id,
-          content: data.content,
-          source: data.source || 'Knowledge Base',
-          type: data.type || 'question',
-          embedding: embeddingArray,
-        });
-      }
-    });
-
-    console.log(`Vector store initialized with ${indexedItems.length} items from Firestore.`);
-  } catch (error) {
-    console.error('Failed to initialize vector store from Firestore:', error);
+    if (!db) return;
+    const countSnap = await db.collection('knowledge_base').count().get();
+    console.log(`[Vector Store] Initialized with ${countSnap.data().count} items available in Firestore native vector index.`);
+  } catch (error: any) {
+    console.warn('[Vector Store] Vector index check:', error.message || error);
   }
 }
 
 /**
- * Performs semantic search using cosine similarity.
+ * Performs semantic search using Firestore native findNearest vector index.
  */
 export async function findRelevantContentSemantic(query: string, limit: number = 5): Promise<SearchResult[]> {
-  if (indexedItems.length === 0) return [];
-
   try {
-    const ai = getAI();
-    const result = await ai.models.embedContent({
-      model: 'gemini-embedding-2-preview',
-      contents: query,
+    const db = getDb();
+    if (!db) return [];
+
+    const { ai, apiKey } = await getAI();
+    let result;
+    try {
+      result = await ai.models.embedContent({
+        model: 'gemini-embedding-2-preview',
+        contents: query,
+      });
+    } catch (embedErr: any) {
+      const msg = (embedErr?.message || String(embedErr)).toLowerCase();
+      if (embedErr?.status === 400 || embedErr?.status === 401 || embedErr?.status === 403 || msg.includes('api key not valid') || msg.includes('api_key_invalid')) {
+        await geminiKeyRotator.markKeyExhausted(apiKey);
+        const retryClient = await getAI();
+        result = await retryClient.ai.models.embedContent({
+          model: 'gemini-embedding-2-preview',
+          contents: query,
+        });
+      } else {
+        throw embedErr;
+      }
+    }
+
+    const queryEmbedding = result.embeddings?.[0]?.values;
+    if (!queryEmbedding || queryEmbedding.length === 0) return [];
+
+    const queryVector = admin.firestore.VectorValue.fromArray(queryEmbedding as number[]);
+    const kbRef = db.collection('knowledge_base');
+
+    const snapshot = await kbRef.findNearest({
+      vectorField: 'embedding',
+      queryVector,
+      distanceMeasure: 'COSINE',
+      limit
+    }).get();
+
+    if (snapshot.empty) return [];
+
+    return snapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+        content: data.content || '',
+        source: data.source || data.course_code || 'Knowledge Base',
+        type: (data.type as any) || 'question',
+        score: 1.0 // findNearest ranks by similarity descending
+      };
     });
-
-    const queryEmbedding = result.embeddings![0].values as number[];
-
-    const scoredItems = indexedItems.map((item) => {
-      const score = cosineSimilarity(queryEmbedding, item.embedding);
-      return { ...item, score };
-    });
-
-    return scoredItems
-      .sort((a, b) => b.score - a.score)
-      .slice(0, limit)
-      .map(({ content, source, type, score }) => ({ content, source, type, score }));
   } catch (error) {
     console.error('Error in semantic search:', error);
     return [];
   }
-}
-
-function cosineSimilarity(a: number[], b: number[]): number {
-  let dotProduct = 0;
-  let normA = 0;
-  let normB = 0;
-  for (let i = 0; i < a.length; i++) {
-    dotProduct += a[i] * b[i];
-    normA += a[i] * a[i];
-    normB += b[i] * b[i];
-  }
-  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
 }

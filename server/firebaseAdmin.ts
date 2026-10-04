@@ -39,6 +39,7 @@ try {
     }
     
     db = getFirestore(adminApp, databaseId);
+    db.settings({ ignoreUndefinedProperties: true });
     
     // Override app.firestore() to return the correct db instance
     adminApp.firestore = () => db as admin.firestore.Firestore;
