@@ -30,6 +30,7 @@ import CourseContextBar from './CourseContextBar';
 import { db } from '../firebase';
 import { collection, addDoc, serverTimestamp, doc, updateDoc, getDoc } from 'firebase/firestore';
 import { getCourseProgramStatus, isCourseEligibleForUser } from '../utils/courseEligibility';
+import { sortCourseSyllabus } from '../shared/courseSchemas';
 import toast from 'react-hot-toast';
 
 interface CourseSyllabusProps {
@@ -66,7 +67,7 @@ export default function CourseSyllabus({
   onBack, 
   onViewSelect,
   activeCourseId, 
-  syllabus, 
+  syllabus: rawSyllabus, 
   objectives = [], 
   isEnrolled, 
   onEnroll, 
@@ -79,6 +80,7 @@ export default function CourseSyllabus({
   enrolledCourses = [],
   progress
 }: CourseSyllabusProps) {
+  const syllabus = React.useMemo(() => sortCourseSyllabus(rawSyllabus), [rawSyllabus]);
   const { user, profile } = useAuth();
   const { courses, refreshCourses } = useCourses();
   const { isPremium } = usePremiumStatus();

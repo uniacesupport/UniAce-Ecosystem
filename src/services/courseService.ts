@@ -1,6 +1,7 @@
 import { db } from '../firebase';
 import { collection, doc, getDoc, getDocs, setDoc, query, where, orderBy, writeBatch } from 'firebase/firestore';
 import { Course, Module, SubTopic, Quiz, Formula, CourseId } from '../types';
+import { getModuleOrderIndex, getLessonOrderIndex, sortCourseSyllabus } from '../shared/courseSchemas';
 
 export const sanitizeForFirestore = (obj: any): any => {
   if (obj === undefined) return null;
@@ -44,7 +45,11 @@ export const CourseService = {
       try {
         const courseDoc = await getDoc(doc(db, 'courses', courseId));
         if (courseDoc.exists()) {
-          return { id: courseDoc.id, ...courseDoc.data() } as Course;
+          const data = courseDoc.data();
+          if (Array.isArray(data.syllabus)) {
+            data.syllabus = sortCourseSyllabus(data.syllabus);
+          }
+          return { id: courseDoc.id, ...data } as Course;
         }
         return null;
       } catch (error: any) {
@@ -61,12 +66,16 @@ export const CourseService = {
 
   async getModules(courseId: string): Promise<Module[]> {
     const modulesSnap = await getDocs(query(collection(db, `courses/${courseId}/modules`), orderBy('order')));
-    return modulesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Module));
+    return modulesSnap.docs
+      .map(doc => ({ id: doc.id, ...doc.data() } as Module))
+      .sort((a, b) => getModuleOrderIndex(a) - getModuleOrderIndex(b));
   },
 
   async getLessons(courseId: string, moduleId: string): Promise<SubTopic[]> {
     const lessonsSnap = await getDocs(query(collection(db, `courses/${courseId}/modules/${moduleId}/lessons`), orderBy('order')));
-    return lessonsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as SubTopic));
+    return lessonsSnap.docs
+      .map(doc => ({ id: doc.id, ...doc.data() } as SubTopic))
+      .sort((a, b) => getLessonOrderIndex(a) - getLessonOrderIndex(b));
   },
 
   async getQuiz(courseId: string, moduleId: string): Promise<Quiz | null> {

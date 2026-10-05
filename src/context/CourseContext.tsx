@@ -3,6 +3,7 @@ import { Course, CourseId } from '../types';
 import { db } from '../firebase';
 import { collection, getDocs, onSnapshot } from 'firebase/firestore';
 import { useAuth } from './AuthContext';
+import { sortCourseSyllabus } from '../shared/courseSchemas';
 
 interface CourseContextType {
   courses: Record<string, Course>;
@@ -30,6 +31,9 @@ export function CourseProvider({ children }: { children: React.ReactNode }) {
           const courseId = docSnap.id;
           data.id = courseId as CourseId;
           if (!data.deleted) {
+            if (Array.isArray(data.syllabus)) {
+              data.syllabus = sortCourseSyllabus(data.syllabus);
+            }
             firestoreCourses[courseId] = data;
           }
         });
@@ -75,6 +79,9 @@ export function CourseProvider({ children }: { children: React.ReactNode }) {
               }
               if (!data.level) data.level = '100';
               if (!data.semester) data.semester = '1st Semester';
+              if (Array.isArray(data.syllabus)) {
+                data.syllabus = sortCourseSyllabus(data.syllabus);
+              }
               
               firestoreCourses[courseId] = data;
 
@@ -95,7 +102,7 @@ export function CourseProvider({ children }: { children: React.ReactNode }) {
                           };
                         })
                       );
-                      firestoreCourses[courseId].syllabus = populatedModules;
+                      firestoreCourses[courseId].syllabus = sortCourseSyllabus(populatedModules);
                     }
                   } catch (hErr) {
                     console.warn(`Failed hydrating subcollection syllabus for ${courseId}:`, hErr);

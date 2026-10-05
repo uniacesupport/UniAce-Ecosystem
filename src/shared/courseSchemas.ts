@@ -169,3 +169,74 @@ export function deriveCurriculumParameters(level?: string, semester?: string, cr
     targetLessonsPerModule
   };
 }
+
+/**
+ * Extracts a deterministic numeric sort index for a course module (1, 2, 3, ...).
+ */
+export function getModuleOrderIndex(mod: any, fallbackIdx: number = 999): number {
+  if (!mod || typeof mod !== 'object') return fallbackIdx;
+  if (typeof mod.order === 'number' && !isNaN(mod.order) && mod.order > 0) {
+    return mod.order;
+  }
+  const titleStr = String(mod.title || '').trim();
+  const titleMatch = titleStr.match(/\bModule\s+(\d+)\b/i) || titleStr.match(/^(\d+)[\.\:\-\)]/);
+  if (titleMatch) {
+    const parsed = parseInt(titleMatch[1], 10);
+    if (!isNaN(parsed) && parsed > 0) return parsed;
+  }
+  const idStr = String(mod.id || '').trim();
+  const idMatch = idStr.match(/^m(\d+)$/i) || idStr.match(/(\d+)$/);
+  if (idMatch) {
+    const parsed = parseInt(idMatch[1], 10);
+    if (!isNaN(parsed) && parsed > 0) return parsed;
+  }
+  if (mod.isFoundationModule === true) return 1;
+  return fallbackIdx;
+}
+
+/**
+ * Extracts a deterministic numeric sort index for a lesson / subTopic (1, 2, 3, ...).
+ */
+export function getLessonOrderIndex(lesson: any, fallbackIdx: number = 999): number {
+  if (!lesson || typeof lesson !== 'object') return fallbackIdx;
+  if (typeof lesson.order === 'number' && !isNaN(lesson.order) && lesson.order > 0) {
+    return lesson.order;
+  }
+  const idStr = String(lesson.id || '').trim();
+  const idMatch = idStr.match(/-l(\d+)$/i) || idStr.match(/^l(\d+)$/i) || idStr.match(/(\d+)$/);
+  if (idMatch) {
+    const parsed = parseInt(idMatch[1], 10);
+    if (!isNaN(parsed) && parsed > 0) return parsed;
+  }
+  const titleStr = String(lesson.title || '').trim();
+  const titleMatch = titleStr.match(/^(?:Lesson|Topic|Unit)\s+(\d+)\b/i) || titleStr.match(/^(\d+)[\.\:\-\)]/);
+  if (titleMatch) {
+    const parsed = parseInt(titleMatch[1], 10);
+    if (!isNaN(parsed) && parsed > 0) return parsed;
+  }
+  return fallbackIdx;
+}
+
+/**
+ * Sorts a course syllabus array so modules (1..N) and their subTopics/lessons (1..M)
+ * are strictly arranged in ascending pedagogical order.
+ */
+export function sortCourseSyllabus<T extends Record<string, any>>(syllabus: T[] | undefined | null): T[] {
+  if (!Array.isArray(syllabus) || syllabus.length === 0) return [];
+  return [...syllabus]
+    .map((mod, mIdx) => {
+      if (!mod || typeof mod !== 'object') return { mod, sortOrder: mIdx + 1 };
+      const sortedSubTopics = Array.isArray(mod.subTopics)
+        ? [...mod.subTopics]
+            .map((st: any, lIdx: number) => ({ st, lOrder: getLessonOrderIndex(st, lIdx + 1) }))
+            .sort((a, b) => a.lOrder - b.lOrder)
+            .map(item => item.st)
+        : mod.subTopics;
+      return {
+        mod: { ...mod, subTopics: sortedSubTopics },
+        sortOrder: getModuleOrderIndex(mod, mIdx + 1)
+      };
+    })
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map(item => item.mod);
+}

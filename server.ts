@@ -41,7 +41,10 @@ import {
   LessonContentSchema,
   CourseProvenanceSchema,
   normalizeLearningOutcomes,
-  deriveCurriculumParameters
+  deriveCurriculumParameters,
+  getModuleOrderIndex,
+  getLessonOrderIndex,
+  sortCourseSyllabus
 } from './src/shared/courseSchemas.js';
 import {
   validateLessonSyntax,
@@ -4805,9 +4808,15 @@ app.post('/api/course/generate-skeleton', verifyAuth, async (req, res) => {
 
     const confidenceState = (auditResult && auditResult.coverageScore >= 90) ? 'verified' : 'needs_review';
 
-    // Normalize module lessonTitles & learning outcomes
-    const normalizedModules = (skeleton.modules || []).map((m: any, idx: number) => ({
+    // Normalize & sort module lessonTitles & learning outcomes in ascending pedagogical order
+    const sortedRawModules = [...(skeleton.modules || [])]
+      .map((m: any, idx: number) => ({ m, order: getModuleOrderIndex(m, idx + 1) }))
+      .sort((a, b) => a.order - b.order)
+      .map(item => item.m);
+
+    const normalizedModules = sortedRawModules.map((m: any, idx: number) => ({
       id: `m${idx + 1}`,
+      order: idx + 1,
       title: m.title || `Module ${idx + 1}`,
       isFoundationModule: idx === 0 || !!m.isFoundationModule,
       lessonTitles: m.lessonTitles || m.topics || (m.lessons ? m.lessons.map((l: any) => typeof l === 'string' ? l : l.title) : []) || [`Introduction to ${m.title || 'Module'}`],
@@ -5146,15 +5155,25 @@ async function executeCoordinatedGenerationJob(
           }
         }
 
+        // Ensure skeleton.modules are strictly sorted in ascending pedagogical order (Module 1, Module 2, ...)
+        if (skeleton && Array.isArray(skeleton.modules)) {
+          skeleton.modules = [...skeleton.modules]
+            .map((m: any, idx: number) => ({ m, order: getModuleOrderIndex(m, idx + 1) }))
+            .sort((a, b) => a.order - b.order)
+            .map(item => item.m);
+        }
+
         const normalizedOutcomes = normalizeLearningOutcomes(skeleton.learningOutcomes);
         const canonicalRefs = domainBrief.canonicalCourseReferences || domainBrief.groundingReferences || [];
 
         const syllabus = (skeleton.modules || []).map((m: any, mIdx: number) => ({
           id: `m${mIdx + 1}`,
+          order: mIdx + 1,
           title: m.title || `Module ${mIdx + 1}`,
           isFoundationModule: mIdx === 0 || !!m.isFoundationModule,
           subTopics: (m.lessonTitles || m.topics || (m.lessons ? m.lessons.map((l: any) => typeof l === 'string' ? l : l.title) : []) || [`Introduction to ${m.title || 'Module'}`]).map((t: string, tIdx: number) => ({
             id: `m${mIdx + 1}-l${tIdx + 1}`,
+            order: tIdx + 1,
             title: t || `Lesson ${tIdx + 1}`
           }))
         }));
@@ -5490,28 +5509,46 @@ Return strictly a JSON object:
           console.warn('[Coordinated Gen] Formula generation error:', fErr);
         }
 
-        // STEP 4: Compile Final Syllabus and Attach Provenance
+        // STEP 4: Compile Final Syllabus and Attach Provenance (strictly sorted by module & lesson order)
         let compiledSyllabus: any[] = [];
         try {
           const modSnap = await db.collection('courses').doc(courseId).collection('modules').get();
-          for (const mDoc of modSnap.docs) {
+          const sortedModDocs = [...modSnap.docs].sort((a, b) => {
+            const aOrder = getModuleOrderIndex({ id: a.id, ...a.data() }, 999);
+            const bOrder = getModuleOrderIndex({ id: b.id, ...b.data() }, 999);
+            return aOrder - bOrder;
+          });
+
+          for (let mIdx = 0; mIdx < sortedModDocs.length; mIdx++) {
+            const mDoc = sortedModDocs[mIdx];
             const mData = mDoc.data();
             const lesSnap = await mDoc.ref.collection('lessons').get();
-            const subTopics = lesSnap.docs.map(lDoc => {
+            const sortedLesDocs = [...lesSnap.docs].sort((a, b) => {
+              const aOrder = getLessonOrderIndex({ id: a.id, ...a.data() }, 999);
+              const bOrder = getLessonOrderIndex({ id: b.id, ...b.data() }, 999);
+              return aOrder - bOrder;
+            });
+
+            const subTopics = sortedLesDocs.map((lDoc, lIdx) => {
               const lData = lDoc.data();
               return {
                 id: lDoc.id,
+                order: typeof lData.order === 'number' ? lData.order : lIdx + 1,
                 title: lData.title || 'Lesson',
                 content: lData.content || ''
               };
             });
             compiledSyllabus.push({
               id: mDoc.id,
+              order: typeof mData.order === 'number' ? mData.order : mIdx + 1,
               title: mData.title || 'Module',
               isFoundationModule: !!mData.isFoundationModule,
+              groundingReferences: mData.groundingReferences || canonicalRefs,
+              confidenceState: mData.confidenceState || 'verified',
               subTopics
             });
           }
+          compiledSyllabus = sortCourseSyllabus(compiledSyllabus);
         } catch (sErr) {
           console.warn('[Coordinated Gen] Failed compiling syllabus array for main doc:', sErr);
         }
