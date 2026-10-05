@@ -73,7 +73,7 @@ export async function findRelevantContentSemantic(query: string, limit: number =
     const queryEmbedding = result.embeddings?.[0]?.values;
     if (!queryEmbedding || queryEmbedding.length === 0) return [];
 
-    const queryVector = admin.firestore.VectorValue.fromArray(queryEmbedding as number[]);
+    const queryVector = admin.firestore.FieldValue.vector(queryEmbedding as number[]);
     const kbRef = db.collection('knowledge_base');
 
     const snapshot = await kbRef.findNearest({

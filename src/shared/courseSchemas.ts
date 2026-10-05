@@ -54,7 +54,7 @@ export const CourseModuleOutlineSchema = z.object({
   isFoundationModule: z.boolean().optional().default(false),
   topics: z.array(z.string()).optional(),
   lessonTitles: z.array(z.string()).optional(),
-  lessons: z.array(CourseLessonOutlineSchema).optional(),
+  lessons: z.array(z.union([z.string(), CourseLessonOutlineSchema])).optional(),
   quizTopics: z.array(z.string()).optional().default([]),
   learningOutcomeIds: z.array(z.string()).optional().default([])
 });
@@ -62,11 +62,11 @@ export type CourseModuleOutline = z.infer<typeof CourseModuleOutlineSchema>;
 
 export const CourseSkeletonSchema = z.object({
   pedagogicalReasoning: z.string().optional(),
-  description: z.string().min(1),
+  description: z.string().optional().default(''),
   pedagogyType: DisciplinePedagogyTypeEnum.optional().default('STEM_MATHEMATICAL'),
   creditHours: z.number().int().min(1).max(12).optional().default(3),
-  learningOutcomes: z.array(LearningOutcomeSchema).min(3),
-  modules: z.array(CourseModuleOutlineSchema).min(4)
+  learningOutcomes: z.array(z.union([z.string(), LearningOutcomeSchema])).optional().default([]),
+  modules: z.array(CourseModuleOutlineSchema).min(1)
 });
 export type CourseSkeleton = z.infer<typeof CourseSkeletonSchema>;
 

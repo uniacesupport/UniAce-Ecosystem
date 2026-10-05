@@ -57,6 +57,7 @@ export const DEFAULT_MATH_CONFIG: MathEngineConfig = {
  */
 export async function getMathEngineConfig(): Promise<MathEngineConfig> {
   try {
+    const db = getDb();
     if (!db) return DEFAULT_MATH_CONFIG;
     const docSnap = await db.collection('system_config').doc('math_engine').get();
     if (docSnap.exists) {
@@ -72,6 +73,7 @@ export async function getMathEngineConfig(): Promise<MathEngineConfig> {
  * Saves updated Math Engine Configuration to Firestore.
  */
 export async function saveMathEngineConfig(config: Partial<MathEngineConfig>): Promise<MathEngineConfig> {
+  const db = getDb();
   if (!db) throw new Error('Firestore not initialized');
   const updated = { ...DEFAULT_MATH_CONFIG, ...config, updatedAt: new Date().toISOString() };
   await db.collection('system_config').doc('math_engine').set(updated, { merge: true });
@@ -87,6 +89,7 @@ export async function logMathTelemetry(
   userId?: string
 ): Promise<void> {
   try {
+    const db = getDb();
     if (!db) return;
     const logDoc = {
       timestamp: new Date().toISOString(),

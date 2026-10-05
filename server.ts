@@ -5,7 +5,9 @@ import { Server as SocketIOServer } from 'socket.io';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import admin from 'firebase-admin';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, Modality } from '@google/genai';
+import Groq from 'groq-sdk';
+import OpenAI from 'openai';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -314,7 +316,7 @@ async function processEmbeddingQueueWorker() {
               course_code: task.courseId,
               module_name: task.moduleTitle,
               topic_name: task.lessonTitle,
-              embedding: admin.firestore.VectorValue.fromArray(vector),
+              embedding: admin.firestore.FieldValue.vector(vector),
               createdAt: admin.firestore.FieldValue.serverTimestamp()
             }));
           }
@@ -1864,7 +1866,7 @@ async function findRelevantChunks(query: string, courseCode: string | null): Pro
     try {
       const snapshot = await queryRef.findNearest({
         vectorField: 'embedding',
-        queryVector: admin.firestore.VectorValue.fromArray(queryVector),
+        queryVector: admin.firestore.FieldValue.vector(queryVector),
         distanceMeasure: 'COSINE',
         limit: 5 // Increased limit for better context
       }).get();
@@ -2172,34 +2174,6 @@ async function purgeCourseSubcollections(db: admin.firestore.Firestore, courseId
 }
 
 // Zod Schemas for Validation
-const CourseSkeletonSchema = z.object({
-  pedagogicalReasoning: z.string().optional(),
-  description: z.string().optional().default(''),
-  learningOutcomes: z.array(z.object({
-    outcome: z.string(),
-    bloomLevel: z.enum(['Remember', 'Understand', 'Apply', 'Analyze', 'Evaluate', 'Create'])
-  })).min(3).optional().default([]),
-  modules: z.array(z.object({
-    title: z.string().min(1),
-    topics: z.array(z.string()).optional(),
-    lessons: z.array(z.string()).optional(),
-    lessonTitles: z.array(z.string()).optional(),
-    quizTopics: z.array(z.string()).optional().default([]),
-    learningOutcomeIds: z.array(z.string()).optional().default([])
-  })).min(1)
-});
-
-const LessonContentSchema = z.preprocess((val) => {
-  if (typeof val === 'string') {
-    return { title: 'Lesson', content: val };
-  }
-  return val;
-}, z.object({
-  pedagogicalReasoning: z.string().optional(),
-  title: z.string().optional(),
-  content: z.string().min(1, 'Lesson content cannot be empty')
-}));
-
 const ModuleQuizSchema = z.preprocess((val: any) => {
   if (Array.isArray(val)) {
     return { questions: val };
@@ -2436,9 +2410,9 @@ app.post('/api/chat', verifyAuth, async (req, res) => {
   const MAX_PRE_AUTH = complexity === 'high' ? 100 : 3; 
   const DAILY_FREE_SPARKS = 20;
   const RATE_LIMIT_SECONDS = 5;
+  let preAuthResult: any = { sparks: 20, plan: 'free', role: 'student', preAuthDeduction: 0 };
 
   try {
-    let preAuthResult: any = { sparks: 20, plan: 'free', role: 'student', preAuthDeduction: 0 };
     let app: admin.app.App | null = null;
     let userRef: admin.firestore.DocumentReference | null = null;
 
@@ -2602,8 +2576,8 @@ app.post('/api/chat', verifyAuth, async (req, res) => {
     // Fetch dynamic task routing config for chat
     let routingConfig: any = { chat: 'groq' };
     try {
-      if (appAdmin) {
-        const routingDoc = await appAdmin.firestore().collection('system_config').doc('routing').get();
+      if (app) {
+        const routingDoc = await app.firestore().collection('system_config').doc('routing').get();
         if (routingDoc.exists) {
           routingConfig = routingDoc.data() || { chat: 'groq' };
         }
@@ -2613,6 +2587,7 @@ app.post('/api/chat', verifyAuth, async (req, res) => {
     }
 
     let successfulProviderName = 'groq';
+    let aiResponse: any = null;
     const reqStart = Date.now();
 
     try {
@@ -4323,7 +4298,7 @@ app.post('/api/ai/stream', verifyAuth, async (req, res) => {
     }
     
     // Add fallbacks
-    const fallbackExclusion = typeof primaryProviderName !== "undefined" ? primaryProviderName : (typeof preferredProviderName !== "undefined" ? preferredProviderName : "");
+    const fallbackExclusion = preferredProviderName || "";
     const dynamicFallbacks = Object.keys(providerMap).filter(p => p !== fallbackExclusion);
     dynamicFallbacks.sort(() => Math.random() - 0.5);
     for (const fallbackName of dynamicFallbacks) {
@@ -4913,19 +4888,22 @@ async function executeCoordinatedGenerationJob(
   try {
     const courseRef = db.collection('courses').doc(courseId);
     let attemptsCount = 1;
+    let existingDoc: admin.firestore.DocumentSnapshot | null = null;
 
     // Transactional Lease Claim & Crash Loop Guard
     const leaseClaimed = await db.runTransaction(async (transaction) => {
       const docSnap = await transaction.get(courseRef);
+      existingDoc = docSnap;
       if (docSnap.exists) {
         const data = docSnap.data();
-        attemptsCount = (data?.generationAttempts || 0) + 1;
+        const isAutoResume = req.body.resume === true;
+        attemptsCount = isAutoResume ? (data?.generationAttempts || 0) + 1 : 1;
         const currentOwner = data?.leaseOwner;
         const lastHeartbeat = data?.leaseHeartbeat || 0;
         const isStale = (Date.now() - lastHeartbeat) > 30000;
 
         // Crash Loop Guard: Stop auto-resume if process crashed 3+ times on this job
-        if (attemptsCount > 3 && data?.generationStatus !== 'completed') {
+        if (isAutoResume && attemptsCount > 3 && data?.generationStatus !== 'completed') {
           transaction.set(courseRef, {
             generationStatus: 'failed',
             statusMessage: 'CRASH_LOOP_GUARD_EXCEEDED: Course generation attempted 3 times without completion. Auto-resume halted to prevent crash loop.',
@@ -4967,7 +4945,10 @@ async function executeCoordinatedGenerationJob(
       return;
     }
 
-    const isResume = req.body.resume === true || (existingDoc.exists && existingDoc.data()?.generationStatus === 'generating');
+    const existingDocData = existingDoc && (existingDoc as admin.firestore.DocumentSnapshot).exists
+      ? (existingDoc as admin.firestore.DocumentSnapshot).data()
+      : undefined;
+    const isResume = req.body.resume === true || Boolean(existingDocData && existingDocData.generationStatus === 'generating');
 
     // 1. Initialize Course document in Firestore with 'generating' status
     await courseRef.set({
@@ -4985,10 +4966,10 @@ async function executeCoordinatedGenerationJob(
       faculties: selectedFaculties,
       departments: selectedDepartments,
       isAIGenerated: true,
-      createdAt: existingDoc.exists && existingDoc.data()?.createdAt ? existingDoc.data()?.createdAt : new Date().toISOString(),
+      createdAt: existingDocData?.createdAt ? existingDocData.createdAt : new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       generationStatus: 'generating',
-      generationProgress: isResume ? (existingDoc.data()?.generationProgress || 15) : 5,
+      generationProgress: isResume ? (existingDocData?.generationProgress || 15) : 5,
       statusMessage: isResume ? 'Resuming course generation from checkpoint...' : 'Coordinating course creation on server...'
     }, { merge: true });
 
@@ -5262,14 +5243,16 @@ async function executeCoordinatedGenerationJob(
               const topic = topics[lIndex];
               const lessonId = `m${mIndex + 1}-l${lIndex + 1}`;
 
-              // Idempotent resumption check: reuse ONLY if lesson exists, content length > 200, syntax is valid, and promptVersion matches
+              // Idempotent resumption check: reuse ONLY if lesson exists, content length > 200, syntax is valid, promptVersion matches, and audienceHash matches
+              const expectedAudienceHash = crypto.createHash('md5').update(`${courseId}_${academicStandard}_${domainBrief.primaryDomain}`).digest('hex');
               const existingLessonSnap = await db.collection('courses').doc(courseId).collection('modules').doc(moduleId).collection('lessons').doc(lessonId).get().catch(() => null);
               if (existingLessonSnap && existingLessonSnap.exists) {
                 const existingData = existingLessonSnap.data();
                 const isValidSyntax = existingData?.content ? validateLessonSyntax(existingData.content, domainBrief.pedagogyType).isValid : false;
                 const isMatchingVersion = existingData?.promptVersion === 'uniace-curriculum-v2.0';
+                const isMatchingAudience = existingData?.audienceHash === expectedAudienceHash;
 
-                if (existingData?.content && existingData.content.length > 200 && isValidSyntax && isMatchingVersion) {
+                if (existingData?.content && existingData.content.length > 200 && isValidSyntax && isMatchingVersion && isMatchingAudience) {
                   console.log(`[Coordinated Gen] Lesson "${topic}" exists, schema-validated & version-matched (${existingData.promptVersion}). Reusing.`);
                   completedLessonsCount++;
                   const resumeElapsed = Math.round((Date.now() - jobStartTime) / 1000);
@@ -6266,7 +6249,7 @@ app.post('/api/study-architect/generate-plan', verifyAuth, async (req, res) => {
 
 app.post('/api/vision-to-quiz', verifyAuth, async (req, res) => {
   try {
-    const { image, mimeType } = req.body; // base64 image
+    const { image, mimeType, complexity = 'standard' } = req.body; // base64 image
     
     const systemInstruction = `You are the UniAce Vision-to-Mastery engine.
     Analyze the provided image of lecture notes or a whiteboard.
@@ -6696,7 +6679,7 @@ app.post('/api/admin/ingest', verifyAuth, async (req, res) => {
         course_code,
         module_name,
         topic_name,
-        embedding: admin.firestore.VectorValue.fromArray(vector),
+        embedding: admin.firestore.FieldValue.vector(vector),
         createdAt: admin.firestore.FieldValue.serverTimestamp()
       }));
       
@@ -6810,7 +6793,7 @@ app.post('/api/admin/questions/add', verifyAuth, async (req, res) => {
           course_code: courseCode,
           module_name: 'Past Questions',
           topic_name: `${year} - ${semester}`,
-          embedding: admin.firestore.VectorValue.fromArray(vector),
+          embedding: admin.firestore.FieldValue.vector(vector),
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
           questionId: q.id,
           paperId: paperDocRef.id
@@ -6897,7 +6880,7 @@ app.post('/api/admin/questions/update', verifyAuth, async (req, res) => {
       course_code: paperData.courseCode,
       module_name: 'Past Questions',
       topic_name: `${paperData.year} - ${paperData.semester}`,
-      embedding: admin.firestore.VectorValue.fromArray(vector),
+      embedding: admin.firestore.FieldValue.vector(vector),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       questionId: question.id,
       paperId: paperId
@@ -8373,6 +8356,10 @@ async function startServer() {
     console.log(`WebSocket connected for user: ${user.uid}`);
 
     ws.on('message', async (message) => {
+      let MAX_PRE_AUTH = 3;
+      let app: admin.app.App | null = null;
+      let userRef: admin.firestore.DocumentReference | null = null;
+      let preAuthResult: any = { sparks: 20, plan: 'free', role: 'student', isFreeUser: true, preAuthDeduction: 0 };
       try {
         const data = JSON.parse(message.toString());
         const { message: userMessage, image, pdfContent, history, context, complexity = 'standard', isHintRequest = false, masteryLevel = 0, personality = 'encouraging', currentSparks = 50, planType = 'free', fastMode: fastModeOverride } = data;
@@ -8381,16 +8368,15 @@ async function startServer() {
         const C_base = 1; // Fixed infrastructure tax
         const K_constant = 1000; // Token normalization factor
         const W_model = complexity === 'high' ? 40 : 1; // Pro = 40x cost
-        const MAX_PRE_AUTH = complexity === 'high' ? 100 : 3; 
+        MAX_PRE_AUTH = complexity === 'high' ? 100 : 3; 
         const DAILY_FREE_SPARKS = 20;
         const RATE_LIMIT_SECONDS = 5;
 
-        const app = getAdminApp();
-        const userRef = app ? app.firestore().collection('users').doc(user.uid) : null;
+        app = getAdminApp();
+        userRef = app ? app.firestore().collection('users').doc(user.uid) : null;
         let sparksRemaining = currentSparks;
         let learningProfile: any = null;
         let studentName = user.name || user.displayName || 'Student';
-        let preAuthResult: any = { sparks: 20, plan: 'free', role: 'student', isFreeUser: true, preAuthDeduction: 0 };
 
         if (app && userRef) {
           try {
@@ -8827,7 +8813,7 @@ async function startServer() {
           sessionPromise = ai.live.connect({
             model: voiceModel,
             config: {
-              responseModalities: ["AUDIO"],
+              responseModalities: [Modality.AUDIO],
               speechConfig: {
                 voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } },
               },

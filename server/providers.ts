@@ -1390,11 +1390,7 @@ export class HuggingFaceProvider implements ModelProvider {
         );
       }
       const fallbackModel = (await this.rotator.getFallbackModel() || '').trim();
-      const hf = new HfInference(apiKey, {
-        headers: {
-          'X-Wait-For-Model': 'true'
-        }
-      });
+      const hf = new HfInference(apiKey);
 
       const executeGenerate = async (targetModel: string) => {
         try {
@@ -1467,11 +1463,7 @@ export class HuggingFaceProvider implements ModelProvider {
         );
       }
       const fallbackModel = (await this.rotator.getFallbackModel() || '').trim();
-      const hf = new HfInference(apiKey, {
-        headers: {
-          'X-Wait-For-Model': 'true'
-        }
-      });
+      const hf = new HfInference(apiKey);
 
       const executeStream = async (targetModel: string) => {
         try {
