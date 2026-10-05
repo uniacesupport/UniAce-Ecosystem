@@ -48,40 +48,6 @@ export function CourseProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // Temporary fix for courses which were accidentally merged with a tombstone
-    const fixDeletedCourses = async () => {
-      if (!user) return;
-      
-      // Check if user is admin based on email (matching firestore rules)
-      const adminEmails = (import.meta.env.VITE_ADMIN_EMAILS || '').split(',').map((e: string) => e.trim().toLowerCase()).filter(Boolean);
-      const isAdmin = Boolean(user.email && adminEmails.includes(user.email.toLowerCase()));
-      if (!isAdmin) return;
-
-      try {
-        const { collection, getDocs, doc, updateDoc, deleteField } = await import('firebase/firestore');
-        const snapshot = await getDocs(collection(db, 'courses'));
-        const batch: Promise<void>[] = [];
-        snapshot.forEach(d => {
-          const data = d.data();
-          if (data.deleted === true && data.title) {
-            console.log(`Fixing ${d.id} deleted flag...`);
-            const docRef = doc(db, 'courses', d.id);
-            batch.push(updateDoc(docRef, {
-              deleted: deleteField(),
-              deletedAt: deleteField()
-            }));
-          }
-        });
-        if (batch.length > 0) {
-          await Promise.all(batch);
-          console.log(`Fixed ${batch.length} courses.`);
-        }
-      } catch (e) {
-        console.error("Error fixing deleted courses:", e);
-      }
-    };
-    fixDeletedCourses();
-
     // Only set up listener if user is authenticated (or if we want to allow public read, we can do it anyway, but depending on user ensures we retry after auth)
     console.log(`CourseContext: Setting up real-time listener for courses...`);
     setLoading(true);

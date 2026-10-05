@@ -1521,118 +1521,121 @@ const getAndValidateSparks = async (uid: string, email: string | undefined): Pro
   const userRef = app.firestore().collection('users').doc(uid);
   
   try {
-    let isNewUser = false;
-    const result = await app.firestore().runTransaction(async (t) => {
-      isNewUser = false; // Reset on each retry
-      console.log(`Transaction started for user: ${uid}`);
-      const doc = await t.get(userRef);
-      const now = new Date();
-      const todayStr = now.toISOString().split('T')[0]; // YYYY-MM-DD in UTC
-      
-      if (!doc.exists) {
-        console.log(`Creating new user document for: ${uid}`);
-        const initialData = {
-          uid,
-          ai_sparks: 20,
-          plan_type: 'free',
-          role: (isAdminEmail(email)) ? 'admin' : 'student',
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
-          last_spark_reset: todayStr
-        };
-        t.set(userRef, initialData);
-        
-        isNewUser = true;
+    const doc = await userRef.get();
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0]; // YYYY-MM-DD in UTC
 
-        return { sparks: 20, plan: 'free', role: initialData.role };
-      }
+    if (!doc.exists) {
+      console.log(`Creating new user document for: ${uid}`);
+      const role = isAdminEmail(email) ? 'admin' : 'student';
+      const initialData = {
+        uid,
+        ai_sparks: 20,
+        plan_type: 'free',
+        role,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        last_spark_reset: todayStr
+      };
+      await userRef.set(initialData, { merge: true }).catch(err => {
+        console.warn(`Non-fatal warning writing initial user doc for ${uid}:`, err?.message || err);
+      });
 
-      const userData = doc.data()!;
-      let sparks = userData.ai_sparks ?? 20;
-      let plan = userData.plan_type || 'free';
-      let role = userData.role || 'student';
-      let lastReset = userData.last_spark_reset;
-      let expiry = userData.subscription_expiry;
-      let status = userData.subscription_status || 'none';
-      let startDate = userData.subscription_start_date;
-      
-      const createdAt = new Date(userData.createdAt?.toDate() || userData.created_at || now);
-      
-      // System-wide trial start date (March 19, 2026) to ensure all existing users get a trial
-      const TRIAL_SYSTEM_START_DATE = new Date('2026-03-19T00:00:00Z');
-      const trialStartDate = createdAt < TRIAL_SYSTEM_START_DATE ? TRIAL_SYSTEM_START_DATE : createdAt;
-      
-      const isTrialActive = (now.getTime() - trialStartDate.getTime()) < (7 * 24 * 60 * 60 * 1000);
-      const DAILY_FREE_SPARKS = 20;
-      const dailyLimit = isTrialActive ? 999999 : DAILY_FREE_SPARKS;
-
-      // Trial Logic: If trial is active, they are a Scholar
-      if (isTrialActive && plan === 'free' && role !== 'admin') {
-        plan = 'scholar';
-        status = 'active';
-        startDate = trialStartDate.toISOString();
-        expiry = new Date(trialStartDate.getTime() + (7 * 24 * 60 * 60 * 1000)).toISOString();
-      }
-
-      // Check subscription expiration (for paid non-free plans when not on active trial)
-      if (!isTrialActive && plan !== 'free' && expiry) {
-        const expiryDate = new Date(expiry);
-        if (!isNaN(expiryDate.getTime()) && now > expiryDate) {
-          plan = 'free';
-          status = 'expired';
-          t.update(userRef, { 
-            plan_type: 'free',
-            subscription_status: 'expired'
-          });
-        }
-      }
-
-      // Auto-promote specific email only if role is not already explicitly set in Firestore
-      if (!userData.role && isAdminEmail(email)) {
-        role = 'admin';
-        t.update(userRef, { role: 'admin' });
-      }
-
-      if (role === 'admin' || plan !== 'free') {
-        return { 
-          sparks: 999999, 
-          plan, 
-          role,
-          subscription_expiry: expiry,
-          subscription_status: status,
-          subscription_start_date: startDate
-        };
-      }
-
-      // Daily reset logic: Protect top-ups and earned sparks; only refill if balance is below daily limit
-      if (lastReset !== todayStr) {
-        sparks = Math.max(sparks, dailyLimit);
-        t.update(userRef, { 
-          ai_sparks: sparks, 
-          last_spark_reset: todayStr 
+      if (email) {
+        MailService.sendWelcomeEmail(email, email.split('@')[0], systemConfig.trialDays || 7).catch(err => {
+          console.error('Failed to send welcome email:', err);
         });
       }
 
+      return { sparks: role === 'admin' ? 999999 : 20, plan: role === 'admin' ? 'scholar' : 'free', role };
+    }
+
+    const userData = doc.data()!;
+    let sparks = userData.ai_sparks ?? 20;
+    let plan = userData.plan_type || 'free';
+    let role = userData.role || 'student';
+    const lastReset = userData.last_spark_reset;
+    let expiry = userData.subscription_expiry;
+    let status = userData.subscription_status || 'none';
+    let startDate = userData.subscription_start_date;
+
+    const createdAt = new Date(userData.createdAt?.toDate ? userData.createdAt.toDate() : (userData.created_at || now));
+
+    // System-wide trial start date (March 19, 2026) to ensure all existing users get a trial
+    const TRIAL_SYSTEM_START_DATE = new Date('2026-03-19T00:00:00Z');
+    const trialStartDate = createdAt < TRIAL_SYSTEM_START_DATE ? TRIAL_SYSTEM_START_DATE : createdAt;
+
+    const isTrialActive = (now.getTime() - trialStartDate.getTime()) < (7 * 24 * 60 * 60 * 1000);
+    const DAILY_FREE_SPARKS = 20;
+    const dailyLimit = isTrialActive ? 999999 : DAILY_FREE_SPARKS;
+
+    // Trial Logic: If trial is active, they are a Scholar
+    if (isTrialActive && plan === 'free' && role !== 'admin') {
+      plan = 'scholar';
+      status = 'active';
+      startDate = trialStartDate.toISOString();
+      expiry = new Date(trialStartDate.getTime() + (7 * 24 * 60 * 60 * 1000)).toISOString();
+    }
+
+    const updatesToPersist: Record<string, any> = {};
+
+    // Check subscription expiration (for paid non-free plans when not on active trial)
+    if (!isTrialActive && plan !== 'free' && expiry) {
+      const expiryDate = new Date(expiry);
+      if (!isNaN(expiryDate.getTime()) && now > expiryDate) {
+        plan = 'free';
+        status = 'expired';
+        updatesToPersist.plan_type = 'free';
+        updatesToPersist.subscription_status = 'expired';
+      }
+    }
+
+    // Auto-promote specific email only if role is not already explicitly set in Firestore
+    if (!userData.role && isAdminEmail(email)) {
+      role = 'admin';
+      updatesToPersist.role = 'admin';
+    }
+
+    if (role === 'admin' || plan !== 'free') {
+      if (Object.keys(updatesToPersist).length > 0) {
+        await userRef.set(updatesToPersist, { merge: true }).catch(() => {});
+      }
       return { 
-        sparks, 
+        sparks: 999999, 
         plan, 
         role,
         subscription_expiry: expiry,
         subscription_status: status,
         subscription_start_date: startDate
       };
-    });
-
-    // Send welcome email outside the transaction to avoid duplicates on retries
-    if (isNewUser && email) {
-      MailService.sendWelcomeEmail(email, email.split('@')[0], systemConfig.trialDays || 7).catch(err => {
-        console.error('Failed to send welcome email:', err);
-      });
     }
 
-    return result;
+    // Daily reset logic: Protect top-ups and earned sparks; only refill if balance is below daily limit
+    if (lastReset !== todayStr) {
+      sparks = Math.max(sparks, dailyLimit);
+      updatesToPersist.ai_sparks = sparks;
+      updatesToPersist.last_spark_reset = todayStr;
+    }
+
+    if (Object.keys(updatesToPersist).length > 0) {
+      await userRef.set(updatesToPersist, { merge: true }).catch(() => {});
+    }
+
+    return { 
+      sparks, 
+      plan, 
+      role,
+      subscription_expiry: expiry,
+      subscription_status: status,
+      subscription_start_date: startDate
+    };
   } catch (error) {
-    console.error(`Transaction failed for user ${uid}:`, error);
-    throw error;
+    console.warn(`Quota read fallback for user ${uid}:`, error);
+    const role = isAdminEmail(email) ? 'admin' : 'student';
+    return {
+      sparks: role === 'admin' ? 999999 : 20,
+      plan: role === 'admin' ? 'scholar' : 'free',
+      role
+    };
   }
 };
 
@@ -5643,6 +5646,23 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
     return res.status(500).json({ error: 'Database service unavailable.' });
   }
   await executeCoordinatedGenerationJob(app.firestore(), req.body, res);
+});
+
+app.get('/api/course/status/:courseId', verifyAuth, async (req, res) => {
+  const app = getAdminApp();
+  if (!app) {
+    return res.status(500).json({ error: 'Database service unavailable.' });
+  }
+  try {
+    const courseId = req.params.courseId;
+    const docSnap = await app.firestore().collection('courses').doc(courseId).get();
+    if (!docSnap.exists) {
+      return res.status(404).json({ error: 'Course not found' });
+    }
+    return res.json(docSnap.data());
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Failed to read course status' });
+  }
 });
 
 // --- Cancel Course Generation Job ---

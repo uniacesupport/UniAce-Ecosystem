@@ -1299,77 +1299,93 @@ export default function AdminDashboard() {
       const initData = await response.json();
       console.log('Coordinated generation started:', initData);
 
-      // Subscribe to real-time updates from Firestore Course Document
+      // Subscribe to real-time updates from Firestore Course Document + server status fallback
       const courseRef = doc(db, 'courses', courseId);
-      const keepAliveInterval = setInterval(() => {
-        if (isCancelledRef.current) {
+      let unsubscribe: () => void = () => {};
+      let isFinished = false;
+
+      const handleCourseStatusData = (data: any) => {
+        if (!data || isFinished || isCancelledRef.current) return;
+        if (data.generationProgress !== undefined) {
+          setGenerationProgress(data.generationProgress);
+        }
+        if (data.statusMessage) {
+          setStatusMessage(data.statusMessage);
+        }
+        setGenerationJobDetails({
+          currentModule: data.currentModule,
+          currentLesson: data.currentLesson,
+          completedLessons: data.completedLessons,
+          totalLessons: data.totalLessons,
+          activeProvider: data.activeProvider,
+          elapsedSeconds: data.elapsedSeconds
+        });
+
+        if (data.generationStatus === 'cancelled') {
+          isFinished = true;
+          clearInterval(keepAliveInterval);
+          unsubscribe();
+          setIsGeneratingQuick(false);
+          setGenerationStep('input');
+          showToast('Course generation was cancelled.', 'info');
+        } else if (data.generationStatus === 'completed') {
+          isFinished = true;
+          clearInterval(keepAliveInterval);
+          unsubscribe();
+          setIsGeneratingQuick(false);
+          setUploadSuccess(true);
+          setGenerationProgress(100);
+          showToast('Course generated successfully!', 'success');
+          refreshCourses();
+
+          // Reset fields after a delay
+          setTimeout(() => {
+            setGenerationStep('input');
+            setCourseSkeleton(null);
+            setQuickCourseName('');
+            setQuickCourseCode('');
+            setQuickCourseOutline('');
+            setGenerationProgress(0);
+            setUploadSuccess(false);
+          }, 3000);
+        } else if (data.generationStatus === 'failed') {
+          isFinished = true;
+          clearInterval(keepAliveInterval);
+          unsubscribe();
+          setIsGeneratingQuick(false);
+          setGenerationError(data.generationError || 'Generation failed on the server.');
+          setGenerationStep('error');
+          showToast('Failed to complete generation: ' + (data.generationError || 'Internal Error'), 'error');
+        }
+      };
+
+      const keepAliveInterval = setInterval(async () => {
+        if (isCancelledRef.current || isFinished) {
           clearInterval(keepAliveInterval);
           return;
         }
-        fetch('/api/health').catch(() => {});
-      }, 20000);
+        try {
+          const statusRes = await fetch(`/api/course/status/${encodeURIComponent(courseId)}`, {
+            headers: { 'Authorization': `Bearer ${idToken}` }
+          });
+          if (statusRes.ok) {
+            const statusData = await statusRes.json();
+            handleCourseStatusData(statusData);
+          }
+        } catch {
+          // Ignore transient polling error
+        }
+      }, 3000);
 
-      const unsubscribe = onSnapshot(courseRef, (snapshot) => {
-        if (isCancelledRef.current) {
+      unsubscribe = onSnapshot(courseRef, (snapshot) => {
+        if (isCancelledRef.current || isFinished) {
           clearInterval(keepAliveInterval);
           unsubscribe();
           return;
         }
-
-        const data = snapshot.data();
-        if (data) {
-          if (data.generationProgress !== undefined) {
-            setGenerationProgress(data.generationProgress);
-          }
-          if (data.statusMessage) {
-            setStatusMessage(data.statusMessage);
-          }
-          setGenerationJobDetails({
-            currentModule: data.currentModule,
-            currentLesson: data.currentLesson,
-            completedLessons: data.completedLessons,
-            totalLessons: data.totalLessons,
-            activeProvider: data.activeProvider,
-            elapsedSeconds: data.elapsedSeconds
-          });
-
-          if (data.generationStatus === 'cancelled') {
-            clearInterval(keepAliveInterval);
-            unsubscribe();
-            setIsGeneratingQuick(false);
-            setGenerationStep('input');
-            showToast('Course generation was cancelled.', 'info');
-          } else if (data.generationStatus === 'completed') {
-            clearInterval(keepAliveInterval);
-            unsubscribe();
-            setIsGeneratingQuick(false);
-            setUploadSuccess(true);
-            setGenerationProgress(100);
-            showToast('Course generated successfully!', 'success');
-            refreshCourses();
-
-            // Reset fields after a delay
-            setTimeout(() => {
-              setGenerationStep('input');
-              setCourseSkeleton(null);
-              setQuickCourseName('');
-              setQuickCourseCode('');
-              setQuickCourseOutline('');
-              setGenerationProgress(0);
-              setUploadSuccess(false);
-            }, 3000);
-          } else if (data.generationStatus === 'failed') {
-            clearInterval(keepAliveInterval);
-            unsubscribe();
-            setIsGeneratingQuick(false);
-            setGenerationError(data.generationError || 'Generation failed on the server.');
-            setGenerationStep('error');
-            showToast('Failed to complete generation: ' + (data.generationError || 'Internal Error'), 'error');
-          }
-        }
+        handleCourseStatusData(snapshot.data());
       }, (error) => {
-        clearInterval(keepAliveInterval);
-        console.error('Snapshot subscription error:', error);
+        console.warn('Snapshot subscription fallback to server polling:', error);
       });
 
     } catch (error: any) {

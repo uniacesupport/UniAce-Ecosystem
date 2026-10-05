@@ -1,9 +1,16 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { getFirestore, doc, getDocFromServer, initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from "firebase/firestore";
+import { initializeFirestore, memoryLocalCache, setLogLevel } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 import { getMessaging, isSupported } from "firebase/messaging";
 import firebaseConfig from "../firebase-applet-config.json";
+
+// Suppress internal @firebase/firestore WebChannel backoff/quota console.error spam
+try {
+  setLogLevel('silent');
+} catch {
+  // Ignore if unsupported
+}
 
 // Initialize app
 const app = initializeApp(firebaseConfig);
@@ -12,9 +19,9 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const storage = getStorage(app);
 
-// Initialize Firestore with offline caching to save quota!
+// Use memoryLocalCache so stale pending writes in IndexedDB are not endlessly replayed when daily write quota is exhausted
 const firestoreSettings = {
-  localCache: persistentLocalCache({tabManager: persistentMultipleTabManager()})
+  localCache: memoryLocalCache()
 };
 
 export const db = firebaseConfig.firestoreDatabaseId && 
@@ -22,18 +29,6 @@ export const db = firebaseConfig.firestoreDatabaseId &&
                   firebaseConfig.firestoreDatabaseId !== firebaseConfig.projectId
   ? initializeFirestore(app, firestoreSettings, firebaseConfig.firestoreDatabaseId)
   : initializeFirestore(app, firestoreSettings);
-
-// Connection test
-async function testConnection() {
-  console.log("Testing Firestore connection for project:", firebaseConfig.projectId);
-  try {
-    const testDoc = await getDocFromServer(doc(db, 'test', 'connection'));
-    console.log("Firestore connection test successful. Doc exists:", testDoc.exists());
-  } catch (error: any) {
-    console.error("Firestore connection test failed:", error.code, error.message);
-  }
-}
-testConnection();
 
 // Messaging (FCM) - only if supported in browser
 export const messaging = async () => {

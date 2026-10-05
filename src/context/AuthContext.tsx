@@ -147,7 +147,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             await new Promise(resolve => setTimeout(resolve, 1000));
             return fetchQuota(retries - 1);
           }
-          console.error("Failed to fetch quota from backend after retries", err);
+          console.warn("Quota fetch fallback to cached/default profile:", err);
           return false;
         }
       };
@@ -243,16 +243,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Remove undefined values to prevent Firebase errors
       Object.keys(dataToSave).forEach(key => dataToSave[key] === undefined && delete dataToSave[key]);
 
-      // Await setDoc to ensure the sessionId is updated before onSnapshot is attached
-      try {
-        await setDoc(userRef, dataToSave, { merge: true });
-        activeSessionIdRef.current = currentSessionId;
-        console.log("AuthContext: User active status updated in Firestore");
-      } catch (err) {
-        console.error("Error updating user active status:", err);
+      // Only write profile doc from client if it did not exist yet, and guard with timeout to preserve daily write quota
+      if (!userDoc.exists()) {
+        try {
+          await Promise.race([
+            setDoc(userRef, dataToSave, { merge: true }),
+            new Promise((resolve) => setTimeout(resolve, 2500))
+          ]);
+          activeSessionIdRef.current = currentSessionId;
+        } catch (err) {
+          console.warn("Skipping initial client profile write (handled by backend):", err);
+        }
+      } else {
+        activeSessionIdRef.current = userDoc.data().sessionId || currentSessionId;
       }
-
-      LogService.log('info', 'user', `User logged in: ${profileData.displayName}`, { uid: profileData.uid, email: profileData.email }).catch(console.error);
 
       setProfile(profileData);
       console.log("AuthContext: Profile synced successfully");

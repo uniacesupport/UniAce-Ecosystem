@@ -179,7 +179,6 @@ export function startMemoryMonitoringUtility(getActiveJobsCount: () => number): 
       recordBackendSystemLog('warning', 'system', summaryMsg, stats);
     } else {
       console.log(summaryMsg);
-      recordBackendSystemLog('info', 'system', summaryMsg, stats);
     }
   };
 

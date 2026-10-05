@@ -37,21 +37,10 @@ export function InstitutionProvider({ children }: { children: ReactNode }) {
         setDepartmentToFaculty(data.departmentToFaculty || INITIAL_MAP);
         setIsLoading(false);
       } else {
-        // Document doesn't exist, create it with initial constants
-        try {
-          await setDoc(docRef, {
-            departments: INITIAL_DEPARTMENTS,
-            faculties: INITIAL_FACULTIES,
-            departmentToFaculty: INITIAL_MAP
-          });
-        } catch (error) {
-          console.error("Failed to seed institution config:", error);
-          // Fallback to constants if setting fails (e.g. permission issues for non-admins)
-          setIsLoading(false);
-        }
+        setIsLoading(false);
       }
     }, (error) => {
-      console.error("Error listening to institution config:", error);
+      console.warn("Error listening to institution config:", error);
       setIsLoading(false); 
     });
 
