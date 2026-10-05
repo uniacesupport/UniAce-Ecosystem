@@ -214,9 +214,15 @@ async function resilientEmbedContent(genAI: any, params: any) {
   });
 }
 
+// Unique instance ID for distributed transactional leases across Cloud Run scale-out
+const WORKER_INSTANCE_ID = `worker_${crypto.randomBytes(6).toString('hex')}_${Date.now().toString(36)}`;
+
 // In-memory cancellation and active worker trackers for server jobs
 const activeCancelledJobs = new Set<string>();
 const activeRunningCourseJobs = new Set<string>();
+
+// Concurrency Hysteresis State Tracker
+let currentHysteresisConcurrency = 2;
 
 function getDynamicRuntimeResources(requestedProvider?: string) {
   const liveMem = getLiveMemoryTelemetry(activeRunningCourseJobs.size);
@@ -226,11 +232,26 @@ function getDynamicRuntimeResources(requestedProvider?: string) {
 
   const normReq = (requestedProvider || '').toLowerCase();
   const isRateConstrainedProvider = normReq.includes('groq') || normReq.includes('openrouter');
-  const concurrencyLimit = (effectiveHeadroom < 0.30 || isRateConstrainedProvider)
-    ? 1
-    : Math.min(cpuCores, Math.max(1, Math.round(effectiveHeadroom * 3)));
 
-  // Dynamically scale chunk size and indexing delay based on live heap headroom and content volume
+  // Hysteresis calculation: scale down below 35% headroom, scale up above 50% headroom
+  let targetConcurrency = currentHysteresisConcurrency;
+  if (effectiveHeadroom < 0.35 || isRateConstrainedProvider) {
+    targetConcurrency = 1;
+  } else if (effectiveHeadroom > 0.50 && currentHysteresisConcurrency < Math.min(cpuCores, 2)) {
+    targetConcurrency = Math.min(cpuCores, 2);
+  }
+
+  if (targetConcurrency !== currentHysteresisConcurrency) {
+    console.log(`[Concurrency Manager] Hysteresis transition: Concurrency ${currentHysteresisConcurrency} -> ${targetConcurrency} (Headroom: ${Math.round(effectiveHeadroom * 100)}%)`);
+    recordBackendSystemLog(
+      'info',
+      'system',
+      `[Concurrency Manager] Concurrency scaled ${currentHysteresisConcurrency} -> ${targetConcurrency} (Effective Headroom: ${Math.round(effectiveHeadroom * 100)}%)`,
+      { previousConcurrency: currentHysteresisConcurrency, newConcurrency: targetConcurrency, effectiveHeadroom, heapUsedMB: liveMem.heapUsedMB }
+    );
+    currentHysteresisConcurrency = targetConcurrency;
+  }
+
   const dynamicIndexingDelayMs = effectiveHeadroom < 0.35 ? 1500 : 150;
 
   return {
@@ -239,30 +260,44 @@ function getDynamicRuntimeResources(requestedProvider?: string) {
     availableHeapBytes: liveMem.availableHeapMB * 1024 * 1024,
     availableHeapRatio,
     effectiveHeadroom,
-    concurrencyLimit,
+    concurrencyLimit: currentHysteresisConcurrency,
     dynamicIndexingDelayMs
   };
 }
 
-// Asynchronous decoupled knowledge base indexer with dynamic memory adaptation
-function triggerAsyncLessonEmbedding(
-  db: admin.firestore.Firestore,
-  courseId: string,
-  moduleTitle: string,
-  lessonTitle: string,
-  lessonContent: string
-) {
-  const { dynamicIndexingDelayMs, availableHeapRatio } = getDynamicRuntimeResources();
-  const dynamicChunkSize = Math.max(600, Math.min(1600, Math.round(lessonContent.length / Math.max(2, Math.ceil(lessonContent.length / (availableHeapRatio > 0.5 ? 1200 : 800))))));
-  const dynamicOverlap = Math.max(60, Math.round(dynamicChunkSize * 0.1));
+// Bounded Async Knowledge Base Embedding Queue (Max 1 concurrent worker)
+interface EmbeddingTask {
+  db: admin.firestore.Firestore;
+  courseId: string;
+  moduleTitle: string;
+  lessonTitle: string;
+  lessonContent: string;
+}
 
-  setTimeout(async () => {
+const asyncEmbeddingQueue: EmbeddingTask[] = [];
+let isEmbeddingQueueWorkerActive = false;
+
+async function processEmbeddingQueueWorker() {
+  if (isEmbeddingQueueWorkerActive || asyncEmbeddingQueue.length === 0) return;
+  isEmbeddingQueueWorkerActive = true;
+
+  while (asyncEmbeddingQueue.length > 0) {
+    const task = asyncEmbeddingQueue.shift();
+    if (!task || !task.lessonContent) continue;
+
     try {
+      const { availableHeapRatio } = getDynamicRuntimeResources();
+      const dynamicChunkSize = Math.max(600, Math.min(1600, Math.round(task.lessonContent.length / Math.max(2, Math.ceil(task.lessonContent.length / (availableHeapRatio > 0.5 ? 1200 : 800))))));
+      const dynamicOverlap = Math.max(60, Math.round(dynamicChunkSize * 0.1));
+
       const apiKey = await globalGeminiDirectProvider.getApiKey().catch(() => process.env.GEMINI_API_KEY || '');
-      if (!apiKey || !lessonContent) return;
-      const chunks = chunkText(lessonContent, dynamicChunkSize, dynamicOverlap);
-      const kbBatch = db.batch();
-      const kbRef = db.collection('knowledge_base');
+      if (!apiKey) continue;
+
+      const chunks = chunkText(task.lessonContent, dynamicChunkSize, dynamicOverlap);
+      if (chunks.length === 0) continue;
+
+      const kbBatch = task.db.batch();
+      const kbRef = task.db.collection('knowledge_base');
       const genAI = new GoogleGenAI({ apiKey });
 
       for (const chunk of chunks) {
@@ -276,34 +311,46 @@ function triggerAsyncLessonEmbedding(
             const docRef = kbRef.doc();
             kbBatch.set(docRef, sanitizeForFirestore({
               content: chunk,
-              course_code: courseId,
-              module_name: moduleTitle,
-              topic_name: lessonTitle,
+              course_code: task.courseId,
+              module_name: task.moduleTitle,
+              topic_name: task.lessonTitle,
               embedding: admin.firestore.VectorValue.fromArray(vector),
               createdAt: admin.firestore.FieldValue.serverTimestamp()
             }));
           }
         } catch {
-          // Individual chunk indexing failure is non-fatal
+          // Individual chunk embedding failure is non-fatal
         }
       }
       await kbBatch.commit();
-      console.log(`[Async Indexing] Indexed ${chunks.length} chunks for "${lessonTitle}" in ${courseId}`);
-      recordBackendSystemLog('success', 'system', `Indexed ${chunks.length} knowledge base chunks for "${lessonTitle}" (${courseId})`, {
-        courseId,
-        moduleTitle,
-        lessonTitle,
+      console.log(`[Bounded Embedding Queue] Indexed ${chunks.length} chunks for "${task.lessonTitle}" in ${task.courseId}`);
+      recordBackendSystemLog('success', 'system', `Indexed ${chunks.length} knowledge base chunks for "${task.lessonTitle}" (${task.courseId})`, {
+        courseId: task.courseId,
+        moduleTitle: task.moduleTitle,
+        lessonTitle: task.lessonTitle,
         chunksCount: chunks.length,
-        dynamicChunkSize
+        remainingInQueue: asyncEmbeddingQueue.length
       });
     } catch (err: any) {
-      console.warn(`[Async Indexing] Deferred indexing notice for "${lessonTitle}":`, err?.message || err);
-      recordBackendSystemLog('warning', 'system', `Deferred knowledge base indexing for "${lessonTitle}" (${courseId}): ${err?.message || err}`, {
-        courseId,
-        lessonTitle
-      });
+      console.warn(`[Bounded Embedding Queue] Deferred indexing notice for "${task.lessonTitle}":`, err?.message || err);
     }
-  }, dynamicIndexingDelayMs);
+
+    // Space out embedding tasks by 200ms to preserve API quotas and CPU headroom
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+
+  isEmbeddingQueueWorkerActive = false;
+}
+
+function triggerAsyncLessonEmbedding(
+  db: admin.firestore.Firestore,
+  courseId: string,
+  moduleTitle: string,
+  lessonTitle: string,
+  lessonContent: string
+) {
+  asyncEmbeddingQueue.push({ db, courseId, moduleTitle, lessonTitle, lessonContent });
+  processEmbeddingQueueWorker().catch(err => console.warn('Embedding worker error:', err));
 }
 
 // --- Telemetry Helper ---
@@ -1838,7 +1885,7 @@ async function findRelevantChunks(query: string, courseCode: string | null): Pro
   }
 }
 
-function chunkText(text: string, chunkSize: number = 1000, chunkOverlap: number = 100): string[] {
+export function chunkText(text: string, chunkSize: number = 1000, chunkOverlap: number = 100): string[] {
   if (!text) return [];
   const chunks: string[] = [];
   let i = 0;
@@ -4860,24 +4907,66 @@ async function executeCoordinatedGenerationJob(
   const rawDept = (department || '').trim();
 
   try {
-    // Idempotency & Concurrent Job Guard (only skip if actively running in THIS server process)
-    const existingDoc = await db.collection('courses').doc(courseId).get();
-    if (existingDoc.exists) {
-      const existingData = existingDoc.data();
-      if (existingData?.generationStatus === 'generating' && activeRunningCourseJobs.has(courseId)) {
-        const lastUpdated = existingData.updatedAt ? new Date(existingData.updatedAt).getTime() : 0;
-        if (Date.now() - lastUpdated < 120000) {
-          console.log(`[Coordinated Gen] Job for course ${courseId} is already actively running in memory. Returning started status.`);
-          if (res) return res.json({ status: 'started', courseId, alreadyRunning: true });
-          return;
+    const courseRef = db.collection('courses').doc(courseId);
+    let attemptsCount = 1;
+
+    // Transactional Lease Claim & Crash Loop Guard
+    const leaseClaimed = await db.runTransaction(async (transaction) => {
+      const docSnap = await transaction.get(courseRef);
+      if (docSnap.exists) {
+        const data = docSnap.data();
+        attemptsCount = (data?.generationAttempts || 0) + 1;
+        const currentOwner = data?.leaseOwner;
+        const lastHeartbeat = data?.leaseHeartbeat || 0;
+        const isStale = (Date.now() - lastHeartbeat) > 30000;
+
+        // Crash Loop Guard: Stop auto-resume if process crashed 3+ times on this job
+        if (attemptsCount > 3 && data?.generationStatus !== 'completed') {
+          transaction.set(courseRef, {
+            generationStatus: 'failed',
+            statusMessage: 'CRASH_LOOP_GUARD_EXCEEDED: Course generation attempted 3 times without completion. Auto-resume halted to prevent crash loop.',
+            generationError: 'CRASH_LOOP_GUARD_EXCEEDED',
+            updatedAt: new Date().toISOString()
+          }, { merge: true });
+          throw new Error(`CRASH_LOOP_GUARD_EXCEEDED: Job ${courseId} failed ${attemptsCount - 1} prior attempts.`);
+        }
+
+        if (data?.generationStatus === 'generating' && currentOwner && currentOwner !== WORKER_INSTANCE_ID && !isStale) {
+          console.log(`[Distributed Lock] Job ${courseId} is currently owned by active worker ${currentOwner} (heartbeat ${Math.round((Date.now() - lastHeartbeat) / 1000)}s ago). Bailing.`);
+          return false;
         }
       }
+
+      transaction.set(courseRef, {
+        leaseOwner: WORKER_INSTANCE_ID,
+        leaseHeartbeat: Date.now(),
+        generationAttempts: attemptsCount
+      }, { merge: true });
+
+      return true;
+    }).catch((leaseErr: any) => {
+      if (leaseErr?.message?.includes('CRASH_LOOP_GUARD_EXCEEDED')) {
+        recordBackendSystemLog(
+          'error',
+          'ai',
+          `Crash loop guard triggered for course ${courseId}: ${leaseErr.message}`,
+          { courseId, attempts: attemptsCount }
+        );
+      }
+      return false;
+    });
+
+    if (!leaseClaimed) {
+      if (res && !res.headersSent) {
+        return res.json({ status: 'started', courseId, alreadyOwned: true });
+      }
+      return;
     }
 
-    const isResume = req.body.resume === true || (existingDoc.exists && existingDoc.data()?.generationStatus === 'generating' && !activeRunningCourseJobs.has(courseId));
+    const isResume = req.body.resume === true || (existingDoc.exists && existingDoc.data()?.generationStatus === 'generating');
 
     // 1. Initialize Course document in Firestore with 'generating' status
-    await db.collection('courses').doc(courseId).set({
+    await courseRef.set({
       id: courseId,
       title: courseName,
       description: courseDescription || `A comprehensive university course on ${courseName}.`,
@@ -4900,22 +4989,27 @@ async function executeCoordinatedGenerationJob(
     }, { merge: true });
 
     // 2. Respond immediately to the client if invoked via HTTP
-    if (res) {
-      res.json({ status: 'started', courseId, resumed: isResume });
+    if (res && !res.headersSent) {
+      res.json({ status: 'started', courseId, resumed: isResume, leaseOwner: WORKER_INSTANCE_ID });
     }
 
     activeRunningCourseJobs.add(courseId);
     activeCancelledJobs.delete(courseId);
 
+    // Lease Heartbeat Timer (updates heartbeat every 10s to hold distributed lease)
+    const leaseHeartbeatTimer = setInterval(() => {
+      courseRef.update({ leaseHeartbeat: Date.now() }).catch(() => {});
+    }, 10000);
+
     // 3. Fire asynchronous background generation worker
     (async () => {
       try {
-        console.log(`[Coordinated Gen] Starting background worker for course ${courseId} (${rawDept})${isResume ? ' [RESUME MODE]' : ''}...`);
+        console.log(`[Coordinated Gen] Starting background worker [Worker ID: ${WORKER_INSTANCE_ID}] for course ${courseId} (${rawDept})${isResume ? ' [RESUME MODE]' : ''}...`);
         recordBackendSystemLog(
           'info',
           'ai',
-          `${isResume ? 'Resumed' : 'Started'} coordinated course generation for ${courseId} (${courseName})`,
-          { courseId, courseName, department: rawDept, provider: requestedProvider || 'auto', isResume }
+          `${isResume ? 'Resumed' : 'Started'} coordinated course generation for ${courseId} (${courseName}) [Worker: ${WORKER_INSTANCE_ID}]`,
+          { courseId, courseName, department: rawDept, provider: requestedProvider || 'auto', isResume, workerId: WORKER_INSTANCE_ID }
         );
 
         if (!isResume) {
@@ -5164,12 +5258,15 @@ async function executeCoordinatedGenerationJob(
               const topic = topics[lIndex];
               const lessonId = `m${mIndex + 1}-l${lIndex + 1}`;
 
-              // Idempotent resumption check: if lesson already generated, reuse it
+              // Idempotent resumption check: reuse ONLY if lesson exists, content length > 200, syntax is valid, and promptVersion matches
               const existingLessonSnap = await db.collection('courses').doc(courseId).collection('modules').doc(moduleId).collection('lessons').doc(lessonId).get().catch(() => null);
               if (existingLessonSnap && existingLessonSnap.exists) {
                 const existingData = existingLessonSnap.data();
-                if (existingData?.content && existingData.content.length > 200) {
-                  console.log(`[Coordinated Gen] Lesson "${topic}" already exists. Reusing.`);
+                const isValidSyntax = existingData?.content ? validateLessonSyntax(existingData.content, domainBrief.pedagogyType).isValid : false;
+                const isMatchingVersion = existingData?.promptVersion === 'uniace-curriculum-v2.0';
+
+                if (existingData?.content && existingData.content.length > 200 && isValidSyntax && isMatchingVersion) {
+                  console.log(`[Coordinated Gen] Lesson "${topic}" exists, schema-validated & version-matched (${existingData.promptVersion}). Reusing.`);
                   completedLessonsCount++;
                   const resumeElapsed = Math.round((Date.now() - jobStartTime) / 1000);
                   const resumePct = Math.min(95, 15 + Math.round((completedLessonsCount / Math.max(1, totalLessonsCount)) * 75));
@@ -5184,6 +5281,8 @@ async function executeCoordinatedGenerationJob(
                     updatedAt: new Date().toISOString()
                   }).catch(() => {});
                   continue;
+                } else {
+                  console.warn(`[Coordinated Gen] Existing lesson "${topic}" failed validation or prompt version check. Regenerating.`);
                 }
               }
 
@@ -5275,12 +5374,14 @@ async function executeCoordinatedGenerationJob(
                 throw new Error(`Zero-Fallback Policy: Generated lesson content for "${topic}" is incomplete or empty.`);
               }
 
-              // Save lesson immediately with provenance
+              // Save lesson immediately with provenance and version metadata
               await db.collection('courses').doc(courseId).collection('modules').doc(moduleId).collection('lessons').doc(lessonId).set({
                 title: lessonTitle,
                 content: lessonContent,
                 order: lIndex + 1,
                 provider: requestedProvider || 'auto',
+                promptVersion: 'uniace-curriculum-v2.0',
+                audienceHash: crypto.createHash('md5').update(`${courseId}_${academicStandard}_${domainBrief.primaryDomain}`).digest('hex'),
                 generatedAt: new Date().toISOString()
               });
 
@@ -5482,7 +5583,9 @@ Return strictly a JSON object:
           updatedAt: new Date().toISOString()
         }).catch(() => {});
       } finally {
+        clearInterval(leaseHeartbeatTimer);
         activeRunningCourseJobs.delete(courseId);
+        courseRef.update({ leaseOwner: null, leaseHeartbeat: 0 }).catch(() => {});
       }
     })();
 
