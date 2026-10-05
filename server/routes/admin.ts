@@ -3,80 +3,11 @@ import admin from 'firebase-admin';
 import { MailService } from '../mailService';
 import { GoogleGenAI } from '@google/genai';
 import { fetchProviderModels } from '../modelDiscovery';
+import { recordBackendSystemLog } from '../memoryMonitor';
 
 export function setupAdminRoutes(app: express.Express, verifyAuth: any, getAdminApp: any, isAdminEmail: any) {
-  
-  // 1. Admin System Health Probe Endpoint (Real Diagnostics)
-  app.get('/api/admin/system-health', verifyAuth, async (req, res) => {
-    const user = (req as any).user;
-    const adminApp = getAdminApp();
-    if (!adminApp) return res.status(503).json({ error: 'Firebase not initialized' });
 
-    try {
-      const userDoc = await adminApp.firestore().collection('users').doc(user.uid).get();
-      const userData = userDoc.data();
-      const isAdmin = userData?.role === 'admin' || isAdminEmail(user.email);
-      if (!isAdmin) return res.status(403).json({ error: 'Forbidden: Admin access required' });
-
-      // Probe 1: Firestore Read/Write Latency
-      const dbStart = Date.now();
-      const testDocRef = adminApp.firestore().collection('system_config').doc('health_probe');
-      await testDocRef.set({ lastPing: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
-      const dbLatencyMs = Date.now() - dbStart;
-
-      // Probe 2: SMTP Mail Connection
-      const mailStatus = await MailService.verifyConnection();
-
-      // Probe 3: RAG Knowledge Base Index
-      let totalKbChunks = 0;
-      try {
-        const kbSnap = await adminApp.firestore().collection('kb_chunks').limit(100).get();
-        totalKbChunks = kbSnap.size;
-      } catch (e) {
-        console.warn('Could not query kb_chunks size:', e);
-      }
-
-      // Probe 4: Active AI Providers
-      const hasGeminiKey = !!process.env.GEMINI_API_KEY;
-      const hasGroqKey = !!process.env.GROQ_API_KEY;
-      const hasNvidiaKey = !!process.env.NVIDIA_API_KEY;
-      const hasMistralKey = !!process.env.MISTRAL_API_KEY;
-
-      const healthReport = {
-        status: 'healthy',
-        timestamp: new Date().toISOString(),
-        database: {
-          status: 'operational',
-          latencyMs: dbLatencyMs,
-          engine: 'Google Cloud Firestore'
-        },
-        aiEngine: {
-          status: (hasGeminiKey || hasGroqKey || hasNvidiaKey) ? 'operational' : 'degraded',
-          availableProviders: [
-            hasGeminiKey && 'Gemini 2.0 Flash',
-            hasGroqKey && 'Groq (Llama-3)',
-            hasNvidiaKey && 'NVIDIA NIM (Nemotron)',
-            hasMistralKey && 'Mistral Direct'
-          ].filter(Boolean)
-        },
-        ragIndex: {
-          status: 'operational',
-          cachedChunks: totalKbChunks > 0 ? `${totalKbChunks}+ indexed chunks` : 'Active / Ready for ingestion'
-        },
-        emailService: {
-          status: mailStatus.configured && mailStatus.connected ? 'operational' : 'configured',
-          details: mailStatus
-        }
-      };
-
-      res.json(healthReport);
-    } catch (error: any) {
-      console.error('System Health Check Error:', error);
-      res.status(500).json({ error: error.message || 'Health probe failed' });
-    }
-  });
-
-  // 2. Dynamic AI Lesson Remediation Endpoint (For High-Struggle Subtopics)
+  // 1. Dynamic AI Lesson Remediation Endpoint (For High-Struggle Subtopics)
   app.post('/api/admin/remediate-lesson', verifyAuth, async (req, res) => {
     const user = (req as any).user;
     const adminApp = getAdminApp();
@@ -93,10 +24,9 @@ export function setupAdminRoutes(app: express.Express, verifyAuth: any, getAdmin
         return res.status(400).json({ error: 'subTopicTitle is required' });
       }
 
-      // Generate deep academic rewrite using Gemini SDK
       const apiKey = process.env.GEMINI_API_KEY;
       if (!apiKey) {
-        return res.status(500).json({ error: 'Server AI key not configured' });
+        return res.status(503).json({ error: 'GEMINI_API_KEY is not configured on the server' });
       }
 
       const ai = new GoogleGenAI({ apiKey });
@@ -124,18 +54,18 @@ Include 3 multiple-choice conceptual questions with step-by-step verified explan
         contents: prompt,
       });
 
-      const remediatedContent = response.text || 'Remediation completed.';
+      const remediatedContent = (response.text || '').trim();
+      if (!remediatedContent) {
+        return res.status(502).json({ error: 'Zero-Fallback Policy: Provider returned empty remediation content' });
+      }
 
-      // Log the remediation action to Firestore system_logs
-      await adminApp.firestore().collection('system_logs').add({
-        level: 'info',
-        category: 'academic_remediation',
-        message: `Admin remediated high-struggle lesson "${subTopicTitle}" (Module: ${moduleTitle || 'General'})`,
-        subTopicId: subTopicId || null,
-        courseId: courseId || null,
-        adminEmail: user.email,
-        timestamp: admin.firestore.FieldValue.serverTimestamp()
-      });
+      await recordBackendSystemLog(
+        'success',
+        'ai',
+        `Admin remediated high-struggle lesson "${subTopicTitle}" (Module: ${moduleTitle || 'General'})`,
+        { subTopicId: subTopicId || null, courseId: courseId || null, moduleId: moduleId || null, struggleCount: struggleCount || 1 },
+        { uid: user.uid, email: user.email }
+      );
 
       res.json({
         success: true,
@@ -145,41 +75,18 @@ Include 3 multiple-choice conceptual questions with step-by-step verified explan
       });
     } catch (error: any) {
       console.error('Lesson Remediation Error:', error);
+      await recordBackendSystemLog(
+        'error',
+        'ai',
+        `Lesson remediation failed for "${req.body?.subTopicTitle || 'unknown'}": ${error.message || error}`,
+        { error: error.message || String(error) },
+        { uid: user?.uid, email: user?.email }
+      );
       res.status(500).json({ error: error.message || 'Failed to remediate lesson' });
     }
   });
 
-  // 3. Broadcast History Endpoint
-  app.get('/api/admin/broadcast-history', verifyAuth, async (req, res) => {
-    const user = (req as any).user;
-    const adminApp = getAdminApp();
-    if (!adminApp) return res.status(503).json({ error: 'Firebase not initialized' });
-
-    try {
-      const userDoc = await adminApp.firestore().collection('users').doc(user.uid).get();
-      const userData = userDoc.data();
-      const isAdmin = userData?.role === 'admin' || isAdminEmail(user.email);
-      if (!isAdmin) return res.status(403).json({ error: 'Forbidden: Admin access required' });
-
-      const snap = await adminApp.firestore()
-        .collection('broadcast_history')
-        .orderBy('timestamp', 'desc')
-        .limit(50)
-        .get();
-
-      const broadcasts = snap.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-
-      res.json({ success: true, broadcasts, history: broadcasts });
-    } catch (error: any) {
-      console.error('Get Broadcast History Error:', error);
-      res.status(500).json({ error: error.message || 'Failed to fetch broadcast history' });
-    }
-  });
-
-  // 4. Send Broadcast & Log Endpoint
+  // 2. Send Broadcast & Log Endpoint
   app.post('/api/admin/send-broadcast', verifyAuth, async (req, res) => {
     const user = (req as any).user;
     const adminApp = getAdminApp();
@@ -196,7 +103,6 @@ Include 3 multiple-choice conceptual questions with step-by-step verified explan
         return res.status(400).json({ error: 'Subject and message are required' });
       }
 
-      // Query target recipients
       let query: admin.firestore.Query = adminApp.firestore().collection('users');
       if (faculty && faculty !== 'all') {
         query = query.where('faculty', '==', faculty);
@@ -212,7 +118,6 @@ Include 3 multiple-choice conceptual questions with step-by-step verified explan
         name: d.data().displayName || d.data().name || 'Student'
       })).filter(u => !!u.email);
 
-      // Record in broadcast_history
       const broadcastRef = await adminApp.firestore().collection('broadcast_history').add({
         subject,
         message,
@@ -223,10 +128,10 @@ Include 3 multiple-choice conceptual questions with step-by-step verified explan
         recipientCount: recipients.length,
         status: 'completed',
         sentBy: user.email,
-        timestamp: admin.firestore.FieldValue.serverTimestamp()
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+        createdAt: new Date().toISOString()
       });
 
-      // Also create in-app notifications for each recipient
       const batch = adminApp.firestore().batch();
       recipients.slice(0, 400).forEach(recipient => {
         const notifRef = adminApp.firestore().collection('users').doc(recipient.id).collection('notifications').doc();
@@ -240,6 +145,14 @@ Include 3 multiple-choice conceptual questions with step-by-step verified explan
       });
       await batch.commit();
 
+      await recordBackendSystemLog(
+        'success',
+        'admin',
+        `Dispatched broadcast "${subject}" to ${recipients.length} recipients`,
+        { broadcastId: broadcastRef.id, subject, channel: channel || 'email_and_app', recipientCount: recipients.length, faculty: faculty || 'All', department: department || 'All' },
+        { uid: user.uid, email: user.email }
+      );
+
       res.json({
         success: true,
         broadcastId: broadcastRef.id,
@@ -252,7 +165,7 @@ Include 3 multiple-choice conceptual questions with step-by-step verified explan
     }
   });
 
-  // 5. Server-Side AI Provider Benchmark Endpoint
+  // 3. Server-Side AI Provider Benchmark Endpoint (Strict Zero-Fallback Live Probing)
   app.post('/api/admin/benchmark', verifyAuth, async (req, res) => {
     const user = (req as any).user;
     const adminApp = getAdminApp();
@@ -265,35 +178,44 @@ Include 3 multiple-choice conceptual questions with step-by-step verified explan
       if (!isAdmin) return res.status(403).json({ error: 'Forbidden: Admin access required' });
 
       const { provider, customEndpoint, customApiKey, customModel } = req.body;
-      const startTime = Date.now();
       let status: 'online' | 'degraded' | 'offline' = 'online';
       let latencyMs = 0;
       let modelUsed = '';
       let textSample = '';
       let errorMsg = '';
 
-      if (provider === 'gemini_direct' || (!provider && process.env.GEMINI_API_KEY)) {
+      const apiKeysDoc = await adminApp.firestore().collection('system_settings').doc('api_keys').get();
+      const apiKeysData = apiKeysDoc.data() || {};
+      const getConfiguredKey = (prov: string, envKey?: string) => {
+        const list = apiKeysData[prov]?.keys?.map((k: any) => k.key).filter(Boolean);
+        return (list && list[0]) || envKey || '';
+      };
+
+      const targetProvider = (provider || 'gemini_direct').toLowerCase();
+
+      if (targetProvider === 'gemini_direct' || targetProvider === 'gemini') {
         try {
-          const apiKey = process.env.GEMINI_API_KEY;
+          const apiKey = getConfiguredKey('gemini_direct', process.env.GEMINI_API_KEY);
           if (!apiKey) throw new Error('GEMINI_API_KEY not configured');
           const ai = new GoogleGenAI({ apiKey });
-          modelUsed = 'gemini-2.5-flash';
+          modelUsed = apiKeysData.gemini_direct?.model || 'gemini-2.5-flash';
           const pStart = Date.now();
           const response = await ai.models.generateContent({
             model: modelUsed,
-            contents: 'Return one word: "Ready".',
+            contents: 'Respond with one word: Ready.',
           });
           latencyMs = Date.now() - pStart;
-          textSample = response.text?.slice(0, 50) || 'Ready';
+          textSample = (response.text || '').trim().slice(0, 50);
+          if (!textSample) throw new Error('Empty response from Gemini');
         } catch (e: any) {
           status = 'offline';
           errorMsg = e.message;
         }
-      } else if (provider === 'groq') {
+      } else if (targetProvider === 'groq') {
         try {
-          const apiKey = process.env.GROQ_API_KEY;
+          const apiKey = getConfiguredKey('groq', process.env.GROQ_API_KEY);
           if (!apiKey) throw new Error('GROQ_API_KEY not configured');
-          modelUsed = 'llama-3.3-70b-versatile';
+          modelUsed = apiKeysData.groq?.model || 'llama-3.3-70b-versatile';
           const pStart = Date.now();
           const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
             method: 'POST',
@@ -301,14 +223,109 @@ Include 3 multiple-choice conceptual questions with step-by-step verified explan
             body: JSON.stringify({ model: modelUsed, messages: [{ role: 'user', content: 'Say Ready' }], max_tokens: 5 })
           });
           latencyMs = Date.now() - pStart;
-          if (!r.ok) throw new Error(`Groq returned status ${r.status}`);
+          if (!r.ok) throw new Error(`Groq returned HTTP ${r.status}`);
           const d = await r.json();
-          textSample = d.choices?.[0]?.message?.content || 'Ready';
+          textSample = (d.choices?.[0]?.message?.content || '').trim();
         } catch (e: any) {
           status = 'offline';
           errorMsg = e.message;
         }
-      } else if (provider === 'custom' && customEndpoint) {
+      } else if (targetProvider === 'mistral_direct' || targetProvider === 'mistral') {
+        try {
+          const apiKey = getConfiguredKey('mistral_direct', process.env.MISTRAL_API_KEY);
+          if (!apiKey) throw new Error('MISTRAL_API_KEY not configured');
+          modelUsed = apiKeysData.mistral_direct?.model || 'mistral-small-latest';
+          const pStart = Date.now();
+          const r = await fetch('https://api.mistral.ai/v1/chat/completions', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model: modelUsed, messages: [{ role: 'user', content: 'Say Ready' }], max_tokens: 5 })
+          });
+          latencyMs = Date.now() - pStart;
+          if (!r.ok) throw new Error(`Mistral returned HTTP ${r.status}`);
+          const d = await r.json();
+          textSample = (d.choices?.[0]?.message?.content || '').trim();
+        } catch (e: any) {
+          status = 'offline';
+          errorMsg = e.message;
+        }
+      } else if (targetProvider === 'nvidia') {
+        try {
+          const apiKey = getConfiguredKey('nvidia', process.env.NVIDIA_API_KEY);
+          if (!apiKey) throw new Error('NVIDIA_API_KEY not configured');
+          modelUsed = apiKeysData.nvidia?.model || 'meta/llama-3.1-70b-instruct';
+          const pStart = Date.now();
+          const r = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model: modelUsed, messages: [{ role: 'user', content: 'Say Ready' }], max_tokens: 5 })
+          });
+          latencyMs = Date.now() - pStart;
+          if (!r.ok) throw new Error(`NVIDIA returned HTTP ${r.status}`);
+          const d = await r.json();
+          textSample = (d.choices?.[0]?.message?.content || '').trim();
+        } catch (e: any) {
+          status = 'offline';
+          errorMsg = e.message;
+        }
+      } else if (targetProvider === 'openrouter_free' || targetProvider === 'openrouter') {
+        try {
+          const apiKey = getConfiguredKey('openrouter_free', process.env.OPENROUTER_API_KEY);
+          if (!apiKey) throw new Error('OPENROUTER_API_KEY not configured');
+          modelUsed = apiKeysData.openrouter_free?.model || 'meta-llama/llama-3.3-70b-instruct:free';
+          const pStart = Date.now();
+          const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model: modelUsed, messages: [{ role: 'user', content: 'Say Ready' }], max_tokens: 5 })
+          });
+          latencyMs = Date.now() - pStart;
+          if (!r.ok) throw new Error(`OpenRouter returned HTTP ${r.status}`);
+          const d = await r.json();
+          textSample = (d.choices?.[0]?.message?.content || '').trim();
+        } catch (e: any) {
+          status = 'offline';
+          errorMsg = e.message;
+        }
+      } else if (targetProvider === 'cohere') {
+        try {
+          const apiKey = getConfiguredKey('cohere', process.env.COHERE_API_KEY);
+          if (!apiKey) throw new Error('COHERE_API_KEY not configured');
+          modelUsed = apiKeysData.cohere?.model || 'command-r-08-2024';
+          const pStart = Date.now();
+          const r = await fetch('https://api.cohere.com/v2/chat', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model: modelUsed, messages: [{ role: 'user', content: 'Say Ready' }], max_tokens: 5 })
+          });
+          latencyMs = Date.now() - pStart;
+          if (!r.ok) throw new Error(`Cohere returned HTTP ${r.status}`);
+          const d = await r.json();
+          textSample = (d.message?.content?.[0]?.text || '').trim();
+        } catch (e: any) {
+          status = 'offline';
+          errorMsg = e.message;
+        }
+      } else if (targetProvider === 'huggingface') {
+        try {
+          const apiKey = getConfiguredKey('huggingface', process.env.HUGGINGFACE_API_KEY);
+          if (!apiKey) throw new Error('HUGGINGFACE_API_KEY not configured');
+          modelUsed = apiKeysData.huggingface?.model || 'Qwen/Qwen2.5-72B-Instruct';
+          const pStart = Date.now();
+          const r = await fetch('https://router.huggingface.co/v1/chat/completions', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model: modelUsed, messages: [{ role: 'user', content: 'Say Ready' }], max_tokens: 5 })
+          });
+          latencyMs = Date.now() - pStart;
+          if (!r.ok) throw new Error(`HuggingFace returned HTTP ${r.status}`);
+          const d = await r.json();
+          textSample = (d.choices?.[0]?.message?.content || '').trim();
+        } catch (e: any) {
+          status = 'offline';
+          errorMsg = e.message;
+        }
+      } else if (targetProvider === 'custom' && customEndpoint) {
         try {
           const pStart = Date.now();
           const r = await fetch(customEndpoint, {
@@ -326,21 +343,27 @@ Include 3 multiple-choice conceptual questions with step-by-step verified explan
           latencyMs = Date.now() - pStart;
           if (!r.ok) throw new Error(`Endpoint returned status ${r.status}`);
           const d = await r.json();
-          textSample = d.choices?.[0]?.message?.content || 'Pong';
+          textSample = (d.choices?.[0]?.message?.content || '').trim();
           modelUsed = customModel || 'custom';
         } catch (e: any) {
           status = 'offline';
           errorMsg = e.message;
         }
       } else {
-        // Generic probe
-        latencyMs = Date.now() - startTime;
-        textSample = 'Operational';
-        modelUsed = provider || 'default';
+        status = 'offline';
+        errorMsg = `Unsupported or unconfigured provider: ${targetProvider}`;
       }
 
+      await recordBackendSystemLog(
+        status === 'online' ? 'info' : 'warning',
+        'ai',
+        `Admin benchmarked provider "${targetProvider}" (${modelUsed || 'N/A'}): ${status.toUpperCase()} (${latencyMs}ms)`,
+        { provider: targetProvider, status, latencyMs, model: modelUsed, error: errorMsg || null },
+        { uid: user.uid, email: user.email }
+      );
+
       res.json({
-        provider: provider || 'gemini_direct',
+        provider: targetProvider,
         status,
         latencyMs,
         latencyFormatted: `${latencyMs}ms`,
@@ -355,42 +378,7 @@ Include 3 multiple-choice conceptual questions with step-by-step verified explan
     }
   });
 
-  // 6. Dynamic System Alerts Feed
-  app.get('/api/admin/system-alerts', verifyAuth, async (req, res) => {
-    const user = (req as any).user;
-    const adminApp = getAdminApp();
-    if (!adminApp) return res.status(503).json({ error: 'Firebase not initialized' });
-
-    try {
-      const snap = await adminApp.firestore().collection('system_alerts')
-        .where('active', '==', true)
-        .limit(20)
-        .get();
-
-      let alerts = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      
-      // If no alerts, create standard auto-checks
-      if (alerts.length === 0) {
-        alerts = [
-          {
-            id: 'sys-health-ok',
-            title: 'All Core Subsystems Operational',
-            severity: 'info',
-            message: 'Firestore latency < 100ms. All AI routers active with high throughput.',
-            createdAt: new Date().toISOString(),
-            active: true
-          }
-        ];
-      }
-
-      res.json({ alerts });
-    } catch (error: any) {
-      console.error('System Alerts Error:', error);
-      res.status(500).json({ error: error.message || 'Failed to fetch system alerts' });
-    }
-  });
-
-  // 7. Admin Managed Password Reset Link
+  // 4. Admin Managed Password Reset Link
   app.post('/api/admin/reset-password', verifyAuth, async (req, res) => {
     const user = (req as any).user;
     const adminApp = getAdminApp();
@@ -407,22 +395,19 @@ Include 3 multiple-choice conceptual questions with step-by-step verified explan
 
       const resetLink = await adminApp.auth().generatePasswordResetLink(email);
 
-      // Attempt sending directly via MailService
       try {
         await MailService.sendDiagnosticTestEmail(email);
       } catch (mailErr) {
         console.warn('Direct email sending skipped:', mailErr);
       }
 
-      // Log admin audit
-      await adminApp.firestore().collection('system_logs').add({
-        level: 'warning',
-        category: 'auth_management',
-        message: `Admin initiated password reset for ${email}`,
-        targetEmail: email,
-        initiatedBy: user.email,
-        timestamp: admin.firestore.FieldValue.serverTimestamp()
-      });
+      await recordBackendSystemLog(
+        'warning',
+        'admin',
+        `Admin initiated password reset for ${email}`,
+        { targetEmail: email },
+        { uid: user.uid, email: user.email }
+      );
 
       res.json({
         success: true,
@@ -435,49 +420,7 @@ Include 3 multiple-choice conceptual questions with step-by-step verified explan
     }
   });
 
-  // 8. Log Rotation & Retention Cleanup
-  app.post('/api/admin/logs/cleanup', verifyAuth, async (req, res) => {
-    const user = (req as any).user;
-    const adminApp = getAdminApp();
-    if (!adminApp) return res.status(503).json({ error: 'Firebase not initialized' });
-
-    try {
-      const userDoc = await adminApp.firestore().collection('users').doc(user.uid).get();
-      const userData = userDoc.data();
-      const isAdmin = userData?.role === 'admin' || isAdminEmail(user.email);
-      if (!isAdmin) return res.status(403).json({ error: 'Forbidden: Admin access required' });
-
-      const { daysToKeep = 30 } = req.body;
-      const cutoffDate = new Date();
-      cutoffDate.setDate(cutoffDate.getDate() - Number(daysToKeep));
-
-      const oldLogsSnap = await adminApp.firestore().collection('system_logs')
-        .where('timestamp', '<', cutoffDate)
-        .limit(200)
-        .get();
-
-      if (oldLogsSnap.empty) {
-        return res.json({ success: true, deletedCount: 0, message: `No logs older than ${daysToKeep} days found.` });
-      }
-
-      const batch = adminApp.firestore().batch();
-      oldLogsSnap.docs.forEach(doc => {
-        batch.delete(doc.ref);
-      });
-      await batch.commit();
-
-      res.json({
-        success: true,
-        deletedCount: oldLogsSnap.size,
-        message: `Purged ${oldLogsSnap.size} system logs older than ${daysToKeep} days.`
-      });
-    } catch (error: any) {
-      console.error('Log Cleanup Error:', error);
-      res.status(500).json({ error: error.message || 'Failed to clean up logs' });
-    }
-  });
-
-  // 9. System Config Endpoints (GET & POST)
+  // 5. System Config Endpoints (GET & POST)
   app.get('/api/admin/config', verifyAuth, async (req, res) => {
     const user = (req as any).user;
     const adminApp = getAdminApp();
@@ -490,23 +433,7 @@ Include 3 multiple-choice conceptual questions with step-by-step verified explan
       if (!isAdmin) return res.status(403).json({ error: 'Forbidden: Admin access required' });
 
       const configDoc = await adminApp.firestore().collection('system_config').doc('general').get();
-      const defaultConfig = {
-        platformName: 'UniAce Mastery Hub',
-        maintenanceMode: false,
-        allowRegistrations: true,
-        defaultSparks: 50,
-        maxDailySparks: 1000,
-        aiModelDefault: 'groq',
-        sparkCostPerQuery: 1,
-        broadcastBanner: '',
-        requireEmailVerification: false
-      };
-
-      if (configDoc.exists) {
-        res.json({ ...defaultConfig, ...configDoc.data() });
-      } else {
-        res.json(defaultConfig);
-      }
+      res.json(configDoc.exists ? configDoc.data() : {});
     } catch (error: any) {
       console.error('Fetch System Config Error:', error);
       res.status(500).json({ error: error.message || 'Failed to fetch system config' });
@@ -531,6 +458,14 @@ Include 3 multiple-choice conceptual questions with step-by-step verified explan
         updatedBy: user.email || user.uid
       }, { merge: true });
 
+      await recordBackendSystemLog(
+        'info',
+        'admin',
+        `Updated general system configuration`,
+        { updatedKeys: Object.keys(updates || {}) },
+        { uid: user.uid, email: user.email }
+      );
+
       res.json({ success: true, message: 'System config updated successfully' });
     } catch (error: any) {
       console.error('Update System Config Error:', error);
@@ -538,7 +473,7 @@ Include 3 multiple-choice conceptual questions with step-by-step verified explan
     }
   });
 
-  // 10. Live AI Provider Model Discovery Endpoint
+  // 6. Live AI Provider Model Discovery Endpoint
   app.post('/api/admin/fetch-provider-models', verifyAuth, async (req, res) => {
     const user = (req as any).user;
     const adminApp = getAdminApp();
@@ -562,6 +497,14 @@ Include 3 multiple-choice conceptual questions with step-by-step verified explan
         forceRefresh === true || forceRefresh === 'true'
       );
 
+      await recordBackendSystemLog(
+        'info',
+        'ai',
+        `Discovered ${models.length} live models for provider "${provider}" (cached: ${!!cached})`,
+        { provider, count: models.length, cached: !!cached },
+        { uid: user.uid, email: user.email }
+      );
+
       res.json({
         success: true,
         provider,
@@ -579,6 +522,7 @@ Include 3 multiple-choice conceptual questions with step-by-step verified explan
     }
   });
 }
+
 
 
 

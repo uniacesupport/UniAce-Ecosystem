@@ -48,17 +48,19 @@ export const LogService = {
 
   async getLogs(count: number = 100, category?: string) {
     try {
-      let q = query(collection(db, 'system_logs'), orderBy('timestamp', 'desc'), limit(count));
-      
-      if (category && category !== 'all') {
-        q = query(collection(db, 'system_logs'), where('category', '==', category), orderBy('timestamp', 'desc'), limit(count));
-      }
+      const fetchLimit = category && category !== 'all' ? Math.max(count * 3, 300) : count;
+      const q = query(collection(db, 'system_logs'), orderBy('timestamp', 'desc'), limit(fetchLimit));
 
       const querySnapshot = await getDocs(q);
-      return querySnapshot.docs.map(doc => ({
+      const allLogs = querySnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       })) as SystemLog[];
+
+      if (category && category !== 'all') {
+        return allLogs.filter(l => l.category === category).slice(0, count);
+      }
+      return allLogs.slice(0, count);
     } catch (error) {
       console.error('Failed to fetch system logs:', error);
       return [];
@@ -66,18 +68,18 @@ export const LogService = {
   },
 
   subscribeToLogs(callback: (logs: SystemLog[]) => void, count: number = 100, category?: string) {
-    let q = query(collection(db, 'system_logs'), orderBy('timestamp', 'desc'), limit(count));
-    
-    if (category && category !== 'all') {
-      q = query(collection(db, 'system_logs'), where('category', '==', category), orderBy('timestamp', 'desc'), limit(count));
-    }
+    const fetchLimit = category && category !== 'all' ? Math.max(count * 3, 300) : count;
+    const q = query(collection(db, 'system_logs'), orderBy('timestamp', 'desc'), limit(fetchLimit));
 
     return onSnapshot(q, (snapshot) => {
-      const logs = snapshot.docs.map(doc => ({
+      const allLogs = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       })) as SystemLog[];
-      callback(logs);
+      const filtered = category && category !== 'all'
+        ? allLogs.filter(l => l.category === category).slice(0, count)
+        : allLogs.slice(0, count);
+      callback(filtered);
     }, (error) => {
       console.error('Failed to subscribe to logs:', error);
     });

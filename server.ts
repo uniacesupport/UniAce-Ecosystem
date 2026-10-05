@@ -11,6 +11,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 import crypto from 'crypto';
+import v8 from 'v8';
+import os from 'os';
 import rateLimit from 'express-rate-limit';
 import { jsonrepair } from 'jsonrepair';
 import { z } from 'zod';
@@ -28,6 +30,7 @@ import { GeminiDirectProvider, MistralProvider, GroqProvider, CohereProvider, Hu
 import { getCachedResponse, setCachedResponse } from './server/cache';
 import { MailService } from './server/mailService';
 import { telemetry } from './server/telemetry';
+import { getLiveMemoryTelemetry, recordBackendSystemLog, startMemoryMonitoringUtility } from './server/memoryMonitor';
 import academicRouter from './server/routes/academic.js';
 import { 
   DomainBriefSchema,
@@ -211,10 +214,37 @@ async function resilientEmbedContent(genAI: any, params: any) {
   });
 }
 
-// In-memory cancellation tracker for server jobs
+// In-memory cancellation and active worker trackers for server jobs
 const activeCancelledJobs = new Set<string>();
+const activeRunningCourseJobs = new Set<string>();
 
-// Asynchronous decoupled knowledge base indexer
+function getDynamicRuntimeResources(requestedProvider?: string) {
+  const liveMem = getLiveMemoryTelemetry(activeRunningCourseJobs.size);
+  const availableHeapRatio = Math.max(0, 1 - liveMem.heapUtilizationPct / 100);
+  const effectiveHeadroom = liveMem.effectiveHeadroomRatio;
+  const cpuCores = liveMem.cpuCount;
+
+  const normReq = (requestedProvider || '').toLowerCase();
+  const isRateConstrainedProvider = normReq.includes('groq') || normReq.includes('openrouter');
+  const concurrencyLimit = (effectiveHeadroom < 0.30 || isRateConstrainedProvider)
+    ? 1
+    : Math.min(cpuCores, Math.max(1, Math.round(effectiveHeadroom * 3)));
+
+  // Dynamically scale chunk size and indexing delay based on live heap headroom and content volume
+  const dynamicIndexingDelayMs = effectiveHeadroom < 0.35 ? 1500 : 150;
+
+  return {
+    heapLimit: liveMem.heapLimitMB * 1024 * 1024,
+    usedHeap: liveMem.heapUsedMB * 1024 * 1024,
+    availableHeapBytes: liveMem.availableHeapMB * 1024 * 1024,
+    availableHeapRatio,
+    effectiveHeadroom,
+    concurrencyLimit,
+    dynamicIndexingDelayMs
+  };
+}
+
+// Asynchronous decoupled knowledge base indexer with dynamic memory adaptation
 function triggerAsyncLessonEmbedding(
   db: admin.firestore.Firestore,
   courseId: string,
@@ -222,11 +252,15 @@ function triggerAsyncLessonEmbedding(
   lessonTitle: string,
   lessonContent: string
 ) {
+  const { dynamicIndexingDelayMs, availableHeapRatio } = getDynamicRuntimeResources();
+  const dynamicChunkSize = Math.max(600, Math.min(1600, Math.round(lessonContent.length / Math.max(2, Math.ceil(lessonContent.length / (availableHeapRatio > 0.5 ? 1200 : 800))))));
+  const dynamicOverlap = Math.max(60, Math.round(dynamicChunkSize * 0.1));
+
   setTimeout(async () => {
     try {
       const apiKey = await globalGeminiDirectProvider.getApiKey().catch(() => process.env.GEMINI_API_KEY || '');
       if (!apiKey || !lessonContent) return;
-      const chunks = chunkText(lessonContent, 1000, 100);
+      const chunks = chunkText(lessonContent, dynamicChunkSize, dynamicOverlap);
       const kbBatch = db.batch();
       const kbRef = db.collection('knowledge_base');
       const genAI = new GoogleGenAI({ apiKey });
@@ -255,10 +289,21 @@ function triggerAsyncLessonEmbedding(
       }
       await kbBatch.commit();
       console.log(`[Async Indexing] Indexed ${chunks.length} chunks for "${lessonTitle}" in ${courseId}`);
+      recordBackendSystemLog('success', 'system', `Indexed ${chunks.length} knowledge base chunks for "${lessonTitle}" (${courseId})`, {
+        courseId,
+        moduleTitle,
+        lessonTitle,
+        chunksCount: chunks.length,
+        dynamicChunkSize
+      });
     } catch (err: any) {
       console.warn(`[Async Indexing] Deferred indexing notice for "${lessonTitle}":`, err?.message || err);
+      recordBackendSystemLog('warning', 'system', `Deferred knowledge base indexing for "${lessonTitle}" (${courseId}): ${err?.message || err}`, {
+        courseId,
+        lessonTitle
+      });
     }
-  }, 100);
+  }, dynamicIndexingDelayMs);
 }
 
 // --- Telemetry Helper ---
@@ -718,9 +763,51 @@ app.use(express.json({
   }
 }));
 
-// --- Health Check for Render Cold Starts ---
+// --- Automatic Backend Activity Audit Logger for Admin Dashboard System Logs ---
+app.use('/api', (req: any, res, next) => {
+  const startMs = Date.now();
+  res.on('finish', () => {
+    // Skip logging /api/logs (to prevent recursion) and passive polling endpoints
+    const pathUrl = req.path || req.originalUrl || '';
+    if (pathUrl.startsWith('/logs') || pathUrl.startsWith('/health')) return;
+    if (req.method === 'GET' && res.statusCode < 400) return;
+
+    const latencyMs = Date.now() - startMs;
+    const status = res.statusCode;
+    const level = status >= 500 ? 'error' : status >= 400 ? 'warning' : 'info';
+    const category = pathUrl.startsWith('/admin')
+      ? 'admin'
+      : (pathUrl.startsWith('/chat') || pathUrl.startsWith('/course') || pathUrl.startsWith('/ai') || pathUrl.startsWith('/vision') || pathUrl.startsWith('/study-architect'))
+        ? 'ai'
+        : pathUrl.startsWith('/user')
+          ? 'user'
+          : 'system';
+
+    const actor = req.user ? { uid: req.user.uid, email: req.user.email } : undefined;
+    recordBackendSystemLog(
+      level,
+      category,
+      `[API] ${req.method} /api${pathUrl} -> ${status} (${latencyMs}ms)`,
+      {
+        method: req.method,
+        endpoint: `/api${pathUrl}`,
+        statusCode: status,
+        latencyMs
+      },
+      actor
+    );
+  });
+  next();
+});
+
+// --- Health Check with Live Dynamic Memory Telemetry ---
 app.get('/api/health', (req, res) => {
-  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+  const memory = getLiveMemoryTelemetry(activeRunningCourseJobs.size);
+  res.status(200).json({
+    status: 'ok',
+    timestamp: memory.timestamp,
+    memory
+  });
 });
 
 // Paystack Public Key Config Endpoint
@@ -1765,13 +1852,13 @@ function chunkText(text: string, chunkSize: number = 1000, chunkOverlap: number 
       if (breakPoint > i) end = breakPoint + 1;
     }
     chunks.push(text.slice(i, end).trim());
-    i = end - chunkOverlap;
-    if (i < 0) break;
-    if (i > 0 && i < text.length && text[i-1] !== ' ' && text[i-1] !== '\n') {
-      const nextSpace = text.indexOf(' ', i);
-      if (nextSpace !== -1 && nextSpace < end) i = nextSpace + 1;
+    if (end >= text.length) break;
+    let nextStart = end - chunkOverlap;
+    if (nextStart > 0 && nextStart < text.length && text[nextStart - 1] !== ' ' && text[nextStart - 1] !== '\n') {
+      const nextSpace = text.indexOf(' ', nextStart);
+      if (nextSpace !== -1 && nextSpace < end) nextStart = nextSpace + 1;
     }
-    if (i >= end) i = end;
+    i = nextStart <= i ? end : nextStart;
   }
   return chunks.filter(c => c.length > 0);
 }
@@ -4714,7 +4801,7 @@ app.post('/api/course/generate-skeleton', verifyAuth, async (req, res) => {
         groundingReferences: domainBrief.canonicalCourseReferences,
         foundationalAxioms: domainBrief.foundationalAxioms
       },
-      coverageScore: auditResult?.coverageScore || 85,
+      coverageScore: auditResult.coverageScore,
       confidenceState,
       rubricAudit: auditResult,
       groundingReferences: domainBrief.canonicalCourseReferences
@@ -4726,8 +4813,13 @@ app.post('/api/course/generate-skeleton', verifyAuth, async (req, res) => {
   }
 });
 
-// --- Server-Coordinated Async Course Generation Endpoint ---
-app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
+// --- Server-Coordinated Async Course Generation Worker & Endpoint ---
+async function executeCoordinatedGenerationJob(
+  db: admin.firestore.Firestore,
+  reqBody: any,
+  res?: express.Response
+) {
+  const req = { body: reqBody };
   const {
     courseId,
     courseName,
@@ -4753,35 +4845,36 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
   } = req.body;
 
   if (!courseId || typeof courseId !== 'string' || !courseId.trim()) {
-    return res.status(400).json({ error: 'Valid Course ID is required.' });
+    if (res) return res.status(400).json({ error: 'Valid Course ID is required.' });
+    return;
   }
   if (!courseName || typeof courseName !== 'string' || !courseName.trim()) {
-    return res.status(400).json({ error: 'Valid Course Name / Title is required.' });
+    if (res) return res.status(400).json({ error: 'Valid Course Name / Title is required.' });
+    return;
   }
   if (!department || typeof department !== 'string' || !department.trim()) {
-    return res.status(400).json({ error: 'Department is required for course generation.' });
+    if (res) return res.status(400).json({ error: 'Department is required for course generation.' });
+    return;
   }
 
   const rawDept = (department || '').trim();
-  const app = getAdminApp();
-  if (!app) {
-    return res.status(500).json({ error: 'Database service unavailable.' });
-  }
-  const db = app.firestore();
 
   try {
-    // Idempotency & Concurrent Job Guard
+    // Idempotency & Concurrent Job Guard (only skip if actively running in THIS server process)
     const existingDoc = await db.collection('courses').doc(courseId).get();
     if (existingDoc.exists) {
       const existingData = existingDoc.data();
-      if (existingData?.generationStatus === 'generating') {
+      if (existingData?.generationStatus === 'generating' && activeRunningCourseJobs.has(courseId)) {
         const lastUpdated = existingData.updatedAt ? new Date(existingData.updatedAt).getTime() : 0;
         if (Date.now() - lastUpdated < 120000) {
-          console.log(`[Coordinated Gen] Job for course ${courseId} is already actively running. Returning started status.`);
-          return res.json({ status: 'started', courseId, alreadyRunning: true });
+          console.log(`[Coordinated Gen] Job for course ${courseId} is already actively running in memory. Returning started status.`);
+          if (res) return res.json({ status: 'started', courseId, alreadyRunning: true });
+          return;
         }
       }
     }
+
+    const isResume = req.body.resume === true || (existingDoc.exists && existingDoc.data()?.generationStatus === 'generating' && !activeRunningCourseJobs.has(courseId));
 
     // 1. Initialize Course document in Firestore with 'generating' status
     await db.collection('courses').doc(courseId).set({
@@ -4799,23 +4892,32 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
       faculties: selectedFaculties,
       departments: selectedDepartments,
       isAIGenerated: true,
-      createdAt: new Date().toISOString(),
+      createdAt: existingDoc.exists && existingDoc.data()?.createdAt ? existingDoc.data()?.createdAt : new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       generationStatus: 'generating',
-      generationProgress: 5,
-      statusMessage: 'Coordinating course creation on server...'
+      generationProgress: isResume ? (existingDoc.data()?.generationProgress || 15) : 5,
+      statusMessage: isResume ? 'Resuming course generation from checkpoint...' : 'Coordinating course creation on server...'
     }, { merge: true });
 
-    // 2. Respond immediately to the client
-    res.json({ status: 'started', courseId });
+    // 2. Respond immediately to the client if invoked via HTTP
+    if (res) {
+      res.json({ status: 'started', courseId, resumed: isResume });
+    }
+
+    activeRunningCourseJobs.add(courseId);
+    activeCancelledJobs.delete(courseId);
 
     // 3. Fire asynchronous background generation worker
     (async () => {
       try {
-        console.log(`[Coordinated Gen] Starting background worker for course ${courseId} (${rawDept})...`);
+        console.log(`[Coordinated Gen] Starting background worker for course ${courseId} (${rawDept})${isResume ? ' [RESUME MODE]' : ''}...`);
+        recordBackendSystemLog(
+          'info',
+          'ai',
+          `${isResume ? 'Resumed' : 'Started'} coordinated course generation for ${courseId} (${courseName})`,
+          { courseId, courseName, department: rawDept, provider: requestedProvider || 'auto', isResume }
+        );
 
-        // Check if this is a resume operation
-        const isResume = req.body.resume === true;
         if (!isResume) {
           // Purge stale subcollections on fresh generation
           await purgeCourseSubcollections(db, courseId);
@@ -4858,17 +4960,24 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
             description: courseDescription || `A comprehensive university course on ${courseName} (${domainBrief.primaryDomain}).`,
             modules: approvedModules,
             learningOutcomes: normalizeLearningOutcomes(req.body.learningOutcomes || []),
-            pedagogyType: domainBrief.pedagogyType || 'STEM_MATHEMATICAL',
-            creditHours: creditUnits || 3
+            pedagogyType: domainBrief.pedagogyType,
+            creditHours: creditUnits
           };
-          rubricAudit = {
-            coverageScore: passedCoverageScore || 92,
-            foundationsScore: 95,
-            sequencingScore: 95,
-            workloadBalanceScore: 90,
-            confidenceState: 'verified',
-            isValid: true
-          };
+          if (req.body.rubricAudit && typeof req.body.rubricAudit.coverageScore === 'number') {
+            rubricAudit = req.body.rubricAudit;
+          } else {
+            const criticPrompt = buildOutlineCriticPrompt(domainBrief, skeleton, {
+              courseId,
+              courseName
+            });
+            rubricAudit = await completeWithProviderJSON({
+              type: 'skeleton',
+              messages: [{ role: 'user', content: criticPrompt }],
+              schema: OutlineCriticRubricSchema,
+              requestedProvider,
+              complexity: 'standard'
+            });
+          }
         } else {
           let attempts = 0;
           let feedbackCritique = '';
@@ -4974,14 +5083,14 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
           learningOutcomes: normalizedOutcomes,
           objectives: normalizedOutcomes.map(o => o.outcome), // Backwards compatibility
           primaryDomain: domainBrief.primaryDomain,
-          pedagogyType: domainBrief.pedagogyType || 'STEM_MATHEMATICAL',
-          coverageScore: rubricAudit?.coverageScore || 90,
-          confidenceState: (rubricAudit?.coverageScore || 90) >= 90 ? 'verified' : 'needs_review',
+          pedagogyType: domainBrief.pedagogyType,
+          coverageScore: rubricAudit.coverageScore,
+          confidenceState: rubricAudit.coverageScore >= 90 ? 'verified' : 'needs_review',
           rubricAudit,
           canonicalCourseReferences: canonicalRefs,
           groundingReferences: canonicalRefs,
           generationProgress: 20,
-          statusMessage: `Syllabus verified (Score: ${rubricAudit?.coverageScore || 90}%). Generating comprehensive lessons in parallel...`,
+          statusMessage: `Syllabus verified (Score: ${rubricAudit.coverageScore}%). Generating comprehensive lessons in parallel...`,
           updatedAt: new Date().toISOString()
         });
 
@@ -5005,11 +5114,11 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
           updatedAt: new Date().toISOString()
         });
 
-        // Adaptive concurrency: scale according to provider rate limits
-        const normReq = (requestedProvider || '').toLowerCase();
-        const CONCURRENCY_LIMIT = (normReq.includes('groq') || normReq.includes('openrouter')) ? 1 : 2;
-
-        for (let i = 0; i < totalModules; i += CONCURRENCY_LIMIT) {
+        // Dynamic memory- & provider-aware concurrency
+        let stepStepIncrement = 1;
+        for (let i = 0; i < totalModules; i += stepStepIncrement) {
+          const { concurrencyLimit: dynamicConcurrency } = getDynamicRuntimeResources(requestedProvider);
+          stepStepIncrement = dynamicConcurrency;
           // Check server-side job cancellation
           if (activeCancelledJobs.has(courseId)) {
             console.log(`[Coordinated Gen] Job for ${courseId} cancelled by user. Terminating generation.`);
@@ -5022,8 +5131,8 @@ app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
             return;
           }
 
-          const chunk = skeleton.modules.slice(i, i + CONCURRENCY_LIMIT);
-          const chunkEnd = Math.min(i + CONCURRENCY_LIMIT, totalModules);
+          const chunk = skeleton.modules.slice(i, i + dynamicConcurrency);
+          const chunkEnd = Math.min(i + dynamicConcurrency, totalModules);
 
           const chunkPromises = chunk.map(async (moduleSkeleton: any, idx: number) => {
             const mIndex = i + idx;
@@ -5318,10 +5427,10 @@ Return strictly a JSON object:
 
         const provenance = {
           sources: canonicalRefs,
-          modelVersion: requestedProvider || 'gemini-2.5-pro',
+          modelVersion: requestedProvider || 'dynamic-multi-provider',
           promptVersion: 'uniace-curriculum-v2.0',
           generatedAt: new Date().toISOString(),
-          groundingScore: rubricAudit?.coverageScore || 95,
+          groundingScore: rubricAudit.coverageScore,
           rubricAudit
         };
 
@@ -5338,23 +5447,112 @@ Return strictly a JSON object:
           published: false, // Explicitly false until admin/instructor publishes
           updatedAt: new Date().toISOString()
         });
+        recordBackendSystemLog(
+          'success',
+          'ai',
+          `Completed coordinated course generation for ${courseId} (${courseName}) — ${completedLessonsCount}/${totalLessonsCount} lessons verified`,
+          {
+            courseId,
+            courseName,
+            completedLessons: completedLessonsCount,
+            totalLessons: totalLessonsCount,
+            coverageScore: rubricAudit.coverageScore,
+            memory: getLiveMemoryTelemetry(activeRunningCourseJobs.size)
+          }
+        );
 
       } catch (backgroundErr: any) {
         console.error(`[Coordinated Gen] Critical background error for ${courseId}:`, backgroundErr);
+        recordBackendSystemLog(
+          'error',
+          'ai',
+          `Coordinated course generation failed for ${courseId}: ${backgroundErr.message || backgroundErr}`,
+          {
+            courseId,
+            courseName,
+            error: backgroundErr.message || String(backgroundErr),
+            memory: getLiveMemoryTelemetry(activeRunningCourseJobs.size)
+          }
+        );
         await db.collection('courses').doc(courseId).update({
           generationStatus: 'failed',
           generationProgress: 100,
           statusMessage: 'Generation failed due to an internal error.',
           generationError: backgroundErr.message || 'AI generation failed.',
           updatedAt: new Date().toISOString()
-        });
+        }).catch(() => {});
+      } finally {
+        activeRunningCourseJobs.delete(courseId);
       }
     })();
 
   } catch (error: any) {
     console.error('Coordinated Generate Error:', error);
-    res.status(500).json({ error: 'Failed to start coordinated generation.' });
+    if (res && !res.headersSent) {
+      res.status(500).json({ error: 'Failed to start coordinated generation.' });
+    }
   }
+}
+
+async function resumeInterruptedCourseJobs(db: admin.firestore.Firestore) {
+  try {
+    const snap = await db.collection('courses').where('generationStatus', '==', 'generating').get();
+    if (snap.empty) return;
+    for (const docSnap of snap.docs) {
+      const data = docSnap.data();
+      const courseId = docSnap.id;
+      if (activeRunningCourseJobs.has(courseId)) continue;
+
+      const existingSyllabus = Array.isArray(data.syllabus) ? data.syllabus : [];
+      const approvedModules = existingSyllabus.map((m: any, idx: number) => ({
+        id: m.id || `m${idx + 1}`,
+        title: m.title || `Module ${idx + 1}`,
+        isFoundationModule: idx === 0 || !!m.isFoundationModule,
+        lessonTitles: Array.isArray(m.subTopics)
+          ? m.subTopics.map((st: any) => typeof st === 'string' ? st : st.title).filter(Boolean)
+          : (m.lessonTitles || [])
+      }));
+      const domainBrief = (data.primaryDomain && data.pedagogyType) ? {
+        primaryDomain: data.primaryDomain,
+        pedagogyType: data.pedagogyType,
+        canonicalCourseReferences: data.canonicalCourseReferences || data.groundingReferences || [],
+        groundingReferences: data.groundingReferences || data.canonicalCourseReferences || []
+      } : undefined;
+
+      console.log(`[Coordinated Gen] Auto-recovering interrupted generation job for course ${courseId} on server startup...`);
+      await executeCoordinatedGenerationJob(db, {
+        courseId,
+        courseName: data.title || courseId,
+        courseDescription: data.description,
+        provider: data.activeProvider === 'auto' ? undefined : data.activeProvider,
+        level: data.level,
+        semester: data.semester,
+        department: data.department,
+        creditUnits: data.creditUnits,
+        academicStandard: data.academicStandard,
+        subject: data.subject,
+        scope: data.scope,
+        selectedFaculties: data.faculties || [],
+        selectedDepartments: data.departments || [],
+        approvedModules: approvedModules.length > 0 ? approvedModules : undefined,
+        domainBrief,
+        learningOutcomes: data.learningOutcomes || [],
+        coverageScore: data.coverageScore,
+        rubricAudit: data.rubricAudit,
+        resume: true
+      });
+    }
+  } catch (err) {
+    console.warn('[Coordinated Gen] Failed to check/resume interrupted course jobs:', err);
+  }
+}
+
+app.post('/api/course/generate-coordinated', verifyAuth, async (req, res) => {
+  const app = getAdminApp();
+  if (!app) {
+    return res.status(500).json({ error: 'Database service unavailable.' });
+  }
+  await executeCoordinatedGenerationJob(app.firestore(), req.body, res);
 });
 
 // --- Cancel Course Generation Job ---
@@ -5528,25 +5726,25 @@ app.get('/api/admin/provider-health', verifyAuth, async (req, res) => {
     const health = {
       gemini_direct: {
         circuitBreaker: globalGeminiDirectBreaker.getStatus(),
-        configuredModel: apiKeysData.gemini_direct?.model || 'gemini-2.5-flash',
+        configuredModel: apiKeysData.gemini_direct?.model || (globalGeminiDirectProvider as any)?.defaultModel || null,
         keyCount: apiKeysData.gemini_direct?.keys?.length || (process.env.GEMINI_API_KEY ? 1 : 0),
         taskRoutes: Object.entries(routingData).filter(([_, v]) => v === 'gemini_direct').map(([k]) => k)
       },
       groq: {
         circuitBreaker: globalGroqBreaker.getStatus(),
-        configuredModel: apiKeysData.groq?.model || 'openai/gpt-oss-20b',
+        configuredModel: apiKeysData.groq?.model || (globalGroqProvider as any)?.defaultModel || null,
         keyCount: apiKeysData.groq?.keys?.length || (process.env.GROQ_API_KEY ? 1 : 0),
         taskRoutes: Object.entries(routingData).filter(([_, v]) => v === 'groq').map(([k]) => k)
       },
       nvidia: {
         circuitBreaker: globalNvidiaBreaker.getStatus(),
-        configuredModel: apiKeysData.nvidia?.model || 'openai/gpt-oss-20b',
+        configuredModel: apiKeysData.nvidia?.model || (globalNvidiaProvider as any)?.defaultModel || null,
         keyCount: apiKeysData.nvidia?.keys?.length || (process.env.NVIDIA_API_KEY ? 1 : 0),
         taskRoutes: Object.entries(routingData).filter(([_, v]) => v === 'nvidia').map(([k]) => k)
       },
       mistral_direct: {
         circuitBreaker: globalMistralDirectBreaker.getStatus(),
-        configuredModel: apiKeysData.mistral_direct?.model || 'mistral-small-latest',
+        configuredModel: apiKeysData.mistral_direct?.model || (globalMistralDirectProvider as any)?.defaultModel || null,
         keyCount: apiKeysData.mistral_direct?.keys?.length || (process.env.MISTRAL_API_KEY ? 1 : 0),
         taskRoutes: Object.entries(routingData).filter(([_, v]) => v === 'mistral_direct').map(([k]) => k)
       }
@@ -5555,6 +5753,173 @@ app.get('/api/admin/provider-health', verifyAuth, async (req, res) => {
     res.json({ success: true, timestamp: new Date().toISOString(), health });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Health check failed' });
+  }
+});
+
+// --- Live System Health & Infrastructure Probe Endpoint ---
+app.get('/api/admin/system-health', verifyAuth, async (req, res) => {
+  const app = getAdminApp();
+  if (!app) return res.status(500).json({ error: 'Database service unavailable' });
+  const db = app.firestore();
+
+  try {
+    const dbStart = Date.now();
+    const [apiKeysDoc, kbSnap] = await Promise.all([
+      db.collection('system_settings').doc('api_keys').get(),
+      db.collection('knowledge_base').count().get()
+    ]);
+    const dbLatencyMs = Date.now() - dbStart;
+    const apiKeysData = apiKeysDoc.data() || {};
+
+    const providerChecks = [
+      { name: 'gemini_direct', breaker: globalGeminiDirectBreaker, hasKey: Boolean(apiKeysData.gemini_direct?.keys?.length || process.env.GEMINI_API_KEY) },
+      { name: 'groq', breaker: globalGroqBreaker, hasKey: Boolean(apiKeysData.groq?.keys?.length || process.env.GROQ_API_KEY) },
+      { name: 'mistral_direct', breaker: globalMistralDirectBreaker, hasKey: Boolean(apiKeysData.mistral_direct?.keys?.length || process.env.MISTRAL_API_KEY) },
+      { name: 'nvidia', breaker: globalNvidiaBreaker, hasKey: Boolean(apiKeysData.nvidia?.keys?.length || process.env.NVIDIA_API_KEY) },
+      { name: 'cohere', breaker: globalCohereBreaker, hasKey: Boolean(apiKeysData.cohere?.keys?.length || process.env.COHERE_API_KEY) },
+      { name: 'huggingface', breaker: globalHuggingFaceBreaker, hasKey: Boolean(apiKeysData.huggingface?.keys?.length || process.env.HUGGINGFACE_API_KEY) },
+      { name: 'openrouter_free', breaker: globalOpenRouterFreeBreaker, hasKey: Boolean(apiKeysData.openrouter_free?.keys?.length || process.env.OPENROUTER_API_KEY) }
+    ];
+
+    const configuredProviders = providerChecks.filter(p => p.hasKey);
+    const activeProviders = configuredProviders.filter(p => !(typeof p.breaker?.isOpen === 'function' && p.breaker.isOpen()));
+    const totalChunks = kbSnap.data().count || 0;
+    const smtpConfigured = Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+    const memory = getLiveMemoryTelemetry(activeRunningCourseJobs.size);
+
+    const payload = {
+      timestamp: memory.timestamp,
+      database: {
+        status: 'connected',
+        latencyMs: dbLatencyMs
+      },
+      aiProviders: {
+        totalConfigured: configuredProviders.length,
+        activeCount: activeProviders.length,
+        providers: providerChecks.map(p => ({
+          name: p.name,
+          configured: p.hasKey,
+          circuitState: p.breaker?.getStatus?.()?.state || 'CLOSED'
+        }))
+      },
+      rag: {
+        totalChunks,
+        status: totalChunks > 0 ? 'Indexed & Active' : 'Empty Index (0 Chunks)'
+      },
+      email: {
+        configured: smtpConfigured,
+        provider: process.env.SMTP_HOST || 'Not Configured',
+        status: smtpConfigured ? 'Configured & Ready' : 'Unconfigured'
+      },
+      memory
+    };
+
+    await recordBackendSystemLog(
+      'info',
+      'admin',
+      `Executed live system health probe — DB: ${dbLatencyMs}ms, Active AI Providers: ${activeProviders.length}/${configuredProviders.length}, Heap: ${memory.heapUsedMB}/${memory.heapLimitMB} MB (${memory.heapUtilizationPct}%)`,
+      payload,
+      (req as any).user
+    );
+
+    res.json(payload);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to probe system health' });
+  }
+});
+
+// --- Admin System Logs Cleanup / Prune Endpoint ---
+app.post('/api/admin/logs/cleanup', verifyAuth, async (req, res) => {
+  const reqUser = (req as any).user;
+  const app = getAdminApp();
+  if (!app) return res.status(500).json({ error: 'Database service unavailable' });
+  const db = app.firestore();
+
+  try {
+    const userDoc = await db.collection('users').doc(reqUser.uid).get();
+    if (userDoc.data()?.role !== 'admin' && !isAdminEmail(reqUser.email)) {
+      return res.status(403).json({ error: 'Forbidden: Admin access required' });
+    }
+
+    const { daysToKeep = 30, clearAll = false } = req.body || {};
+    let deletedCount = 0;
+    const cutoffTimestamp = admin.firestore.Timestamp.fromDate(
+      new Date(Date.now() - Number(daysToKeep) * 24 * 60 * 60 * 1000)
+    );
+
+    // Iteratively delete in batches of 500 until all matching logs are completely purged
+    while (true) {
+      let snap: admin.firestore.QuerySnapshot;
+      if (clearAll || Number(daysToKeep) <= 0) {
+        snap = await db.collection('system_logs').limit(500).get();
+      } else {
+        snap = await db.collection('system_logs')
+          .where('timestamp', '<', cutoffTimestamp)
+          .limit(500)
+          .get();
+      }
+
+      if (snap.empty) break;
+
+      const batch = db.batch();
+      snap.docs.forEach(docSnap => {
+        batch.delete(docSnap.ref);
+        deletedCount++;
+      });
+      await batch.commit();
+
+      if (snap.size < 500) break;
+    }
+
+    await recordBackendSystemLog(
+      'warning',
+      'admin',
+      clearAll ? `Cleared ${deletedCount} system log entries` : `Pruned ${deletedCount} system logs older than ${daysToKeep} days`,
+      { deletedCount, daysToKeep, clearAll },
+      reqUser
+    );
+
+    res.json({
+      success: true,
+      deletedCount,
+      message: clearAll ? `Cleared ${deletedCount} system logs.` : `Pruned ${deletedCount} logs older than ${daysToKeep} days.`
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to clean system logs' });
+  }
+});
+
+// --- Admin System Alerts & Broadcast History Endpoints ---
+app.get('/api/admin/system-alerts', verifyAuth, async (req, res) => {
+  const app = getAdminApp();
+  if (!app) return res.status(500).json({ error: 'Database service unavailable' });
+  try {
+    const snap = await app.firestore().collection('system_alerts').orderBy('timestamp', 'desc').limit(50).get();
+    const alerts = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    res.json({ success: true, alerts });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to fetch system alerts' });
+  }
+});
+
+app.get('/api/admin/broadcast-history', verifyAuth, async (req, res) => {
+  const app = getAdminApp();
+  if (!app) return res.status(500).json({ error: 'Database service unavailable' });
+  try {
+    const [announcementsSnap, broadcastSnap] = await Promise.all([
+      app.firestore().collection('announcements').orderBy('createdAt', 'desc').limit(50).get().catch(() => null),
+      app.firestore().collection('broadcast_history').orderBy('timestamp', 'desc').limit(50).get().catch(() => null)
+    ]);
+    const announcements = announcementsSnap ? announcementsSnap.docs.map(d => ({ id: d.id, ...d.data() })) : [];
+    const broadcasts = broadcastSnap ? broadcastSnap.docs.map(d => ({ id: d.id, ...d.data() })) : [];
+    const mergedMap = new Map<string, any>();
+    [...announcements, ...broadcasts].forEach(item => {
+      if (item && item.id) mergedMap.set(item.id, item);
+    });
+    const history = Array.from(mergedMap.values());
+    res.json({ success: true, history, broadcasts: history });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to fetch broadcast history' });
   }
 });
 
@@ -7380,32 +7745,63 @@ app.post('/api/admin/broadcast-whatsapp', verifyAuth, async (req, res) => {
       return res.json({ success: true, message: 'No users with phone numbers found in database.' });
     }
 
-    console.log(`[WhatsApp Broadcast] Initiating for ${usersWithPhones.length} users.`);
-    
-    // SECURE VAULT: The WHATSAPP_API_KEY is used here on the server
-    // Example of how the real call would look:
-    /*
-    for (const user of usersWithPhones) {
-      await fetch(`https://graph.facebook.com/v17.0/${PHONE_ID}/messages`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${WHATSAPP_API_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          messaging_product: "whatsapp",
-          to: user.phoneNumber,
-          type: "template",
-          template: { name: "broadcast_alert", language: { code: "en_US" } }
-        })
+    console.log(`[WhatsApp Broadcast] Initiating live dispatch for ${usersWithPhones.length} users.`);
+    let deliveredCount = 0;
+    let failedCount = 0;
+    const dispatchErrors: string[] = [];
+
+    for (const targetUser of usersWithPhones as any[]) {
+      try {
+        const waResp = await fetch(`https://graph.facebook.com/v19.0/${PHONE_ID}/messages`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${WHATSAPP_API_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            messaging_product: 'whatsapp',
+            to: targetUser.phoneNumber,
+            type: 'text',
+            text: {
+              preview_url: Boolean(whatsappLink),
+              body: whatsappLink ? `${message}\n\n${whatsappLink}` : String(message || '')
+            }
+          })
+        });
+        if (waResp.ok) {
+          deliveredCount++;
+        } else {
+          failedCount++;
+          const errBody = await waResp.text().catch(() => '');
+          dispatchErrors.push(`HTTP ${waResp.status}: ${errBody.slice(0, 120)}`);
+        }
+      } catch (sendErr: any) {
+        failedCount++;
+        dispatchErrors.push(sendErr?.message || String(sendErr));
+      }
+    }
+
+    await recordBackendSystemLog(
+      deliveredCount > 0 ? 'success' : 'warning',
+      'admin',
+      `WhatsApp broadcast completed: ${deliveredCount}/${usersWithPhones.length} delivered (${failedCount} failed)`,
+      { deliveredCount, failedCount, totalTargeted: usersWithPhones.length, errors: dispatchErrors.slice(0, 5) },
+      { uid: adminUid, email: userEmail }
+    );
+
+    if (deliveredCount === 0 && failedCount > 0) {
+      return res.status(502).json({
+        success: false,
+        error: `WhatsApp Graph API rejected broadcast for all ${failedCount} recipients`,
+        details: dispatchErrors[0]
       });
     }
-    */
-    
-    res.json({ 
-      success: true, 
-      message: `Broadcast successfully sent to ${usersWithPhones.length} students via WhatsApp.`,
-      count: usersWithPhones.length
+
+    res.json({
+      success: true,
+      message: `Broadcast delivered to ${deliveredCount} of ${usersWithPhones.length} students via WhatsApp Cloud API.`,
+      count: deliveredCount,
+      failedCount
     });
 
   } catch (error: any) {
@@ -7542,32 +7938,42 @@ async function analyzeAndUpdateLearningProfile(userMessage: string, aiResponse: 
 async function startServer() {
   console.log('Starting server... NODE_ENV:', process.env.NODE_ENV);
   
-  // Initialize Telemetry
-  await telemetry.initialize();
+  // Initialize Telemetry in background so it never blocks port binding
+  telemetry.initialize().catch(err => {
+    console.warn('Telemetry initialization warning:', err);
+  });
 
   if (process.env.NODE_ENV !== 'production') {
     console.log('Starting Vite in middleware mode...');
-    try {
-      const vitePort = process.env.VITE_PORT ? parseInt(process.env.VITE_PORT, 10) : PORT;
-      const hmrPort = process.env.VITE_HMR_PORT 
-        ? parseInt(process.env.VITE_HMR_PORT, 10) 
-        : (vitePort + 21679);
+    const vitePort = process.env.VITE_PORT ? parseInt(process.env.VITE_PORT, 10) : PORT;
+    const hmrPort = process.env.VITE_HMR_PORT 
+      ? parseInt(process.env.VITE_HMR_PORT, 10) 
+      : (vitePort + 21679);
 
-      const vite = await createViteServer({
-        server: { 
-          middlewareMode: true,
-          hmr: {
-            port: hmrPort,
-            clientPort: process.env.VITE_HMR_CLIENT_PORT ? parseInt(process.env.VITE_HMR_CLIENT_PORT, 10) : undefined
-          }
-        },
-        appType: 'spa',
-      });
-      app.use(vite.middlewares);
+    const vitePromise = createViteServer({
+      server: { 
+        middlewareMode: true,
+        hmr: {
+          port: hmrPort,
+          clientPort: process.env.VITE_HMR_CLIENT_PORT ? parseInt(process.env.VITE_HMR_CLIENT_PORT, 10) : undefined
+        }
+      },
+      appType: 'spa',
+    }).then(v => {
       console.log('Vite middleware loaded.');
-    } catch (e) {
+      return v;
+    }).catch(e => {
       console.error('Failed to load Vite middleware:', e);
-    }
+      return null;
+    });
+
+    app.use(async (req, res, next) => {
+      const vite = await vitePromise;
+      if (vite) {
+        return vite.middlewares(req, res, next);
+      }
+      next();
+    });
   } else {
     console.log('Serving static assets from dist...');
     // Serve built assets in production
@@ -7596,6 +8002,11 @@ async function startServer() {
   });
 
   console.log('Attempting to listen on port', PORT);
+  const server = app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on http://0.0.0.0:${PORT}`);
+  });
+  console.log('app.listen called.');
+
   // 5. Initialize Vector Store for AI Tutor & Leaderboard Background Sync
   try {
     // Initialize in background to not block server start
@@ -7605,9 +8016,18 @@ async function startServer() {
 
     const adminApp = getAdminApp();
     if (adminApp) {
+      // Start 1-minute periodic memory monitoring utility that logs usage statistics to console and Firestore system_logs
+      startMemoryMonitoringUtility(() => activeRunningCourseJobs.size);
+
       sweepAndSyncPublicLeaderboard(adminApp.firestore()).catch(err => {
         console.error('Failed initial leaderboard sweep:', err);
       });
+      // Automatically recover and resume any interrupted course generation jobs after telemetry initializes
+      setTimeout(() => {
+        resumeInterruptedCourseJobs(adminApp.firestore()).catch(err => {
+          console.error('Failed initial interrupted course job recovery:', err);
+        });
+      }, 3000);
       // Periodic sweep every 15 minutes
       setInterval(() => {
         const app = getAdminApp();
@@ -7621,11 +8041,6 @@ async function startServer() {
   } catch (error) {
     console.error('Error starting background services:', error);
   }
-
-  const server = app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on http://0.0.0.0:${PORT}`);
-  });
-  console.log('app.listen called.');
 
   // --- Socket.IO Server for Arena Multiplayer ---
   const io = new SocketIOServer(server, {
@@ -8156,7 +8571,7 @@ async function startServer() {
         const outputTokens = aiResponse.usage?.completionTokens || Math.ceil((aiResponse.text?.length || 0) / 4);
         const totalTokens = aiResponse.usage?.totalTokens || (inputTokens + outputTokens);
 
-        // Background task: Log chat analytics
+        // Background task: Log chat analytics and system audit log
         if (app) {
           app.firestore().collection('chat_analytics').add({
             uid: user.uid,
@@ -8167,6 +8582,14 @@ async function startServer() {
             tokens: totalTokens,
             providerUsed: successfulProviderName
           }).catch(err => console.error('Failed to log chat analytics (WS):', err));
+
+          recordBackendSystemLog(
+            'info',
+            'ai',
+            `[WS Chat] Completed AI tutor stream via ${successfulProviderName} (${totalTokens} tokens, complexity: ${complexity})`,
+            { providerUsed: successfulProviderName, tokens: totalTokens, complexity },
+            { uid: user.uid, email: user.email }
+          );
         }
 
         // STEP 3: The Settlement/Refund (Atomic Transaction)
@@ -8209,6 +8632,13 @@ async function startServer() {
 
       } catch (error: any) {
         console.error('WebSocket Message Error:', error);
+        recordBackendSystemLog(
+          'error',
+          'ai',
+          `[WS Chat] AI tutor stream error: ${error.message || error}`,
+          { error: error.message || String(error) },
+          { uid: user?.uid, email: user?.email }
+        );
 
         // Defensive: Refund the pre-auth if the AI failed before consuming tokens
         const isInsufficientSparks = error.message && error.message.includes('Insufficient sparks');

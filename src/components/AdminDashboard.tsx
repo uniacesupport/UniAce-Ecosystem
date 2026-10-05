@@ -566,6 +566,30 @@ export default function AdminDashboard() {
     }
   }, [user, isLiveLogs, activeTab, logLimit, logFilter]);
 
+  useEffect(() => {
+    const statsMap: Record<string, number> = {};
+    logs.forEach(log => {
+      const date = log.timestamp?.toDate
+        ? log.timestamp.toDate().toLocaleDateString()
+        : (typeof log.timestamp === 'string' ? new Date(log.timestamp).toLocaleDateString() : new Date().toLocaleDateString());
+      statsMap[date] = (statsMap[date] || 0) + 1;
+    });
+
+    const stats = Object.entries(statsMap)
+      .map(([date, count]) => ({ date, count }))
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+      .slice(-7);
+
+    setLogStats(stats);
+
+    const counts = logs.reduce((acc, log) => {
+      const level = log.level as keyof typeof acc;
+      if (acc[level] !== undefined) acc[level]++;
+      return acc;
+    }, { error: 0, warning: 0, info: 0, success: 0 });
+    setLogCounts(counts);
+  }, [logs]);
+
   const handleExportLogs = () => {
     const csvContent = "data:text/csv;charset=utf-8," 
       + "Timestamp,Level,Category,User,Message\n"
@@ -592,10 +616,22 @@ export default function AdminDashboard() {
         setIsLoadingLogs(true);
         setConfirmModal(null);
         try {
-          // We'll use a batch delete approach if possible, but for now we'll just log the action
-          // and provide a success message. In production, this would be a cloud function.
-          await LogService.log('warning', 'admin', 'Admin requested system logs cleanup');
-          showToast("Logs cleanup request sent", "success");
+          const idToken = await auth.currentUser?.getIdToken();
+          const res = await fetch('/api/admin/logs/cleanup', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(idToken ? { 'Authorization': `Bearer ${idToken}` } : {})
+            },
+            body: JSON.stringify({ clearAll: true })
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            showToast(data.message || `Cleared ${data.deletedCount} logs`, "success");
+            fetchLogs();
+          } else {
+            showToast(data.error || "Failed to clear logs", "error");
+          }
         } catch (error) {
           showToast("Failed to clear logs", "error");
         } finally {
@@ -1240,6 +1276,7 @@ export default function AdminDashboard() {
           domainBrief: courseSkeleton.domainBrief,
           learningOutcomes: courseSkeleton.learningOutcomes,
           coverageScore: courseSkeleton.coverageScore,
+          rubricAudit: (courseSkeleton as any).rubricAudit,
           groundingReferences: courseSkeleton.groundingReferences,
           resume: opts?.resume === true
         })
@@ -1264,8 +1301,17 @@ export default function AdminDashboard() {
 
       // Subscribe to real-time updates from Firestore Course Document
       const courseRef = doc(db, 'courses', courseId);
+      const keepAliveInterval = setInterval(() => {
+        if (isCancelledRef.current) {
+          clearInterval(keepAliveInterval);
+          return;
+        }
+        fetch('/api/health').catch(() => {});
+      }, 20000);
+
       const unsubscribe = onSnapshot(courseRef, (snapshot) => {
         if (isCancelledRef.current) {
+          clearInterval(keepAliveInterval);
           unsubscribe();
           return;
         }
@@ -1288,11 +1334,13 @@ export default function AdminDashboard() {
           });
 
           if (data.generationStatus === 'cancelled') {
+            clearInterval(keepAliveInterval);
             unsubscribe();
             setIsGeneratingQuick(false);
             setGenerationStep('input');
             showToast('Course generation was cancelled.', 'info');
           } else if (data.generationStatus === 'completed') {
+            clearInterval(keepAliveInterval);
             unsubscribe();
             setIsGeneratingQuick(false);
             setUploadSuccess(true);
@@ -1311,6 +1359,7 @@ export default function AdminDashboard() {
               setUploadSuccess(false);
             }, 3000);
           } else if (data.generationStatus === 'failed') {
+            clearInterval(keepAliveInterval);
             unsubscribe();
             setIsGeneratingQuick(false);
             setGenerationError(data.generationError || 'Generation failed on the server.');
@@ -1319,6 +1368,7 @@ export default function AdminDashboard() {
           }
         }
       }, (error) => {
+        clearInterval(keepAliveInterval);
         console.error('Snapshot subscription error:', error);
       });
 
@@ -6363,43 +6413,62 @@ export default function AdminDashboard() {
               </button>
             </div>
             <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
                 <div className={`p-4 rounded-2xl border ${systemHealth?.database?.status === 'connected' ? 'bg-emerald-50 dark:bg-emerald-900/10 border-emerald-100 dark:border-emerald-800' : 'bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700'}`}>
                   <div className="text-xs font-bold text-emerald-600 uppercase mb-1 flex items-center justify-between">
                     <span>Database</span>
-                    {systemHealth?.database?.latencyMs && (
+                    {systemHealth?.database?.latencyMs !== undefined && (
                       <span className="text-[10px] font-mono">{systemHealth.database.latencyMs}ms</span>
                     )}
                   </div>
                   <div className="text-sm font-bold text-slate-900 dark:text-white capitalize">
-                    {systemHealth?.database?.status || 'Online'}
+                    {systemHealth ? systemHealth.database?.status : 'Probing...'}
                   </div>
                 </div>
                 <div className="p-4 bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-800 rounded-2xl">
                   <div className="text-xs font-bold text-emerald-600 uppercase mb-1 flex items-center justify-between">
                     <span>AI Engine</span>
-                    <span className="text-[10px] font-mono">{systemHealth?.aiProviders?.totalConfigured || 7} Providers</span>
+                    <span className="text-[10px] font-mono">
+                      {systemHealth ? `${systemHealth.aiProviders?.totalConfigured ?? 0} Configured` : '...'}
+                    </span>
                   </div>
                   <div className="text-sm font-bold text-slate-900 dark:text-white">
-                    {systemHealth?.aiProviders?.activeCount || 7} Online & Ready
+                    {systemHealth ? `${systemHealth.aiProviders?.activeCount ?? 0} Online & Ready` : 'Probing...'}
                   </div>
                 </div>
                 <div className="p-4 bg-blue-50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-800 rounded-2xl">
                   <div className="text-xs font-bold text-blue-600 uppercase mb-1 flex items-center justify-between">
                     <span>RAG Index</span>
-                    <span className="text-[10px] font-mono">{systemHealth?.rag?.totalChunks || 0} Chunks</span>
+                    <span className="text-[10px] font-mono">
+                      {systemHealth ? `${systemHealth.rag?.totalChunks ?? 0} Chunks` : '...'}
+                    </span>
                   </div>
                   <div className="text-sm font-bold text-slate-900 dark:text-white capitalize">
-                    {systemHealth?.rag?.status || 'Indexed & Ready'}
+                    {systemHealth ? systemHealth.rag?.status : 'Probing...'}
                   </div>
                 </div>
                 <div className={`p-4 rounded-2xl border ${systemHealth?.email?.configured ? 'bg-emerald-50 dark:bg-emerald-900/10 border-emerald-100 dark:border-emerald-800' : 'bg-amber-50 dark:bg-amber-900/10 border-amber-100 dark:border-amber-800'}`}>
                   <div className="text-xs font-bold uppercase mb-1 text-emerald-600 flex items-center justify-between">
                     <span>Email Service</span>
-                    <span className="text-[10px] font-mono">{systemHealth?.email?.provider || 'SMTP'}</span>
+                    <span className="text-[10px] font-mono">
+                      {systemHealth ? systemHealth.email?.provider : '...'}
+                    </span>
                   </div>
                   <div className="text-sm font-bold text-slate-900 dark:text-white">
-                    {systemHealth?.email?.status || 'Configured & Ready'}
+                    {systemHealth ? systemHealth.email?.status : 'Probing...'}
+                  </div>
+                </div>
+                <div className={`p-4 rounded-2xl border ${(systemHealth?.memory?.heapUtilizationPct ?? 0) >= 85 ? 'bg-amber-50 dark:bg-amber-900/10 border-amber-100 dark:border-amber-800' : 'bg-purple-50 dark:bg-purple-900/10 border-purple-100 dark:border-purple-800'}`}>
+                  <div className="text-xs font-bold uppercase mb-1 text-purple-600 flex items-center justify-between">
+                    <span>Dynamic Heap</span>
+                    {systemHealth?.memory && (
+                      <span className="text-[10px] font-mono">{systemHealth.memory.heapUtilizationPct}%</span>
+                    )}
+                  </div>
+                  <div className="text-sm font-bold text-slate-900 dark:text-white">
+                    {systemHealth?.memory
+                      ? `${systemHealth.memory.heapUsedMB} / ${systemHealth.memory.heapLimitMB} MB`
+                      : 'Probing...'}
                   </div>
                 </div>
               </div>

@@ -746,7 +746,7 @@ export class OpenRouterFreeProvider implements ModelProvider {
             let hasFinishedThinking = false;
 
             for await (const chunk of paidStream) {
-              const delta = chunk.choices[0]?.delta as any;
+              const delta = chunk?.choices?.[0]?.delta as any;
               const reasoning = delta?.reasoning_content || delta?.reasoning || '';
               const content = delta?.content || '';
 
@@ -885,7 +885,7 @@ export class MistralProvider implements ModelProvider {
     }, 'Mistral');
   }
 
-  async stream(messages: any[], options: { complexity: 'high' | 'standard', model?: string }, onChunk: (chunk: string) => void): Promise<ModelResponse> {
+  async stream(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean, model?: string }, onChunk: (chunk: string) => void): Promise<ModelResponse> {
     return retry(async () => {
       const apiKey = await this.rotator.getNextKey();
       const primaryModel = (options.model || await this.rotator.getModel() || '').trim();
@@ -900,17 +900,22 @@ export class MistralProvider implements ModelProvider {
       const fallbackModel = (await this.rotator.getFallbackModel() || '').trim();
       const mistral = new Mistral({ apiKey: apiKey });
 
+      if (options.jsonMode) {
+        this.ensureJsonInMessages(messages);
+      }
+
       const executeStream = async (targetModel: string) => {
         const stream = await mistral.chat.stream({
           model: targetModel,
           temperature: 0.5,
           maxTokens: 8192,
-          messages: messages
+          messages: messages,
+          responseFormat: options.jsonMode ? { type: "json_object" } : undefined
         });
 
         let fullText = '';
         for await (const chunk of stream) {
-          const content = chunk.data.choices[0]?.delta?.content as string || '';
+          const content = chunk?.data?.choices?.[0]?.delta?.content as string || '';
           if (content) {
             fullText += content;
             onChunk(content);
@@ -1046,7 +1051,7 @@ export class GroqProvider implements ModelProvider {
     }, 'Groq');
   }
 
-  async stream(messages: any[], options: { complexity: 'high' | 'standard', model?: string }, onChunk: (chunk: string) => void): Promise<ModelResponse> {
+  async stream(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean, model?: string }, onChunk: (chunk: string) => void): Promise<ModelResponse> {
     return retry(async () => {
       const apiKey = await this.rotator.getNextKey();
       const primaryModel = (options.model || await this.rotator.getModel() || '').trim();
@@ -1064,6 +1069,9 @@ export class GroqProvider implements ModelProvider {
       // Truncate messages for Groq to avoid TPM limits
       const maxTokens = options.complexity === 'high' ? 4000 : 2500;
       const truncatedMessages = this.truncateMessages(messages, maxTokens);
+      if (options.jsonMode) {
+        this.ensureJsonInMessages(truncatedMessages);
+      }
 
       const executeStream = async (targetModel: string) => {
         const stream = await groq.chat.completions.create({
@@ -1079,7 +1087,7 @@ export class GroqProvider implements ModelProvider {
         let hasFinishedThinking = false;
 
         for await (const chunk of stream) {
-          const delta = chunk.choices[0]?.delta as any;
+          const delta = chunk?.choices?.[0]?.delta as any;
           const reasoning = delta?.reasoning_content || delta?.reasoning || '';
           const content = delta?.content || '';
 
@@ -1476,7 +1484,7 @@ export class HuggingFaceProvider implements ModelProvider {
 
           let fullText = '';
           for await (const chunk of stream) {
-            const content = chunk.choices[0]?.delta?.content || '';
+            const content = chunk?.choices?.[0]?.delta?.content || '';
             if (content) {
               fullText += content;
               onChunk(content);
@@ -1634,7 +1642,7 @@ export class NvidiaProvider implements ModelProvider {
     }, 'Nvidia');
   }
 
-  async stream(messages: any[], options: { complexity: 'high' | 'standard', model?: string }, onChunk: (chunk: string) => void): Promise<ModelResponse> {
+  async stream(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean, model?: string }, onChunk: (chunk: string) => void): Promise<ModelResponse> {
     return retry(async () => {
       const apiKey = await this.rotator.getNextKey();
       const rawPrimary = (options?.model || await this.rotator.getModel() || '').trim();
@@ -1656,13 +1664,18 @@ export class NvidiaProvider implements ModelProvider {
         timeout: 60000,
       });
 
+      if (options.jsonMode) {
+        this.ensureJsonInMessages(messages);
+      }
+
       const executeStream = async (targetModel: string) => {
         const stream = await openai.chat.completions.create({
           model: targetModel,
           messages: messages,
           max_tokens: 8192,
           temperature: 0.5,
-          stream: true
+          stream: true,
+          response_format: options.jsonMode ? { type: "json_object" } : undefined
         });
 
         let fullText = '';
@@ -1670,7 +1683,7 @@ export class NvidiaProvider implements ModelProvider {
         let hasFinishedThinking = false;
 
         for await (const chunk of stream) {
-          const delta = chunk.choices[0]?.delta as any;
+          const delta = chunk?.choices?.[0]?.delta as any;
           const reasoning = delta?.reasoning_content || delta?.reasoning || '';
           const content = delta?.content || '';
           
