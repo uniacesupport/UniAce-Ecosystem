@@ -32,11 +32,90 @@ interface DiscoveredModel {
   name?: string;
   contextWindow?: number;
   description?: string;
+  ownedBy?: string;
+  isVision?: boolean;
   capabilities?: {
     chat?: boolean;
     vision?: boolean;
     streaming?: boolean;
   };
+}
+
+async function discoverModelsDirectFromProvider(provider: string, apiKey: string): Promise<DiscoveredModel[]> {
+  const norm = provider.toLowerCase().trim();
+  const cleanKey = apiKey.trim();
+  if (!cleanKey) return [];
+
+  if (norm === 'groq') {
+    const res = await fetch('https://api.groq.com/openai/v1/models', {
+      headers: { 'Authorization': `Bearer ${cleanKey}`, 'Content-Type': 'application/json' }
+    });
+    if (!res.ok) throw new Error(`Groq API returned ${res.status}`);
+    const data = await res.json();
+    return (data.data || [])
+      .filter((m: any) => m.active !== false && !m.id.includes('whisper'))
+      .map((m: any) => ({ id: m.id, name: m.id, contextWindow: m.context_window, ownedBy: m.owned_by || 'Groq' }));
+  }
+
+  if (norm === 'gemini' || norm === 'gemini_direct') {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(cleanKey)}`);
+    if (!res.ok) throw new Error(`Gemini API returned ${res.status}`);
+    const data = await res.json();
+    return (data.models || [])
+      .filter((m: any) => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes('generateContent'))
+      .map((m: any) => {
+        const cleanId = m.name?.startsWith('models/') ? m.name.replace(/^models\//, '') : m.name;
+        return { id: cleanId, name: m.displayName || cleanId, contextWindow: m.inputTokenLimit, description: m.description, ownedBy: 'Google' };
+      });
+  }
+
+  if (norm === 'mistral' || norm === 'mistral_direct') {
+    const res = await fetch('https://api.mistral.ai/v1/models', {
+      headers: { 'Authorization': `Bearer ${cleanKey}`, 'Content-Type': 'application/json' }
+    });
+    if (!res.ok) throw new Error(`Mistral API returned ${res.status}`);
+    const data = await res.json();
+    return (data.data || [])
+      .filter((m: any) => !m.id.includes('embed') && !m.id.includes('moderation'))
+      .map((m: any) => ({ id: m.id, name: m.name || m.id, contextWindow: m.max_context_length, description: m.description, ownedBy: m.owned_by || 'Mistral AI' }));
+  }
+
+  if (norm === 'openrouter' || norm === 'openrouter_free') {
+    const res = await fetch('https://openrouter.ai/api/v1/models', {
+      headers: { 'Authorization': `Bearer ${cleanKey}`, 'Content-Type': 'application/json' }
+    });
+    if (!res.ok) throw new Error(`OpenRouter API returned ${res.status}`);
+    const data = await res.json();
+    return (data.data || []).map((m: any) => ({
+      id: m.id,
+      name: m.name || m.id,
+      contextWindow: m.context_length,
+      description: m.description,
+      ownedBy: 'OpenRouter'
+    }));
+  }
+
+  if (norm === 'cohere') {
+    const res = await fetch('https://api.cohere.com/v1/models', {
+      headers: { 'Authorization': `Bearer ${cleanKey}`, 'Content-Type': 'application/json' }
+    });
+    if (!res.ok) throw new Error(`Cohere API returned ${res.status}`);
+    const data = await res.json();
+    return (data.models || [])
+      .filter((m: any) => Array.isArray(m.endpoints) && (m.endpoints.includes('chat') || m.endpoints.includes('generate')))
+      .map((m: any) => ({ id: m.name, name: m.name, contextWindow: m.context_length, ownedBy: 'Cohere' }));
+  }
+
+  if (norm === 'huggingface') {
+    const res = await fetch('https://huggingface.co/api/models?pipeline_tag=text-generation&sort=downloads&direction=-1&limit=60', {
+      headers: { 'Authorization': `Bearer ${cleanKey}` }
+    });
+    if (!res.ok) throw new Error(`HuggingFace API returned ${res.status}`);
+    const data = await res.json();
+    return (Array.isArray(data) ? data : []).map((m: any) => ({ id: m.id, name: m.id, ownedBy: 'Hugging Face' }));
+  }
+
+  return [];
 }
 
 export default function ApiKeyManagerModal({ provider, onClose }: ApiKeyManagerModalProps) {
@@ -83,7 +162,13 @@ export default function ApiKeyManagerModal({ provider, onClose }: ApiKeyManagerM
 
       if (docSnap.exists()) {
         const data = docSnap.data();
-        const providerData = data[provider] || { keys: [] };
+        const providerData =
+          data[provider] ||
+          data[provider.replace('_direct', '')] ||
+          data[provider.replace('_free', '')] ||
+          data[`${provider}_direct`] ||
+          data[`${provider}_free`] ||
+          { keys: [] };
         loadedKeys = providerData.keys || [];
         loadedModel = providerData.model || '';
         loadedFallback = providerData.fallbackModel || '';
@@ -94,14 +179,66 @@ export default function ApiKeyManagerModal({ provider, onClose }: ApiKeyManagerM
         setKeys([]);
       }
 
+      const activeKey =
+        loadedKeys.find((k: any) => k?.key && !k.isExhausted)?.key ||
+        loadedKeys.find((k: any) => k?.key)?.key ||
+        undefined;
+
       // Automatically trigger live model discovery
-      await triggerModelDiscovery(false, undefined, loadedModel, loadedFallback);
+      await triggerModelDiscovery(false, activeKey, loadedModel, loadedFallback);
     } catch (err) {
-      console.error('Error fetching API keys:', err);
+      console.warn('Error fetching API keys:', err);
       setError('Failed to load API keys and configuration.');
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const applyDiscoveredModels = (
+    modelsList: DiscoveredModel[],
+    currentModelValue?: string,
+    currentFallbackValue?: string
+  ) => {
+    const uniqueMap = new Map<string, DiscoveredModel>();
+    for (const m of modelsList) {
+      if (m && m.id && !uniqueMap.has(m.id)) {
+        uniqueMap.set(m.id, m);
+      }
+    }
+    const sorted = Array.from(uniqueMap.values()).sort((a, b) => a.id.localeCompare(b.id));
+    setDiscoveredModels(sorted);
+    setDiscoveryError(null);
+
+    const currentM = currentModelValue !== undefined ? currentModelValue : model;
+    const currentFb = currentFallbackValue !== undefined ? currentFallbackValue : fallbackModel;
+
+    if (currentM && !sorted.some((m: DiscoveredModel) => m.id.toLowerCase() === currentM.toLowerCase())) {
+      setIsCustomModelMode(true);
+    }
+    if (currentFb && !sorted.some((m: DiscoveredModel) => m.id.toLowerCase() === currentFb.toLowerCase())) {
+      setIsCustomFallbackMode(true);
+    }
+  };
+
+  const readFirestoreDiscoveredModels = async (prov: string): Promise<DiscoveredModel[] | null> => {
+    try {
+      const snap = await getDoc(doc(db, 'system_settings', 'discovered_models'));
+      if (!snap.exists()) return null;
+      const d = snap.data() || {};
+      const norm = prov.toLowerCase().trim();
+      const entry =
+        d[norm] ||
+        d[norm.replace('_direct', '')] ||
+        d[norm.replace('_free', '')] ||
+        d[`${norm}_direct`] ||
+        d[`${norm}_free`];
+      if (entry && Array.isArray(entry.models) && entry.models.length > 0) {
+        return entry.models as DiscoveredModel[];
+      }
+    } catch {
+      // Ignore Firestore read errors here
+    }
+    return null;
   };
 
   const triggerModelDiscovery = async (
@@ -112,44 +249,115 @@ export default function ApiKeyManagerModal({ provider, onClose }: ApiKeyManagerM
   ) => {
     setIsDiscovering(true);
     setDiscoveryError(null);
-    try {
-      const idToken = await auth.currentUser?.getIdToken();
-      const res = await fetch('/api/admin/fetch-provider-models', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${idToken}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ 
-          provider, 
-          apiKeyOverride: keyOverride || (newKey.trim() || undefined),
-          forceRefresh 
-        })
-      });
 
-      const data = await res.json();
-      if (data.success && Array.isArray(data.models)) {
-        setDiscoveredModels(data.models);
-        
-        const currentM = currentModelValue !== undefined ? currentModelValue : model;
-        const currentFb = currentFallbackValue !== undefined ? currentFallbackValue : fallbackModel;
-        
-        // If current model is not found in discovered list and is not empty, enable custom mode
-        if (currentM && !data.models.some((m: DiscoveredModel) => m.id.toLowerCase() === currentM.toLowerCase())) {
-          setIsCustomModelMode(true);
+    const effectiveKey =
+      keyOverride ||
+      newKey.trim() ||
+      keys.find(k => k.key && !k.isExhausted)?.key ||
+      keys.find(k => k.key)?.key ||
+      undefined;
+
+    try {
+      // Tier 1: Backend HTTP endpoint (/api/admin/fetch-provider-models)
+      let httpSucceeded = false;
+      let httpBackendError: string | null = null;
+      try {
+        const idToken = await auth.currentUser?.getIdToken();
+        const res = await fetch('/api/admin/fetch-provider-models', {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            ...(idToken ? { 'Authorization': `Bearer ${idToken}` } : {}),
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ 
+            provider, 
+            apiKeyOverride: effectiveKey,
+            forceRefresh 
+          })
+        });
+
+        const rawText = await res.text().catch(() => '');
+        if (rawText && !rawText.trim().startsWith('<')) {
+          const data = JSON.parse(rawText);
+          if (data.success && Array.isArray(data.models) && data.models.length > 0) {
+            applyDiscoveredModels(data.models, currentModelValue, currentFallbackValue);
+            httpSucceeded = true;
+          } else if (data.error) {
+            httpBackendError = data.error;
+          }
         }
-        if (currentFb && !data.models.some((m: DiscoveredModel) => m.id.toLowerCase() === currentFb.toLowerCase())) {
-          setIsCustomFallbackMode(true);
-        }
-      } else {
-        setDiscoveryError(data.error || 'No live models returned from provider API.');
-        // If discovery failed and models are already set, keep custom mode available
-        setIsCustomModelMode(true);
-        setIsCustomFallbackMode(true);
+      } catch {
+        // Proceed to Tier 2 & Tier 3 live discovery
       }
+
+      if (httpSucceeded) return;
+
+      // Tier 2: Backend-Synced Live Models in Firestore (system_settings/discovered_models)
+      if (!forceRefresh) {
+        const firestoreModels = await readFirestoreDiscoveredModels(provider);
+        if (firestoreModels && firestoreModels.length > 0) {
+          applyDiscoveredModels(firestoreModels, currentModelValue, currentFallbackValue);
+          return;
+        }
+      }
+
+      // Tier 3: Direct Live Upstream Provider HTTPS Query (or Backend Firestore RPC Refresh)
+      if (effectiveKey) {
+        try {
+          const directModels = await discoverModelsDirectFromProvider(provider, effectiveKey);
+          if (directModels.length > 0) {
+            applyDiscoveredModels(directModels, currentModelValue, currentFallbackValue);
+            return;
+          }
+        } catch (directErr: any) {
+          if (!httpBackendError) {
+            httpBackendError = directErr?.message || null;
+          }
+        }
+      }
+
+      // Request live backend refresh via Firestore RPC and read discovered_models
+      try {
+        const reqId = `${provider}_${Date.now()}`;
+        await setDoc(doc(db, 'system_settings', 'discovered_models'), {
+          refreshRequest: {
+            provider,
+            apiKeyOverride: effectiveKey || null,
+            requestId: reqId,
+            requestedAt: Date.now()
+          }
+        }, { merge: true });
+
+        for (let attempt = 0; attempt < 6; attempt++) {
+          await new Promise(r => setTimeout(r, 500));
+          const snap = await getDoc(doc(db, 'system_settings', 'discovered_models'));
+          if (snap.exists()) {
+            const d = snap.data() || {};
+            if (d.lastCompletedRequestId === reqId) {
+              if (d.lastError) {
+                httpBackendError = d.lastError;
+              }
+              break;
+            }
+          }
+        }
+      } catch {
+        // Ignore RPC write error
+      }
+
+      const fallbackFirestoreModels = await readFirestoreDiscoveredModels(provider);
+      if (fallbackFirestoreModels && fallbackFirestoreModels.length > 0) {
+        applyDiscoveredModels(fallbackFirestoreModels, currentModelValue, currentFallbackValue);
+        return;
+      }
+
+      setDiscoveryError(httpBackendError || 'No live models returned from provider API. You can enter a model ID manually below.');
+      setIsCustomModelMode(true);
+      setIsCustomFallbackMode(true);
     } catch (err: any) {
-      console.error('Model discovery error:', err);
-      setDiscoveryError(err.message || 'Failed to connect to model discovery endpoint.');
+      console.warn('Model discovery warning:', err);
+      setDiscoveryError(err.message || 'Could not reach live model discovery endpoint.');
       setIsCustomModelMode(true);
       setIsCustomFallbackMode(true);
     } finally {
@@ -210,20 +418,41 @@ export default function ApiKeyManagerModal({ provider, onClose }: ApiKeyManagerM
       const idToken = await auth.currentUser?.getIdToken();
       const res = await fetch('/api/admin/test-api-key', {
         method: 'POST',
+        credentials: 'include',
         headers: {
-          'Authorization': `Bearer ${idToken}`,
+          ...(idToken ? { 'Authorization': `Bearer ${idToken}` } : {}),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ provider, key: keyToTest })
       });
 
-      const data = await res.json();
+      const rawText = await res.text().catch(() => '');
+      let data: any = null;
+      if (rawText && !rawText.trim().startsWith('<')) {
+        try {
+          data = JSON.parse(rawText);
+        } catch {
+          data = null;
+        }
+      }
+
       const updatedKeys = [...keys];
-      if (data.success) {
-        updatedKeys[index].testStatus = 'success';
+      if (data && typeof data.success === 'boolean') {
+        if (data.success) {
+          updatedKeys[index].testStatus = 'success';
+        } else {
+          updatedKeys[index].testStatus = 'error';
+          updatedKeys[index].testError = data.error || 'Test failed';
+        }
       } else {
-        updatedKeys[index].testStatus = 'error';
-        updatedKeys[index].testError = data.error || 'Test failed';
+        // Fallback to direct live provider key verification if proxy returned HTML
+        const liveModels = await discoverModelsDirectFromProvider(provider, keyToTest);
+        if (liveModels.length > 0) {
+          updatedKeys[index].testStatus = 'success';
+        } else {
+          updatedKeys[index].testStatus = 'error';
+          updatedKeys[index].testError = 'Key verification could not confirm live models';
+        }
       }
       setKeys(updatedKeys);
     } catch (err: any) {

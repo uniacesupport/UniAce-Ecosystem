@@ -2,10 +2,13 @@ import express from 'express';
 import admin from 'firebase-admin';
 import { MailService } from '../mailService';
 import { GoogleGenAI } from '@google/genai';
-import { fetchProviderModels } from '../modelDiscovery';
+import { fetchProviderModels, initModelDiscoverySync } from '../modelDiscovery';
 import { recordBackendSystemLog } from '../memoryMonitor';
 
 export function setupAdminRoutes(app: express.Express, verifyAuth: any, getAdminApp: any, isAdminEmail: any) {
+  initModelDiscoverySync().catch((err) => {
+    console.warn('[Admin] Initial model discovery sync warning:', err);
+  });
 
   // 1. Dynamic AI Lesson Remediation Endpoint (For High-Struggle Subtopics)
   app.post('/api/admin/remediate-lesson', verifyAuth, async (req, res) => {
@@ -473,21 +476,27 @@ Include 3 multiple-choice conceptual questions with step-by-step verified explan
     }
   });
 
-  // 6. Live AI Provider Model Discovery Endpoint
-  app.post('/api/admin/fetch-provider-models', verifyAuth, async (req, res) => {
+  // 6. Live AI Provider Model Discovery Endpoint (supports both POST and GET)
+  const handleFetchProviderModels = async (req: express.Request, res: express.Response) => {
     const user = (req as any).user;
     const adminApp = getAdminApp();
-    if (!adminApp) return res.status(503).json({ error: 'Firebase not initialized' });
+    if (!adminApp) return res.status(500).json({ success: false, error: 'Firebase not initialized' });
 
     try {
-      const userDoc = await adminApp.firestore().collection('users').doc(user.uid).get();
-      const userData = userDoc.data();
-      const isAdmin = userData?.role === 'admin' || isAdminEmail(user.email);
-      if (!isAdmin) return res.status(403).json({ error: 'Forbidden: Admin access required' });
+      let isAdmin = Boolean(user?.admin === true || user?.role === 'admin' || isAdminEmail(user?.email));
+      if (!isAdmin && user?.uid) {
+        const userDoc = await adminApp.firestore().collection('users').doc(user.uid).get();
+        const userData = userDoc.data();
+        isAdmin = userData?.role === 'admin' || isAdminEmail(userData?.email);
+      }
+      if (!isAdmin) return res.status(401).json({ success: false, error: 'Forbidden: Admin access required' });
 
-      const { provider, apiKeyOverride, forceRefresh } = req.body;
+      const provider = (req.body?.provider || req.query?.provider || '') as string;
+      const apiKeyOverride = (req.body?.apiKeyOverride || req.query?.apiKeyOverride || undefined) as string | undefined;
+      const forceRefresh = req.body?.forceRefresh ?? req.query?.forceRefresh;
+
       if (!provider) {
-        return res.status(400).json({ error: 'Provider name is required' });
+        return res.status(400).json({ success: false, error: 'Provider name is required' });
       }
 
       console.log(`[Admin] Discovering live models for provider '${provider}' (forceRefresh: ${!!forceRefresh})...`);
@@ -502,7 +511,7 @@ Include 3 multiple-choice conceptual questions with step-by-step verified explan
         'ai',
         `Discovered ${models.length} live models for provider "${provider}" (cached: ${!!cached})`,
         { provider, count: models.length, cached: !!cached },
-        { uid: user.uid, email: user.email }
+        { uid: user?.uid || 'admin', email: user?.email || 'admin' }
       );
 
       res.json({
@@ -520,7 +529,10 @@ Include 3 multiple-choice conceptual questions with step-by-step verified explan
         details: error.stack
       });
     }
-  });
+  };
+
+  app.post('/api/admin/fetch-provider-models', verifyAuth, handleFetchProviderModels);
+  app.get('/api/admin/fetch-provider-models', verifyAuth, handleFetchProviderModels);
 }
 
 

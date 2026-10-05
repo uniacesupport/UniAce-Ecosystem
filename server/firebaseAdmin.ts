@@ -41,8 +41,13 @@ try {
     db = getFirestore(adminApp, databaseId);
     db.settings({ ignoreUndefinedProperties: true });
     
-    // Override app.firestore() to return the correct db instance
+    // Override app.firestore() and admin.firestore() to return the correct named db instance
     adminApp.firestore = () => db as admin.firestore.Firestore;
+    try {
+      (admin as any).firestore = Object.assign(() => db as admin.firestore.Firestore, admin.firestore);
+    } catch {
+      // Ignore if read-only property on namespace
+    }
     
     console.log(`Firebase Admin Initialized Successfully with database: ${databaseId}`);
   } else {

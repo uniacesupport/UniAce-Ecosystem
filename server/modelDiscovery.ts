@@ -1,4 +1,4 @@
-import admin from 'firebase-admin';
+import { getDb } from './firebaseAdmin';
 
 export interface ProviderModelOption {
   id: string;
@@ -17,13 +17,47 @@ interface CacheEntry {
 const modelCache = new Map<string, CacheEntry>();
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes cache TTL
 
+function getProviderAliases(provider: string): string[] {
+  const norm = provider.toLowerCase().trim();
+  if (norm === 'gemini' || norm === 'gemini_direct') return ['gemini', 'gemini_direct'];
+  if (norm === 'mistral' || norm === 'mistral_direct') return ['mistral', 'mistral_direct'];
+  if (norm === 'openrouter' || norm === 'openrouter_free') return ['openrouter', 'openrouter_free'];
+  return [norm];
+}
+
+async function persistDiscoveredModelsToFirestore(provider: string, models: ProviderModelOption[], requestId?: string) {
+  try {
+    const db = getDb();
+    if (!db || models.length === 0) return;
+    const aliases = getProviderAliases(provider);
+    const now = Date.now();
+    const payload: Record<string, any> = {};
+    for (const alias of aliases) {
+      payload[alias] = {
+        models,
+        count: models.length,
+        updatedAt: now
+      };
+    }
+    if (requestId) {
+      payload.lastCompletedRequestId = requestId;
+      payload.lastCompletedAt = now;
+      payload.lastError = null;
+    }
+    await db.collection('system_settings').doc('discovered_models').set(payload, { merge: true });
+  } catch (err) {
+    console.warn(`[ModelDiscovery] Failed to persist discovered models for ${provider}:`, err);
+  }
+}
+
 /**
  * Normalizes and extracts active chat/text generation models from upstream AI provider APIs.
  */
 export async function fetchProviderModels(
   provider: string,
   apiKeyOverride?: string,
-  forceRefresh: boolean = false
+  forceRefresh: boolean = false,
+  requestId?: string
 ): Promise<{ models: ProviderModelOption[]; cached: boolean }> {
   const normalizedProvider = provider.toLowerCase().trim();
   const cacheKey = `${normalizedProvider}:${apiKeyOverride ? 'custom_key' : 'default'}`;
@@ -96,7 +130,49 @@ export async function fetchProviderModels(
     models: result
   });
 
+  // Persist live discovered models to Firestore so admin UI can access them even across iframe proxy gates
+  await persistDiscoveredModelsToFirestore(normalizedProvider, result, requestId);
+
   return { models: result, cached: false };
+}
+
+let discoveryWatcherInitialized = false;
+let lastHandledRequestId = '';
+
+export async function initModelDiscoverySync() {
+  const db = getDb();
+  if (!db || discoveryWatcherInitialized) return;
+  discoveryWatcherInitialized = true;
+
+  const providers = ['groq', 'gemini_direct', 'mistral_direct', 'openrouter', 'nvidia', 'cohere', 'huggingface'];
+  for (const p of providers) {
+    fetchProviderModels(p, undefined, true).catch((err) => {
+      console.warn(`[ModelDiscovery] Startup sync skipped for ${p}: ${err.message}`);
+    });
+  }
+
+  try {
+    db.collection('system_settings').doc('discovered_models').onSnapshot(async (snap) => {
+      if (!snap.exists) return;
+      const data = snap.data() || {};
+      const req = data.refreshRequest;
+      if (!req || !req.requestId || req.requestId === lastHandledRequestId || !req.provider) return;
+      lastHandledRequestId = req.requestId;
+      try {
+        await fetchProviderModels(req.provider, req.apiKeyOverride, true, req.requestId);
+      } catch (err: any) {
+        await db.collection('system_settings').doc('discovered_models').set({
+          lastCompletedRequestId: req.requestId,
+          lastCompletedAt: Date.now(),
+          lastError: err.message || 'Failed to discover models'
+        }, { merge: true }).catch(() => {});
+      }
+    }, (err) => {
+      console.warn('[ModelDiscovery] Watcher error:', err.message);
+    });
+  } catch (err) {
+    console.warn('[ModelDiscovery] Could not attach Firestore discovery watcher:', err);
+  }
 }
 
 /**
@@ -105,15 +181,18 @@ export async function fetchProviderModels(
 async function getActiveKeyForProvider(provider: string): Promise<string | null> {
   // 1. Try Firestore system_settings/api_keys
   try {
-    const docRef = admin.firestore().collection('system_settings').doc('api_keys');
-    const doc = await docRef.get();
-    if (doc.exists) {
-      const data = doc.data() || {};
-      const provData = data[provider] || data[provider.replace('_direct', '')] || data[provider.replace('_free', '')];
-      if (provData && Array.isArray(provData.keys)) {
-        const activeKeyObj = provData.keys.find((k: any) => k.key && !k.isExhausted) || provData.keys.find((k: any) => k.key);
-        if (activeKeyObj && activeKeyObj.key) {
-          return activeKeyObj.key.trim();
+    const db = getDb();
+    if (db) {
+      const docRef = db.collection('system_settings').doc('api_keys');
+      const doc = await docRef.get();
+      if (doc.exists) {
+        const data = doc.data() || {};
+        const provData = data[provider] || data[provider.replace('_direct', '')] || data[provider.replace('_free', '')] || data[`${provider}_direct`] || data[`${provider}_free`];
+        if (provData && Array.isArray(provData.keys)) {
+          const activeKeyObj = provData.keys.find((k: any) => k.key && !k.isExhausted) || provData.keys.find((k: any) => k.key);
+          if (activeKeyObj && activeKeyObj.key) {
+            return activeKeyObj.key.trim();
+          }
         }
       }
     }
@@ -138,6 +217,37 @@ async function getActiveKeyForProvider(provider: string): Promise<string | null>
   return envMap[provider] || null;
 }
 
+/**
+ * Safely parses response text as JSON, throwing descriptive errors if HTML or invalid markup is received
+ */
+async function parseJsonResponse<T>(res: Response, providerName: string): Promise<T> {
+  const contentType = res.headers.get('content-type') || '';
+  const rawText = await res.text().catch(() => '');
+
+  if (!res.ok) {
+    if (contentType.includes('text/html') || rawText.trim().startsWith('<')) {
+      if (rawText.toLowerCase().includes('cloudflare') || res.status === 403) {
+        throw new Error(`${providerName} model discovery blocked by Cloudflare security rules (403 HTML).`);
+      }
+      throw new Error(`${providerName} returned an HTML error page (Status: ${res.status}).`);
+    }
+    throw new Error(`${providerName} API returned ${res.status}: ${rawText || res.statusText}`);
+  }
+
+  if (contentType.includes('text/html') || rawText.trim().startsWith('<')) {
+    if (rawText.toLowerCase().includes('cloudflare')) {
+      throw new Error(`${providerName} model discovery blocked by Cloudflare security rules (HTML response received).`);
+    }
+    throw new Error(`${providerName} returned an HTML document instead of JSON data.`);
+  }
+
+  try {
+    return JSON.parse(rawText) as T;
+  } catch (err: any) {
+    throw new Error(`${providerName} response could not be parsed as JSON: ${err.message || 'Invalid JSON format'}`);
+  }
+}
+
 // 1. Groq Models Discovery (OpenAI Compatible)
 async function fetchGroqModels(apiKey: string): Promise<ProviderModelOption[]> {
   const res = await fetch('https://api.groq.com/openai/v1/models', {
@@ -147,12 +257,7 @@ async function fetchGroqModels(apiKey: string): Promise<ProviderModelOption[]> {
     }
   });
 
-  if (!res.ok) {
-    const errText = await res.text().catch(() => '');
-    throw new Error(`Groq API returned ${res.status}: ${errText || res.statusText}`);
-  }
-
-  const data = await res.json();
+  const data = await parseJsonResponse<any>(res, 'Groq');
   if (!data || !Array.isArray(data.data)) {
     throw new Error('Invalid response format from Groq API');
   }
@@ -174,12 +279,7 @@ async function fetchGeminiModels(apiKey: string): Promise<ProviderModelOption[]>
     headers: { 'Content-Type': 'application/json' }
   });
 
-  if (!res.ok) {
-    const errText = await res.text().catch(() => '');
-    throw new Error(`Gemini API returned ${res.status}: ${errText || res.statusText}`);
-  }
-
-  const data = await res.json();
+  const data = await parseJsonResponse<any>(res, 'Gemini');
   if (!data || !Array.isArray(data.models)) {
     throw new Error('Invalid response format from Gemini API');
   }
@@ -214,12 +314,7 @@ async function fetchMistralModels(apiKey: string): Promise<ProviderModelOption[]
     }
   });
 
-  if (!res.ok) {
-    const errText = await res.text().catch(() => '');
-    throw new Error(`Mistral API returned ${res.status}: ${errText || res.statusText}`);
-  }
-
-  const data = await res.json();
+  const data = await parseJsonResponse<any>(res, 'Mistral');
   if (!data || !Array.isArray(data.data)) {
     throw new Error('Invalid response format from Mistral API');
   }
@@ -246,12 +341,7 @@ async function fetchOpenRouterModels(apiKey: string): Promise<ProviderModelOptio
     }
   });
 
-  if (!res.ok) {
-    const errText = await res.text().catch(() => '');
-    throw new Error(`OpenRouter API returned ${res.status}: ${errText || res.statusText}`);
-  }
-
-  const data = await res.json();
+  const data = await parseJsonResponse<any>(res, 'OpenRouter');
   if (!data || !Array.isArray(data.data)) {
     throw new Error('Invalid response format from OpenRouter API');
   }
@@ -278,12 +368,7 @@ async function fetchNvidiaModels(apiKey: string): Promise<ProviderModelOption[]>
     }
   });
 
-  if (!res.ok) {
-    const errText = await res.text().catch(() => '');
-    throw new Error(`NVIDIA NIM API returned ${res.status}: ${errText || res.statusText}`);
-  }
-
-  const data = await res.json();
+  const data = await parseJsonResponse<any>(res, 'NVIDIA NIM');
   if (!data || !Array.isArray(data.data)) {
     throw new Error('Invalid response format from NVIDIA NIM API');
   }
@@ -304,12 +389,7 @@ async function fetchCohereModels(apiKey: string): Promise<ProviderModelOption[]>
     }
   });
 
-  if (!res.ok) {
-    const errText = await res.text().catch(() => '');
-    throw new Error(`Cohere API returned ${res.status}: ${errText || res.statusText}`);
-  }
-
-  const data = await res.json();
+  const data = await parseJsonResponse<any>(res, 'Cohere');
   if (!data || !Array.isArray(data.models)) {
     throw new Error('Invalid response format from Cohere API');
   }
@@ -337,26 +417,7 @@ async function fetchHuggingFaceModels(apiKey: string): Promise<ProviderModelOpti
     }
   });
 
-  const contentType = res.headers.get('content-type') || '';
-  if (contentType.includes('text/html')) {
-    const htmlText = await res.text().catch(() => '');
-    if (htmlText.toLowerCase().includes('cloudflare') || res.status === 403) {
-      throw new Error(`Model discovery was blocked by Cloudflare security rules (403 HTML). Hugging Face requires browser-like verification. Try manually entering a model identifier (e.g., meta-llama/Llama-3.2-1B-Instruct).`);
-    }
-    throw new Error(`HuggingFace returned an HTML page (Status: ${res.status}) instead of JSON data. Model discovery is currently restricted.`);
-  }
-
-  if (!res.ok) {
-    const errText = await res.text().catch(() => '');
-    throw new Error(`HuggingFace API returned ${res.status}: ${errText || res.statusText}`);
-  }
-
-  const rawText = await res.text();
-  if (rawText.trim().startsWith('<!')) {
-    throw new Error(`HuggingFace returned an HTML error document. Your API key might be inactive, or the endpoint rate-limited.`);
-  }
-
-  const data = JSON.parse(rawText);
+  const data = await parseJsonResponse<any[]>(res, 'HuggingFace');
   if (!Array.isArray(data)) {
     throw new Error('Invalid response format from HuggingFace API');
   }
