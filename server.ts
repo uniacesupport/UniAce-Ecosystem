@@ -1692,19 +1692,76 @@ const getAndValidateSparks = async (uid: string, email: string | undefined): Pro
 
 // --- API Routes ---
 
-// 0. User Quota Endpoint
+// 0. User Quota & Authoritative Profile Endpoint
 app.get('/api/user/quota', verifyAuth, async (req, res) => {
   const user = (req as any).user;
   try {
     console.log(`Fetching quota for user: ${user.uid} (${user.email})`);
     const quota = await getAndValidateSparks(user.uid, user.email);
-    res.json(quota);
+    let profileData: Record<string, any> | null = null;
+    const adminApp = getAdminApp();
+    if (adminApp) {
+      const snap = await adminApp.firestore().collection('users').doc(user.uid).get();
+      if (snap.exists) {
+        profileData = snap.data() || null;
+      }
+    }
+    res.json({ ...quota, profile: profileData });
   } catch (error: any) {
     console.error(`Error fetching quota for ${user.uid}:`, error);
     res.status(500).json({ 
       error: 'Failed to fetch quota', 
       message: error.message,
       stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
+});
+
+// 0b. User Profile Sync Endpoint (Persists through Firestore + Disk-Backed Quota Shield)
+app.post('/api/user/profile', verifyAuth, async (req, res) => {
+  const user = (req as any).user;
+  try {
+    const adminApp = getAdminApp();
+    if (!adminApp) {
+      return res.status(503).json({ error: 'Database service unavailable' });
+    }
+    const rawBody = req.body && typeof req.body === 'object' ? req.body : {};
+    const protectedFields = new Set([
+      'uid',
+      'role',
+      'plan_type',
+      'ai_sparks',
+      'subscription_expiry',
+      'subscription_status',
+      'subscription_start_date',
+      'last_spark_reset',
+      'last_payment_ref',
+      'admin_pin_verified_until'
+    ]);
+
+    const cleanUpdates: Record<string, any> = {
+      uid: user.uid,
+      updatedAt: new Date().toISOString()
+    };
+
+    for (const [key, value] of Object.entries(rawBody)) {
+      if (!protectedFields.has(key) && value !== undefined) {
+        cleanUpdates[key] = value;
+      }
+    }
+
+    const userRef = adminApp.firestore().collection('users').doc(user.uid);
+    await userRef.set(cleanUpdates, { merge: true });
+    const updatedSnap = await userRef.get();
+    return res.json({
+      success: true,
+      profile: updatedSnap.exists ? updatedSnap.data() : cleanUpdates
+    });
+  } catch (error: any) {
+    console.error(`Error updating profile for ${user.uid}:`, error);
+    return res.status(500).json({
+      error: 'Failed to update profile',
+      message: error.message
     });
   }
 });

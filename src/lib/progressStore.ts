@@ -24,6 +24,17 @@ const INITIAL_PROGRESS: UserProgress = {
   assignments: [],
 };
 
+function cleanMasteryMap(rawMastery: any): Record<string, number> {
+  if (!rawMastery || typeof rawMastery !== 'object') return {};
+  const cleaned: Record<string, number> = {};
+  for (const [key, val] of Object.entries(rawMastery)) {
+    if (typeof val === 'number' && !isNaN(val) && val >= 0 && val <= 100) {
+      cleaned[key] = val;
+    }
+  }
+  return cleaned;
+}
+
 function getInitialProgress(): UserProgress {
   let parsed = INITIAL_PROGRESS;
   try {
@@ -37,6 +48,7 @@ function getInitialProgress(): UserProgress {
   return {
     ...INITIAL_PROGRESS,
     ...parsed,
+    mastery: cleanMasteryMap(parsed?.mastery),
     assignments: Array.isArray(parsed?.assignments) ? parsed.assignments : [],
     topicLastStudied: parsed?.topicLastStudied || {},
     bookmarks: parsed?.bookmarks || []

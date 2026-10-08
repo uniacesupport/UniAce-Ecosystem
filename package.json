@@ -84,6 +84,8 @@
     "vite-plugin-pwa": "^1.2.0"
   },
   "overrides": {
-    "node-domexception": "npm:empty-module@0.0.2"
+    "node-domexception": "npm:empty-module@0.0.2",
+    "uuid": "^11.1.0",
+    "glob": "^13.0.6"
   }
 }

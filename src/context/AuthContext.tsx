@@ -52,6 +52,7 @@ interface UserProfile {
   referralCode?: string;
   referredBy?: string;
   referral_count?: number;
+  updatedAt?: string;
 }
 
 interface AuthContextType {
@@ -87,21 +88,49 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const activeSessionIdRef = React.useRef<string | null>(null);
   const userIdRef = React.useRef<string | null>(null);
 
+  const loadCachedProfile = (uid: string): Partial<UserProfile> | null => {
+    try {
+      const raw = localStorage.getItem(`uniace_user_profile_${uid}`);
+      if (raw) {
+        return JSON.parse(raw);
+      }
+    } catch {
+      // Ignore storage read errors
+    }
+    return null;
+  };
+
+  const saveCachedProfile = (uid: string, prof: UserProfile) => {
+    try {
+      localStorage.setItem(`uniace_user_profile_${uid}`, JSON.stringify(prof));
+    } catch {
+      // Ignore storage write errors
+    }
+  };
+
   const syncUserProfile = async (currentUser: User) => {
     if (!db) return;
     console.log("AuthContext: Syncing user profile for", currentUser.uid);
+    const cachedProfile = loadCachedProfile(currentUser.uid);
+
     try {
       const userRef = doc(db, "users", currentUser.uid);
       
-      // Use a timeout for getDoc to prevent hanging
-      const userDocPromise = getDoc(userRef);
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error("Firestore getDoc timeout")), 8000)
-      );
-      
-      const userDoc = await Promise.race([userDocPromise, timeoutPromise]) as any;
+      let userDoc: any = { exists: () => false, data: () => ({}) };
+      try {
+        const userDocPromise = getDoc(userRef);
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error("Firestore getDoc timeout")), 6000)
+        );
+        userDoc = await Promise.race([userDocPromise, timeoutPromise]) as any;
+      } catch (docErr) {
+        console.warn("AuthContext: Client getDoc fallback to backend/cached profile:", docErr);
+      }
 
-      let userRole: 'student' | 'admin' | 'editor' = 'student';
+      const firestoreData: Record<string, any> = userDoc.exists() ? (userDoc.data() || {}) : {};
+      let backendProfile: Record<string, any> | null = null;
+
+      let userRole: 'student' | 'admin' | 'tutor' | 'moderator' = firestoreData.role || cachedProfile?.role || 'student';
       
       // Default admin emails
       const adminEmails = (import.meta.env.VITE_ADMIN_EMAILS || '').split(',').map((e: string) => e.trim().toLowerCase()).filter(Boolean);
@@ -109,21 +138,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         userRole = 'admin';
       }
 
-      let plan_type = userDoc.exists() 
-        ? (userDoc.data().plan_type || (userRole === 'admin' ? 'scholar' : 'free')) 
-        : (userRole === 'admin' ? 'scholar' : 'free');
+      let plan_type: PlanType = firestoreData.plan_type || cachedProfile?.plan_type || (userRole === 'admin' ? 'scholar' : 'free');
+      let ai_sparks: number = firestoreData.ai_sparks ?? cachedProfile?.ai_sparks ?? 0;
+      let subscription_expiry: string | undefined = firestoreData.subscription_expiry || cachedProfile?.subscription_expiry;
+      let subscription_status: 'active' | 'expired' | 'none' = firestoreData.subscription_status || cachedProfile?.subscription_status || 'none';
+      let subscription_start_date: string | undefined = firestoreData.subscription_start_date || cachedProfile?.subscription_start_date;
 
-      let ai_sparks = userDoc.exists() ? (userDoc.data().ai_sparks ?? 0) : 0;
-      let subscription_expiry = userDoc.exists() ? userDoc.data().subscription_expiry : undefined;
-      let subscription_status = userDoc.exists() ? userDoc.data().subscription_status : 'none';
-      let subscription_start_date = userDoc.exists() ? userDoc.data().subscription_start_date : undefined;
-
-      // Fetch accurate quota from backend (Single Source of Truth)
-      const fetchQuota = async (retries = 2) => {
+      // Fetch accurate quota and authoritative profile from backend (Single Source of Truth)
+      const fetchQuota = async (retries = 2): Promise<boolean> => {
         try {
           const token = await currentUser.getIdToken();
           const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+          const timeoutId = setTimeout(() => controller.abort(), 10000);
 
           const response = await fetch('/api/user/quota', {
             headers: { 'Authorization': `Bearer ${token}` },
@@ -141,6 +167,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               if (data.subscription_expiry) subscription_expiry = data.subscription_expiry;
               if (data.subscription_status) subscription_status = data.subscription_status;
               if (data.subscription_start_date) subscription_start_date = data.subscription_start_date;
+              if (data.profile && typeof data.profile === 'object') {
+                backendProfile = data.profile;
+              }
               return true;
             } else {
               throw new Error(`Server returned non-JSON response (${contentType || 'unknown'})`);
@@ -164,11 +193,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       await fetchQuota();
 
-      let referralCode = userDoc.exists() ? userDoc.data().referralCode : undefined;
-      let referredBy = userDoc.exists() ? userDoc.data().referredBy : undefined;
+      // Determine chronological priority among firestoreData, backendProfile, and cachedProfile
+      const sources = [
+        { data: firestoreData, time: firestoreData.updatedAt ? Date.parse(firestoreData.updatedAt) || 0 : 0 },
+        { data: backendProfile || {}, time: backendProfile?.updatedAt ? Date.parse(backendProfile.updatedAt) || 0 : 1 },
+        { data: cachedProfile || {}, time: cachedProfile?.updatedAt ? Date.parse(cachedProfile.updatedAt) || 0 : 2 }
+      ].sort((a, b) => a.time - b.time);
+
+      const mergedSource: Record<string, any> = {};
+      for (const src of sources) {
+        for (const [k, v] of Object.entries(src.data)) {
+          if (v !== undefined && v !== null && v !== '') {
+            mergedSource[k] = v;
+          } else if (mergedSource[k] === undefined && v !== undefined) {
+            mergedSource[k] = v;
+          }
+        }
+      }
+
+      let referralCode = mergedSource.referralCode;
+      let referredBy = mergedSource.referredBy;
 
       if (!referralCode) {
-        // Generate a 6-character referral code based on UID
         referralCode = currentUser.uid.substring(0, 6).toUpperCase();
       }
 
@@ -176,7 +222,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const storedRef = sessionStorage.getItem('ref_code');
         if (storedRef) {
           referredBy = storedRef;
-          // Increment the affiliate refer code signups blindly via backend
           try {
             await fetch('/api/track-signup', {
               method: 'POST',
@@ -189,42 +234,78 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       }
 
+      const resolvedDepartment = mergedSource.department || localStorage.getItem('activeDepartment') || undefined;
+      const resolvedAcademicLevel = mergedSource.academic_level || undefined;
+      const resolvedSemester = mergedSource.semester || localStorage.getItem('activeSemester') || undefined;
+      const resolvedOnboardingCompleted = Boolean(
+        mergedSource.onboarding_completed ??
+        (resolvedDepartment && resolvedAcademicLevel && resolvedSemester)
+      );
+
       const profileData: UserProfile = {
         uid: currentUser.uid,
-        email: currentUser.email || "",
-        displayName: currentUser.displayName || "Scholar",
-        bio: userDoc.exists() ? userDoc.data().bio : undefined,
-        photoURL: currentUser.photoURL || "",
+        email: currentUser.email || mergedSource.email || "",
+        displayName: mergedSource.displayName || currentUser.displayName || "Scholar",
+        bio: mergedSource.bio,
+        photoURL: mergedSource.photoURL || currentUser.photoURL || "",
         role: userRole,
         plan_type,
         subscription_expiry,
         subscription_status,
         subscription_start_date,
         ai_sparks,
-        xp: userDoc.exists() ? (userDoc.data().xp || 0) : 0,
-        level: userDoc.exists() ? (userDoc.data().level || 1) : 1,
-        streak: userDoc.exists() ? (userDoc.data().streak || 0) : 0,
-        themeColor: userDoc.exists() ? userDoc.data().themeColor : undefined,
-        rank: userDoc.exists() ? userDoc.data().rank : undefined,
-        created_at: userDoc.exists() ? (
-          userDoc.data().createdAt?.toDate ? userDoc.data().createdAt.toDate().toISOString() : 
-          (userDoc.data().createdAt || userDoc.data().created_at || new Date().toISOString())
-        ) : new Date().toISOString(),
+        xp: Math.max(Number(firestoreData.xp || 0), Number(mergedSource.xp || 0)),
+        level: Math.max(Number(firestoreData.level || 1), Number(mergedSource.level || 1)),
+        streak: Math.max(Number(firestoreData.streak || 0), Number(mergedSource.streak || 0)),
+        themeColor: mergedSource.themeColor,
+        rank: mergedSource.rank,
+        created_at: firestoreData.createdAt?.toDate
+          ? firestoreData.createdAt.toDate().toISOString()
+          : (mergedSource.createdAt || mergedSource.created_at || new Date().toISOString()),
         sessionId: currentSessionId,
-        admin_pin_verified_until: userDoc.exists() ? userDoc.data().admin_pin_verified_until : undefined,
-        department: userDoc.exists() ? userDoc.data().department : undefined,
-        academic_level: userDoc.exists() ? userDoc.data().academic_level : undefined,
-        semester: userDoc.exists() ? userDoc.data().semester : undefined,
-        learningProfile: userDoc.exists() ? userDoc.data().learningProfile : undefined,
-        has_seen_whatsapp: userDoc.exists() 
-          ? (userDoc.data().has_seen_whatsapp !== undefined ? userDoc.data().has_seen_whatsapp : true)
-          : false,
-        onboarding_completed: userDoc.exists()
-          ? (userDoc.data().onboarding_completed ?? (!!userDoc.data().department && !!userDoc.data().academic_level && !!userDoc.data().semester))
-          : false,
+        admin_pin_verified_until: firestoreData.admin_pin_verified_until || mergedSource.admin_pin_verified_until,
+        department: resolvedDepartment,
+        faculty: mergedSource.faculty,
+        academic_level: resolvedAcademicLevel,
+        semester: resolvedSemester,
+        learningProfile: mergedSource.learningProfile,
+        has_seen_whatsapp: mergedSource.has_seen_whatsapp !== undefined
+          ? Boolean(mergedSource.has_seen_whatsapp)
+          : (userDoc.exists() ? true : false),
+        onboarding_completed: resolvedOnboardingCompleted,
         referralCode,
         referredBy,
+        updatedAt: mergedSource.updatedAt
       };
+
+      // If cachedProfile had newer academic profile fields that weren't in backendProfile yet, sync them to backend
+      if (
+        cachedProfile?.updatedAt &&
+        (!backendProfile?.updatedAt || Date.parse(cachedProfile.updatedAt) > Date.parse(backendProfile.updatedAt))
+      ) {
+        currentUser.getIdToken().then(token => {
+          fetch('/api/user/profile', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              displayName: profileData.displayName,
+              bio: profileData.bio,
+              photoURL: profileData.photoURL,
+              themeColor: profileData.themeColor,
+              department: profileData.department,
+              faculty: profileData.faculty,
+              academic_level: profileData.academic_level,
+              semester: profileData.semester,
+              onboarding_completed: profileData.onboarding_completed,
+              has_seen_whatsapp: profileData.has_seen_whatsapp,
+              updatedAt: cachedProfile.updatedAt
+            })
+          }).catch(() => {});
+        }).catch(() => {});
+      }
 
       const dataToSave: any = {
         ...profileData,
@@ -232,10 +313,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         sessionId: currentSessionId,
       };
       
-      // Ensure UID is present
       dataToSave.uid = currentUser.uid;
       
-      // Do not overwrite backend-managed fields
       const protectedFields = [
         'ai_sparks', 
         'plan_type', 
@@ -249,11 +328,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         'level'
       ];
       protectedFields.forEach(field => delete dataToSave[field]);
-      
-      // Remove undefined values to prevent Firebase errors
       Object.keys(dataToSave).forEach(key => dataToSave[key] === undefined && delete dataToSave[key]);
 
-      // Only write profile doc from client if it did not exist yet, and guard with timeout to preserve daily write quota
       if (!userDoc.exists()) {
         try {
           await Promise.race([
@@ -265,12 +341,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           console.warn("Skipping initial client profile write (handled by backend):", err);
         }
       } else {
-        const existingSessionId = userDoc.data().sessionId;
+        const existingSessionId = firestoreData.sessionId || backendProfile?.sessionId;
         if (!existingSessionId) {
           activeSessionIdRef.current = currentSessionId;
           setDoc(userRef, { sessionId: currentSessionId }, { merge: true }).catch(() => {});
         } else {
-          // Adopt the existing session ID from Firestore so we stay aligned across page refreshes
           activeSessionIdRef.current = existingSessionId;
           try {
             localStorage.setItem('uniace_session_id', existingSessionId);
@@ -278,6 +353,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       }
 
+      saveCachedProfile(currentUser.uid, profileData);
       setProfile(profileData);
       console.log("AuthContext: Profile synced successfully");
       
@@ -301,20 +377,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       })();
     } catch (error) {
       console.error("Error syncing user profile:", error);
-      // Even if sync fails, we should set a basic profile so the app can load
       if (!profile) {
-        setProfile({
+        const fallbackProfile: UserProfile = {
           uid: currentUser.uid,
-          email: currentUser.email || "",
-          displayName: currentUser.displayName || "Scholar",
-          photoURL: currentUser.photoURL || "",
-          role: 'student',
-          plan_type: 'free',
-          ai_sparks: 0,
-          xp: 0,
-          level: 1,
-          streak: 0
-        });
+          email: currentUser.email || cachedProfile?.email || "",
+          displayName: cachedProfile?.displayName || currentUser.displayName || "Scholar",
+          bio: cachedProfile?.bio,
+          photoURL: cachedProfile?.photoURL || currentUser.photoURL || "",
+          role: cachedProfile?.role || 'student',
+          plan_type: cachedProfile?.plan_type || 'free',
+          ai_sparks: cachedProfile?.ai_sparks ?? 0,
+          xp: cachedProfile?.xp ?? 0,
+          level: cachedProfile?.level ?? 1,
+          streak: cachedProfile?.streak ?? 0,
+          themeColor: cachedProfile?.themeColor,
+          department: cachedProfile?.department || localStorage.getItem('activeDepartment') || undefined,
+          faculty: cachedProfile?.faculty,
+          academic_level: cachedProfile?.academic_level,
+          semester: cachedProfile?.semester || localStorage.getItem('activeSemester') || undefined,
+          onboarding_completed: cachedProfile?.onboarding_completed ?? Boolean(cachedProfile?.department && cachedProfile?.academic_level && cachedProfile?.semester),
+          has_seen_whatsapp: cachedProfile?.has_seen_whatsapp,
+          updatedAt: cachedProfile?.updatedAt
+        };
+        setProfile(fallbackProfile);
       }
     }
   };
@@ -330,7 +415,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     let profileUnsubscribe: () => void;
     let isMounted = true;
 
-    // Safety timeout: Ensure loading is set to false even if Firebase hangs
     const safetyTimeout = setTimeout(() => {
       if (isMounted && loading) {
         console.warn("AuthContext: Safety timeout reached, forcing loading to false");
@@ -342,14 +426,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.log("AuthContext: Auth state changed", currentUser?.uid || "No user");
       if (!isMounted) return;
 
-      // Only proceed if the user actually changed to avoid redundant syncs
       if (currentUser?.uid === userIdRef.current && currentUser !== null) {
         console.log("AuthContext: User unchanged, skipping sync");
         return;
       }
       userIdRef.current = currentUser?.uid || null;
 
-      // Clear any existing profile listener before setting up a new one
       if (profileUnsubscribe) {
         profileUnsubscribe();
       }
@@ -359,14 +441,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         try {
           await syncUserProfile(currentUser);
           
-          // Listen for real-time profile updates
           if (isMounted) {
             profileUnsubscribe = onSnapshot(doc(db, "users", currentUser.uid), (docSnap) => {
               if (docSnap.exists() && isMounted) {
                 const data = docSnap.data() as UserProfile;
                 
-                // Single Session Enforcement: Only trigger if an explicit different session ID was written
-                // AND it wasn't our own session, and activeSessionIdRef is aligned
                 if (activeSessionIdRef.current && 
                     data.sessionId && 
                     data.sessionId !== activeSessionIdRef.current && 
@@ -382,7 +461,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
                 setProfile((prev) => {
                   if (!prev) return prev;
-                  return { ...prev, ...data } as UserProfile;
+                  const prevTime = prev.updatedAt ? Date.parse(prev.updatedAt) || 0 : 0;
+                  const snapTime = data.updatedAt ? Date.parse(data.updatedAt) || 0 : 0;
+                  const keepPrevEditable = prevTime > snapTime;
+
+                  const nextProfile: UserProfile = {
+                    ...prev,
+                    ...data,
+                    displayName: keepPrevEditable ? (prev.displayName || data.displayName) : (data.displayName || prev.displayName),
+                    bio: keepPrevEditable ? (prev.bio ?? data.bio) : (data.bio ?? prev.bio),
+                    photoURL: keepPrevEditable ? (prev.photoURL || data.photoURL) : (data.photoURL || prev.photoURL),
+                    themeColor: keepPrevEditable ? (prev.themeColor || data.themeColor) : (data.themeColor || prev.themeColor),
+                    department: keepPrevEditable ? (prev.department || data.department) : (data.department || prev.department),
+                    faculty: keepPrevEditable ? (prev.faculty || data.faculty) : (data.faculty || prev.faculty),
+                    academic_level: keepPrevEditable ? (prev.academic_level || data.academic_level) : (data.academic_level || prev.academic_level),
+                    semester: keepPrevEditable ? (prev.semester || data.semester) : (data.semester || prev.semester),
+                    onboarding_completed: keepPrevEditable
+                      ? (prev.onboarding_completed ?? data.onboarding_completed)
+                      : (data.onboarding_completed ?? prev.onboarding_completed),
+                    has_seen_whatsapp: keepPrevEditable
+                      ? (prev.has_seen_whatsapp ?? data.has_seen_whatsapp)
+                      : (data.has_seen_whatsapp ?? prev.has_seen_whatsapp),
+                    updatedAt: keepPrevEditable ? prev.updatedAt : (data.updatedAt || prev.updatedAt)
+                  };
+                  saveCachedProfile(currentUser.uid, nextProfile);
+                  return nextProfile;
                 });
               }
             }, (err) => {
@@ -413,16 +516,49 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const updateProfileData = async (data: Partial<UserProfile>) => {
     if (!user || !profile || !db) return;
+    const updatedAt = new Date().toISOString();
+    const dataToSave: Record<string, any> = { ...data, updatedAt };
+    Object.keys(dataToSave).forEach(key => dataToSave[key] === undefined && delete dataToSave[key]);
+
+    // 1. Immediately update state and localStorage so UI never blocks or loses changes on refresh
+    const nextProfile: UserProfile = {
+      ...profile,
+      ...dataToSave
+    };
+    setProfile(nextProfile);
+    saveCachedProfile(user.uid, nextProfile);
+
+    if (dataToSave.department) {
+      try { localStorage.setItem('activeDepartment', dataToSave.department); } catch {}
+    }
+    if (dataToSave.semester) {
+      try { localStorage.setItem('activeSemester', dataToSave.semester); } catch {}
+    }
+
+    // 2. Persist via backend API (write-through to Firestore + Disk-Backed Quota Shield)
+    try {
+      const token = await user.getIdToken();
+      await fetch('/api/user/profile', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(dataToSave)
+      });
+    } catch (apiErr) {
+      console.warn("Backend profile sync warning:", apiErr);
+    }
+
+    // 3. Also attempt direct client Firestore update with timeout guard
     try {
       const userRef = doc(db, "users", user.uid);
-      
-      const dataToSave = { ...data };
-      Object.keys(dataToSave).forEach(key => (dataToSave as any)[key] === undefined && delete (dataToSave as any)[key]);
-      
-      await setDoc(userRef, dataToSave, { merge: true });
-      setProfile({ ...profile, ...data });
+      await Promise.race([
+        setDoc(userRef, dataToSave, { merge: true }),
+        new Promise((resolve) => setTimeout(resolve, 2500))
+      ]);
     } catch (error) {
-      console.error("Error updating profile data:", error);
+      console.warn("Client Firestore profile update deferred to backend:", error);
     }
   };
 

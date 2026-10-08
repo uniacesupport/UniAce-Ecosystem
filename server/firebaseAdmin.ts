@@ -15,10 +15,108 @@ const currentDirname = typeof __dirname !== 'undefined' ? __dirname : path.dirna
 let adminApp: admin.app.App | null = null;
 let db: admin.firestore.Firestore | null = null;
 
-// --- In-Memory Write-Through Overlay & Quota Circuit Breaker ---
+// --- Persistent Write-Through Overlay & Quota Circuit Breaker ---
+const OVERLAY_FILE_PATH = path.join(process.cwd(), '.firestore-overlay.json');
 const memoryOverlay = new Map<string, Record<string, any>>();
 const deletedDocs = new Set<string>();
 let writeQuotaExhaustedUntil = 0;
+let overlaySaveTimer: NodeJS.Timeout | null = null;
+
+function serializeOverlayValue(val: any): any {
+  if (val && typeof val === 'object') {
+    if (typeof val.toDate === 'function') {
+      try {
+        return { __isTimestamp: true, iso: val.toDate().toISOString() };
+      } catch {
+        return { __isTimestamp: true, iso: new Date().toISOString() };
+      }
+    }
+    if (Array.isArray(val)) {
+      return val.map(serializeOverlayValue);
+    }
+    const out: Record<string, any> = {};
+    for (const [k, v] of Object.entries(val)) {
+      if (typeof v !== 'function' && v !== undefined) {
+        out[k] = serializeOverlayValue(v);
+      }
+    }
+    return out;
+  }
+  return val;
+}
+
+function deserializeOverlayValue(val: any): any {
+  if (val && typeof val === 'object') {
+    if (val.__isTimestamp && typeof val.iso === 'string') {
+      const d = new Date(val.iso);
+      return {
+        __isTimestamp: true,
+        iso: val.iso,
+        toDate: () => d,
+        toMillis: () => d.getTime(),
+        toISOString: () => d.toISOString()
+      };
+    }
+    if (Array.isArray(val)) {
+      return val.map(deserializeOverlayValue);
+    }
+    const out: Record<string, any> = {};
+    for (const [k, v] of Object.entries(val)) {
+      out[k] = deserializeOverlayValue(v);
+    }
+    return out;
+  }
+  return val;
+}
+
+function loadOverlayFromDisk() {
+  try {
+    if (fs.existsSync(OVERLAY_FILE_PATH)) {
+      const raw = JSON.parse(fs.readFileSync(OVERLAY_FILE_PATH, 'utf8'));
+      if (raw && typeof raw.docs === 'object' && raw.docs !== null) {
+        for (const [docPath, docData] of Object.entries(raw.docs)) {
+          if (docData && typeof docData === 'object') {
+            memoryOverlay.set(docPath, deserializeOverlayValue(docData));
+          }
+        }
+      }
+      if (raw && Array.isArray(raw.deleted)) {
+        for (const p of raw.deleted) {
+          if (typeof p === 'string') deletedDocs.add(p);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Could not load Firestore overlay cache from disk:', err);
+  }
+}
+
+function flushOverlayToDisk() {
+  try {
+    const docsObj: Record<string, any> = {};
+    for (const [docPath, docData] of memoryOverlay.entries()) {
+      docsObj[docPath] = serializeOverlayValue(docData);
+    }
+    const payload = JSON.stringify({
+      updatedAt: new Date().toISOString(),
+      docs: docsObj,
+      deleted: Array.from(deletedDocs)
+    });
+    fs.writeFileSync(OVERLAY_FILE_PATH, payload, 'utf8');
+  } catch (err) {
+    console.warn('Could not persist Firestore overlay cache to disk:', err);
+  }
+}
+
+function scheduleOverlayDiskSave() {
+  if (overlaySaveTimer) clearTimeout(overlaySaveTimer);
+  overlaySaveTimer = setTimeout(() => {
+    overlaySaveTimer = null;
+    flushOverlayToDisk();
+  }, 150);
+}
+
+loadOverlayFromDisk();
 
 function isQuotaError(err: any): boolean {
   if (!err) return false;
@@ -102,6 +200,7 @@ function applyOverlayWrite(docPath: string, data: Record<string, any>, merge: bo
     }
   }
   memoryOverlay.set(docPath, existing);
+  scheduleOverlayDiskSave();
 }
 
 function wrapDocSnapshot(docRef: any, rawSnap: any): any {

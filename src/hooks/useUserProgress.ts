@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { UserProgress, Achievement, Bookmark, CourseId, AIPersonality, Department } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../firebase';
