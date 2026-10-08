@@ -533,6 +533,19 @@ export default function ApiKeyManagerModal({ provider, onClose }: ApiKeyManagerM
 
       await setDoc(docRef, payload, { merge: true });
       
+      // Notify backend to immediately reload provider cache and clear any tripped circuit breakers
+      try {
+        const token = await auth.currentUser?.getIdToken();
+        if (token) {
+          await fetch('/api/admin/reset-breakers', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+        }
+      } catch (backendNotifyErr) {
+        console.warn('Backend breaker reset notification notice:', backendNotifyErr);
+      }
+      
       onClose();
     } catch (err: any) {
       console.error('Error saving API keys:', err);

@@ -30,6 +30,9 @@ export default function AdminLogin({ onSuccess, requireGoogleLogin }: { onSucces
       const data = await response.json();
 
       if (response.ok && data.success) {
+        try {
+          sessionStorage.setItem('admin_pin_verified', 'true');
+        } catch {}
         if (onSuccess) {
           onSuccess();
         } else {

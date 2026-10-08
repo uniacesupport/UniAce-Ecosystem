@@ -37,6 +37,7 @@ function getInitialProgress(): UserProgress {
   return {
     ...INITIAL_PROGRESS,
     ...parsed,
+    assignments: Array.isArray(parsed?.assignments) ? parsed.assignments : [],
     topicLastStudied: parsed?.topicLastStudied || {},
     bookmarks: parsed?.bookmarks || []
   };

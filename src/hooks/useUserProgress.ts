@@ -92,7 +92,9 @@ export function useUserProgress() {
     });
     const mergedAchievements = Array.from(achievementMap.values());
 
-    const mergedAssignments = server.assignments || local.assignments || [];
+    const mergedAssignments = Array.isArray(server.assignments)
+      ? server.assignments
+      : (Array.isArray(local.assignments) ? local.assignments : []);
 
     return {
       xp: Math.max(local.xp, server.xp),
@@ -125,6 +127,7 @@ export function useUserProgress() {
           const mergedData = mergeProgress(prev, {
             ...INITIAL_PROGRESS,
             ...serverData,
+            assignments: Array.isArray(serverData.assignments) ? serverData.assignments : [],
             topicLastStudied: serverData.topicLastStudied || {},
             bookmarks: serverData.bookmarks || []
           });

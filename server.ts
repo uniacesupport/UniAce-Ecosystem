@@ -118,6 +118,54 @@ const globalCohereBreaker = new CircuitBreaker(globalCohereProvider);
 const globalHuggingFaceBreaker = new CircuitBreaker(globalHuggingFaceProvider);
 const globalNvidiaBreaker = new CircuitBreaker(globalNvidiaProvider);
 
+// Real-time synchronization helper for all providers from Firestore system_settings/api_keys
+export function syncAllProvidersFromSettings(apiKeysData: any) {
+  if (!apiKeysData) return;
+  const providersMap: Record<string, { provider: any; breaker: CircuitBreaker }> = {
+    gemini_direct: { provider: globalGeminiDirectProvider, breaker: globalGeminiDirectBreaker },
+    openrouter: { provider: globalOpenRouterFreeProvider, breaker: globalOpenRouterFreeBreaker },
+    openrouter_free: { provider: globalOpenRouterFreeProvider, breaker: globalOpenRouterFreeBreaker },
+    mistral_direct: { provider: globalMistralDirectProvider, breaker: globalMistralDirectBreaker },
+    groq: { provider: globalGroqProvider, breaker: globalGroqBreaker },
+    cohere: { provider: globalCohereProvider, breaker: globalCohereBreaker },
+    huggingface: { provider: globalHuggingFaceProvider, breaker: globalHuggingFaceBreaker },
+    nvidia: { provider: globalNvidiaProvider, breaker: globalNvidiaBreaker }
+  };
+
+  for (const [key, config] of Object.entries(providersMap)) {
+    const data = apiKeysData[key] || (key === 'openrouter_free' ? apiKeysData['openrouter'] : null);
+    if (data && config.provider?.rotator) {
+      config.provider.rotator.updateFromData(data);
+      if (config.breaker.isOpen()) {
+        console.log(`[Sync] Auto-resetting circuit breaker for ${key} after settings update.`);
+        config.breaker.reset();
+      }
+    }
+  }
+}
+
+// Attach real-time snapshot listener on Firestore system_settings/api_keys
+const initApiKeysListener = () => {
+  const adminApp = getAdminApp();
+  if (!adminApp) {
+    setTimeout(initApiKeysListener, 2000);
+    return;
+  }
+  try {
+    adminApp.firestore().collection('system_settings').doc('api_keys').onSnapshot(
+      (snap) => {
+        if (snap.exists) {
+          syncAllProvidersFromSettings(snap.data());
+        }
+      },
+      (err) => console.warn('[Sync] api_keys listener notice:', err.message)
+    );
+  } catch (err: any) {
+    console.warn('[Sync] Could not attach api_keys snapshot listener:', err.message);
+  }
+};
+initApiKeysListener();
+
 // --- Resilient Task Coordinator (Rate Limit Shield & Backoff Queue) ---
 class ResilientTaskCoordinator {
   private lastRequestTime = 0;
@@ -2404,7 +2452,8 @@ app.post('/api/chat', verifyAuth, async (req, res) => {
   }
   
   const { message, image, history, context, complexity = 'standard', isHintRequest = false, masteryLevel = 0, personality = 'encouraging', currentSparks = 50, planType = 'free' } = parseResult.data;
-  const uid = (req as any).user.uid;
+  const user = (req as any).user;
+  const uid = user.uid;
 
   // --- Phase 1: Maximum Pre-Authorization Model ---
   // Define strict economic constants
@@ -2476,9 +2525,10 @@ app.post('/api/chat', verifyAuth, async (req, res) => {
       
       const isFreeUser = plan === 'free' && role !== 'admin';
 
-      // 1.b Concurrency Block
+      // 1.b Concurrency Block (Only apply to non-admins, not during initial login/first query)
       const secondsSinceLast = (now.getTime() - lastRequestAt.getTime()) / 1000;
-      if (secondsSinceLast < RATE_LIMIT_SECONDS) {
+      const isInitialMessage = !data?.last_request_at || lastRequestAt.getTime() === 0;
+      if (role !== 'admin' && !isAdminEmail(user?.email) && !isInitialMessage && secondsSinceLast < RATE_LIMIT_SECONDS) {
         throw new Error('Rate limit exceeded. Please wait a few seconds.');
       }
 
@@ -5903,6 +5953,31 @@ app.get('/api/admin/provider-health', verifyAuth, async (req, res) => {
   }
 });
 
+// --- Circuit Breaker Reset & Provider Rotator Force-Refresh ---
+app.post('/api/admin/reset-breakers', verifyAuth, async (req, res) => {
+  globalGeminiDirectBreaker.reset();
+  globalOpenRouterFreeBreaker.reset();
+  globalMistralDirectBreaker.reset();
+  globalGroqBreaker.reset();
+  globalCohereBreaker.reset();
+  globalHuggingFaceBreaker.reset();
+  globalNvidiaBreaker.reset();
+  
+  try {
+    const adminApp = getAdminApp();
+    if (adminApp) {
+      const snap = await adminApp.firestore().collection('system_settings').doc('api_keys').get();
+      if (snap.exists) {
+        syncAllProvidersFromSettings(snap.data());
+      }
+    }
+  } catch (e: any) {
+    console.warn('[reset-breakers] Error refreshing providers:', e.message);
+  }
+
+  res.json({ success: true, message: 'All circuit breakers reset and provider rotators re-synchronized.' });
+});
+
 // --- Live System Health & Infrastructure Probe Endpoint ---
 app.get('/api/admin/system-health', verifyAuth, async (req, res) => {
   const app = getAdminApp();
@@ -8495,9 +8570,10 @@ async function startServer() {
 
               const isFreeUser = plan === 'free' && role !== 'admin';
 
-              // Concurrency / Rate Limiting
+              // Concurrency / Rate Limiting (Only apply to non-admins, not during initial login/first query)
               const secondsSinceLast = (now.getTime() - lastRequestAt.getTime()) / 1000;
-              if (secondsSinceLast < RATE_LIMIT_SECONDS) {
+              const isInitialMessage = !userData?.last_request_at || lastRequestAt.getTime() === 0;
+              if (role !== 'admin' && !isAdminEmail(user?.email) && !isInitialMessage && secondsSinceLast < RATE_LIMIT_SECONDS) {
                 throw new Error('Rate limit exceeded. Please wait a few seconds.');
               }
 

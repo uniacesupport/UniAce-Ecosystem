@@ -170,9 +170,32 @@ export class DynamicKeyRotator {
     this.fallbackKeys = fallbackKeyString.split(',').map(k => k.trim()).filter(k => k.length > 0);
   }
 
-  async fetchKeys() {
-    // Fetch every 1 minute to stay updated
-    if (Date.now() - this.lastFetchTime < 60000 && this.dbKeys.length > 0) {
+  hasConfiguredModel(): boolean {
+    return Boolean(this.configuredModel && this.configuredModel.trim().length > 0);
+  }
+
+  updateFromData(providerData: any) {
+    if (!providerData) return;
+    this.configuredModel = providerData.model || '';
+    this.configuredFallbackModel = providerData.fallbackModel || '';
+    if (Array.isArray(providerData.keys)) {
+      this.dbKeys = providerData.keys
+        .filter((k: any) => k && k.key && k.key.trim().length > 0)
+        .map((k: any) => k.key.trim());
+      for (const k of providerData.keys) {
+        if (k && k.isExhausted) {
+          this.exhaustedKeys.add(k.key.trim());
+        } else if (k && k.key) {
+          this.exhaustedKeys.delete(k.key.trim());
+        }
+      }
+    }
+    this.lastFetchTime = Date.now();
+  }
+
+  async fetchKeys(force: boolean = false) {
+    // Only skip if within 30s, we have keys, AND we already have a configured model
+    if (!force && this.configuredModel && this.dbKeys.length > 0 && Date.now() - this.lastFetchTime < 30000) {
       return;
     }
     try {
@@ -243,12 +266,12 @@ export class DynamicKeyRotator {
   }
 
   async getModel(): Promise<string> {
-    await this.fetchKeys();
+    await this.fetchKeys(!this.configuredModel);
     return (this.configuredModel || '').trim();
   }
 
   async getFallbackModel(): Promise<string> {
-    await this.fetchKeys();
+    await this.fetchKeys(!this.configuredFallbackModel);
     const fallback = (this.configuredFallbackModel || '').trim();
     const primary = (this.configuredModel || '').trim();
     // Ensure fallback is not identical to primary model
@@ -416,7 +439,11 @@ export class GeminiDirectProvider implements ModelProvider {
   async generate(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean, model?: string }): Promise<ModelResponse> {
     return retry(async () => {
       const apiKey = await this.rotator.getNextKey();
-      const primaryModel = (options.model || await this.rotator.getModel() || '').trim();
+      let primaryModel = (options.model || await this.rotator.getModel() || '').trim();
+      if (!primaryModel) {
+        await this.rotator.fetchKeys(true);
+        primaryModel = (options.model || await this.rotator.getModel() || '').trim();
+      }
       if (!primaryModel) {
         throw new ModelProviderError(
           'No active primary model configured for Gemini. Please configure and select an active model in Admin API Key Manager.',
@@ -491,7 +518,11 @@ export class GeminiDirectProvider implements ModelProvider {
   async stream(messages: any[], options: { complexity: 'high' | 'standard', jsonMode?: boolean, model?: string }, onChunk: (chunk: string) => void): Promise<ModelResponse> {
     return retry(async () => {
       const apiKey = await this.rotator.getNextKey();
-      const primaryModel = (options.model || await this.rotator.getModel() || '').trim();
+      let primaryModel = (options.model || await this.rotator.getModel() || '').trim();
+      if (!primaryModel) {
+        await this.rotator.fetchKeys(true);
+        primaryModel = (options.model || await this.rotator.getModel() || '').trim();
+      }
       if (!primaryModel) {
         throw new ModelProviderError(
           'No active primary model configured for Gemini. Please configure and select an active model in Admin API Key Manager.',
@@ -1782,6 +1813,14 @@ export class CircuitBreaker {
 
   public isOpen(): boolean {
     if (this.failures >= this.threshold) {
+      if (this.trippedReason?.includes('No active primary model')) {
+        const rotator = (this.provider as any)?.rotator;
+        if (rotator && typeof rotator.hasConfiguredModel === 'function' && rotator.hasConfiguredModel()) {
+          console.log(`[CircuitBreaker] Auto-resetting breaker for ${this.provider.name} because model is now configured.`);
+          this.reset();
+          return false;
+        }
+      }
       const now = Date.now();
       if (now - this.lastFailureTime > this.resetTimeout) {
         // Half-open state

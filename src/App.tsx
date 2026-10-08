@@ -90,7 +90,13 @@ function AppContent() {
   useSelfHealing();
 
   const [activeCourseId, setActiveCourseId] = useState<CourseId | null>(null);
-  const [activeView, setActiveView] = useState<View>('hub');
+  const [activeView, setActiveView] = useState<View>(() => {
+    try {
+      const saved = localStorage.getItem('uniace_active_view');
+      if (saved && saved !== 'landing') return saved as View;
+    } catch {}
+    return 'hub';
+  });
   const [recalibrationTopicId, setRecalibrationTopicId] = useState<string | null>(null);
   const [recalibrationScore, setRecalibrationScore] = useState<number | null>(null);
   const [isRecalibrationOpen, setIsRecalibrationOpen] = useState(false);
@@ -281,6 +287,9 @@ function AppContent() {
 
   const handleViewSelect = (view: View) => {
     setActiveView(view);
+    try {
+      localStorage.setItem('uniace_active_view', view);
+    } catch {}
     if (window.innerWidth < 1024) {
       setIsSidebarOpen(false);
     }
@@ -350,7 +359,7 @@ function AppContent() {
     return <FirebaseSetup />;
   }
 
-  if (loading) {
+  if (loading || (user && !profile)) {
     return (
       <div className="h-screen w-full flex items-center justify-center bg-slate-50 dark:bg-zinc-950">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500"></div>
@@ -372,7 +381,7 @@ function AppContent() {
     }
     
     const verifiedUntil = profile?.admin_pin_verified_until;
-    const isVerified = verifiedUntil && new Date(verifiedUntil.toDate ? verifiedUntil.toDate() : verifiedUntil).getTime() > Date.now();
+    const isVerified = (verifiedUntil && new Date(verifiedUntil.toDate ? verifiedUntil.toDate() : verifiedUntil).getTime() > Date.now()) || (typeof window !== 'undefined' && sessionStorage.getItem('admin_pin_verified') === 'true');
     
     if (isVerified) {
       window.location.href = '/admin/dashboard';
@@ -388,9 +397,9 @@ function AppContent() {
       return null;
     }
     
-    // Check if PIN verified recently (within last 2 hours)
+    // Check if PIN verified recently (within last 2 hours or in current session)
     const verifiedUntil = profile?.admin_pin_verified_until;
-    const isVerified = verifiedUntil && new Date(verifiedUntil.toDate ? verifiedUntil.toDate() : verifiedUntil).getTime() > Date.now();
+    const isVerified = (verifiedUntil && new Date(verifiedUntil.toDate ? verifiedUntil.toDate() : verifiedUntil).getTime() > Date.now()) || (typeof window !== 'undefined' && sessionStorage.getItem('admin_pin_verified') === 'true');
     
     if (!isVerified) {
       window.location.href = '/admin/login';
@@ -809,56 +818,30 @@ function AppContent() {
           })()
         )}
 
-        {activeView === 'ai-tutor' && (
-          <ChatBot 
-            isFullPage={true} 
-            onToggleFullPage={() => handleViewSelect('dashboard')} 
-            messages={chatMessages}
-            setMessages={setChatMessages}
-            activeCourseId={activeCourseId}
-            activeModule={activeModule?.title}
-            activeSubTopic={activeModule?.subTopics?.find(s => s.id === activeSubTopicId)?.title}
-            subTopicContent={activeLessonContent || activeSubTopicContent}
-            progress={progress}
-            profile={profile}
-            onUpdatePersonality={updateAIPersonality}
-            onToggleCalculator={() => setIsCalculatorOpen(!isCalculatorOpen)}
-            onOpenVoiceTutor={() => setIsVoiceTutorOpen(true)}
-            onPdfTextChange={setActivePdfText}
-            onSaveBookmark={(b) => addBookmark(b.content, b.type, b.note)}
-            onSelectTopicContext={(cId, mTitle, sTitle, content) => {
-              setActiveCourseId(cId);
-              if (content) setActiveLessonContent(content);
-            }}
-          />
-        )}
+        {/* Consolidated Single Instance of ChatBot (Full page in 'ai-tutor' view, otherwise bottom-corner overlay) */}
       </div>
 
-      {/* AI Chatbot Overlay */}
-      {activeView !== 'ai-tutor' && (
-        <>
-          <ChatBot 
-            onToggleFullPage={() => handleViewSelect('ai-tutor')} 
-            messages={chatMessages}
-            setMessages={setChatMessages}
-            activeCourseId={activeCourseId}
-            activeModule={activeModule?.title}
-            activeSubTopic={activeModule?.subTopics?.find(s => s.id === activeSubTopicId)?.title}
-            subTopicContent={activeLessonContent || activeSubTopicContent}
-            progress={progress}
-            profile={profile}
-            onUpdatePersonality={updateAIPersonality}
-            onToggleCalculator={() => setIsCalculatorOpen(!isCalculatorOpen)}
-            onOpenVoiceTutor={() => setIsVoiceTutorOpen(true)}
-            onPdfTextChange={setActivePdfText}
-            onSaveBookmark={(b) => addBookmark(b.content, b.type, b.note)}
-            onSelectTopicContext={(cId, mTitle, sTitle, content) => {
-              setActiveCourseId(cId);
-              if (content) setActiveLessonContent(content);
-            }}
-          />
-        </>
-      )}
+      <ChatBot 
+        isFullPage={activeView === 'ai-tutor'} 
+        onToggleFullPage={() => handleViewSelect(activeView === 'ai-tutor' ? 'dashboard' : 'ai-tutor')} 
+        messages={chatMessages}
+        setMessages={setChatMessages}
+        activeCourseId={activeCourseId}
+        activeModule={activeModule?.title}
+        activeSubTopic={activeModule?.subTopics?.find(s => s.id === activeSubTopicId)?.title}
+        subTopicContent={activeLessonContent || activeSubTopicContent}
+        progress={progress}
+        profile={profile}
+        onUpdatePersonality={updateAIPersonality}
+        onToggleCalculator={() => setIsCalculatorOpen(!isCalculatorOpen)}
+        onOpenVoiceTutor={() => setIsVoiceTutorOpen(true)}
+        onPdfTextChange={setActivePdfText}
+        onSaveBookmark={(b) => addBookmark(b.content, b.type, b.note)}
+        onSelectTopicContext={(cId, mTitle, sTitle, content) => {
+          setActiveCourseId(cId);
+          if (content) setActiveLessonContent(content);
+        }}
+      />
 
       {/* Bottom Navigation (Mobile) */}
       <BottomNav activeView={activeView} onViewSelect={handleViewSelect} />

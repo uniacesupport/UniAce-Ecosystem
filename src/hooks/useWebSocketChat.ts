@@ -18,6 +18,10 @@ export const useWebSocketChat = () => {
 
     const connect = async () => {
       try {
+        if (wsRef.current && (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)) {
+          return;
+        }
+
         const token = await user.getIdToken();
         if (!token || !isMounted) return;
 

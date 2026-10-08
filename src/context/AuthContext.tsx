@@ -73,7 +73,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [isSigningIn, setIsSigningIn] = useState(false);
-  const [currentSessionId] = useState(() => Math.random().toString(36).substring(2, 15));
+  const [currentSessionId] = useState(() => {
+    try {
+      const stored = localStorage.getItem('uniace_session_id');
+      if (stored) return stored;
+      const newId = Math.random().toString(36).substring(2, 15);
+      localStorage.setItem('uniace_session_id', newId);
+      return newId;
+    } catch {
+      return Math.random().toString(36).substring(2, 15);
+    }
+  });
   const activeSessionIdRef = React.useRef<string | null>(null);
   const userIdRef = React.useRef<string | null>(null);
 
@@ -255,7 +265,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           console.warn("Skipping initial client profile write (handled by backend):", err);
         }
       } else {
-        activeSessionIdRef.current = userDoc.data().sessionId || currentSessionId;
+        const existingSessionId = userDoc.data().sessionId;
+        if (!existingSessionId) {
+          activeSessionIdRef.current = currentSessionId;
+          setDoc(userRef, { sessionId: currentSessionId }, { merge: true }).catch(() => {});
+        } else {
+          // Adopt the existing session ID from Firestore so we stay aligned across page refreshes
+          activeSessionIdRef.current = existingSessionId;
+          try {
+            localStorage.setItem('uniace_session_id', existingSessionId);
+          } catch {}
+        }
       }
 
       setProfile(profileData);
@@ -345,11 +365,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               if (docSnap.exists() && isMounted) {
                 const data = docSnap.data() as UserProfile;
                 
-                // Single Session Enforcement: Check if another device logged in
-                // Only enforce if we have already successfully set our own sessionId in Firestore
-                // AND we are not currently in the middle of a sync
-                if (activeSessionIdRef.current === currentSessionId && 
+                // Single Session Enforcement: Only trigger if an explicit different session ID was written
+                // AND it wasn't our own session, and activeSessionIdRef is aligned
+                if (activeSessionIdRef.current && 
                     data.sessionId && 
+                    data.sessionId !== activeSessionIdRef.current && 
                     data.sessionId !== currentSessionId) {
                   console.warn("AuthContext: New session detected elsewhere. Logging out...");
                   toast.error("Logged out: Your account is being used on another device.", {
@@ -477,6 +497,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const logout = async () => {
     if (!auth) return;
     try {
+      try {
+        localStorage.removeItem('uniace_session_id');
+        sessionStorage.removeItem('admin_pin_verified');
+      } catch {}
       const userEmail = user?.email;
       const userDisplayName = profile?.displayName;
       await signOut(auth);

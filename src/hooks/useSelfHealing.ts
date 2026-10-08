@@ -6,7 +6,7 @@ import { doc, getDocFromServer, setDoc } from 'firebase/firestore';
 import { useNotifications } from './useNotifications';
 import { LogService } from '../services/logService';
 import { GamificationService, BADGES } from '../services/gamification';
-import { UserProgress, Achievement, Assignment } from '../types';
+import { UserProgress, Achievement } from '../types';
 
 const INITIAL_ACHIEVEMENTS: Achievement[] = BADGES.map(b => ({
   id: b.id,
@@ -15,12 +15,6 @@ const INITIAL_ACHIEVEMENTS: Achievement[] = BADGES.map(b => ({
   icon: b.icon,
   unlockedAt: null
 }));
-
-const DEFAULT_ASSIGNMENTS: Assignment[] = [
-  { id: 'a1', courseId: 'MTH103', title: 'Vector Calculus Problem Set', dueDate: new Date(Date.now() + 86400000 * 3).toISOString(), status: 'pending' },
-  { id: 'a2', courseId: 'MTH103', title: 'Coordinate Geometry Quiz', dueDate: new Date(Date.now() + 86400000 * 5).toISOString(), status: 'pending' },
-  { id: 'a3', courseId: 'STA112', title: 'Probability Distributions', dueDate: new Date(Date.now() - 86400000 * 2).toISOString(), status: 'graded', grade: 85 },
-];
 
 export function useSelfHealing() {
   const { user, profile } = useAuth();
@@ -213,7 +207,9 @@ export function useSelfHealing() {
 
       const repairedLastStudyDate = serverData.lastStudyDate || progress.lastStudyDate || null;
       const repairedBookmarks = serverData.bookmarks || progress.bookmarks || [];
-      const repairedAssignments = serverData.assignments || progress.assignments || DEFAULT_ASSIGNMENTS;
+      const repairedAssignments = Array.isArray(serverData.assignments) 
+        ? serverData.assignments 
+        : (Array.isArray(progress.assignments) ? progress.assignments : []);
 
       const repairedProgress: UserProgress = {
         ...progress,
