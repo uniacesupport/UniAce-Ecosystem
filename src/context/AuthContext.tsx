@@ -145,14 +145,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       let subscription_start_date: string | undefined = firestoreData.subscription_start_date || cachedProfile?.subscription_start_date;
 
       // Fetch accurate quota and authoritative profile from backend (Single Source of Truth)
-      const fetchQuota = async (retries = 2): Promise<boolean> => {
+      const fetchQuota = async (retries = 4, attempt = 1): Promise<boolean> => {
         try {
           const token = await currentUser.getIdToken();
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), 10000);
 
           const response = await fetch('/api/user/quota', {
-            headers: { 'Authorization': `Bearer ${token}` },
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Accept': 'application/json'
+            },
+            cache: 'no-store',
             signal: controller.signal
           });
           clearTimeout(timeoutId);
@@ -175,16 +179,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               throw new Error(`Server returned non-JSON response (${contentType || 'unknown'})`);
             }
           } else if (retries > 0) {
-            console.warn(`Quota fetch failed with status ${response.status}, retrying...`);
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            return fetchQuota(retries - 1);
+            await new Promise(resolve => setTimeout(resolve, attempt * 1500));
+            return fetchQuota(retries - 1, attempt + 1);
           }
           return false;
         } catch (err) {
           if (retries > 0) {
-            console.warn("Quota fetch error, retrying...", err);
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            return fetchQuota(retries - 1);
+            await new Promise(resolve => setTimeout(resolve, attempt * 1500));
+            return fetchQuota(retries - 1, attempt + 1);
           }
           console.warn("Quota fetch fallback to cached/default profile:", err);
           return false;

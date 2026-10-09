@@ -239,7 +239,21 @@ export function useSelfHealing() {
         ai_sparks, ...allowedProgress 
       } = repairedProgress as any;
 
-      await setDoc(userDocRef, { ...allowedProgress, uid: user.uid }, { merge: true });
+      user.getIdToken().then(token => {
+        fetch('/api/user/profile', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify(allowedProgress)
+        }).catch(() => {});
+      }).catch(() => {});
+
+      await Promise.race([
+        setDoc(userDocRef, { ...allowedProgress, uid: user.uid }, { merge: true }),
+        new Promise(resolve => setTimeout(resolve, 2500))
+      ]);
 
       // 5. Emit success logging
       await LogService.log('success', 'system', `State self-healed successfully. Fixed issue: ${reason}`);
@@ -256,7 +270,7 @@ export function useSelfHealing() {
 
   // Periodic Watchdog Trigger
   useEffect(() => {
-    if (!user || !isOnline || healingRef.current) return;
+    if (!user || !profile || !isOnline || healingRef.current) return;
 
     const runWatchdog = () => {
       const now = Date.now();

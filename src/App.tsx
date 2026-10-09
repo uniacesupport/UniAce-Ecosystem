@@ -163,10 +163,10 @@ function AppContent() {
   const activeCourse = activeCourseId ? courses[activeCourseId] : null;
 
   useEffect(() => {
-    if (user) {
+    if (user && profile) {
       checkAndUpdateStreak();
     }
-  }, [user]);
+  }, [user, profile?.uid]);
   const syllabus = activeCourse?.syllabus || [];
 
   const [activeModuleId, setActiveModuleId] = useState('');

@@ -52,14 +52,14 @@ service cloud.firestore {
              (!('email' in data) || data.email == null || (data.email is string && data.email.size() < 200)) &&
              (!('displayName' in data) || data.displayName == null || (data.displayName is string && data.displayName.size() < 100)) &&
              (!('bio' in data) || data.bio == null || (data.bio is string && data.bio.size() < 500)) &&
-             (!('photoURL' in data) || data.photoURL == null || (data.photoURL is string && data.photoURL.size() < 2000)) &&
+             (!('photoURL' in data) || data.photoURL == null || (data.photoURL is string && data.photoURL.size() < 100000)) &&
              (!('role' in data) || data.role == null || (data.role in ['student', 'admin', 'tutor', 'moderator'])) &&
              (!('plan_type' in data) || data.plan_type == null || (data.plan_type in ['free', 'pro', 'scholar', 'exam_cram', 'semester'])) &&
              (!('xp' in data) || data.xp == null || (data.xp is number && data.xp >= 0)) &&
              (!('level' in data) || data.level == null || (data.level is number && data.level >= 0)) &&
              (!('streak' in data) || data.streak == null || (data.streak is number && data.streak >= 0)) &&
              (!('themeColor' in data) || data.themeColor == null || (data.themeColor is string && data.themeColor.size() < 50)) &&
-             (!('rank' in data) || data.rank == null || (data.rank is string && data.rank.size() < 50)) &&
+             (!('rank' in data) || data.rank == null || (data.rank is string && data.rank.size() < 50) || (data.rank is number && data.rank >= 0)) &&
              (!('sessionId' in data) || data.sessionId == null || (data.sessionId is string && data.sessionId.size() < 100)) &&
              (!('fcmToken' in data) || data.fcmToken == null || (data.fcmToken is string && data.fcmToken.size() < 500)) &&
              (!('lastStudyDate' in data) || data.lastStudyDate == null || (data.lastStudyDate is string && data.lastStudyDate.size() < 50)) &&

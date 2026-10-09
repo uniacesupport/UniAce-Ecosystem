@@ -8222,6 +8222,14 @@ async function startServer() {
     console.warn('Telemetry initialization warning:', err);
   });
 
+  // Guard all /api/* routes from falling through to the Vite SPA HTML fallback
+  app.all('/api/*', (req, res) => {
+    res.status(404).json({
+      error: 'API endpoint not found',
+      path: req.originalUrl
+    });
+  });
+
   if (process.env.NODE_ENV !== 'production') {
     console.log('Starting Vite in middleware mode...');
     const vitePort = process.env.VITE_PORT ? parseInt(process.env.VITE_PORT, 10) : PORT;

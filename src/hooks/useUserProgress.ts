@@ -38,6 +38,7 @@ const INITIAL_PROGRESS: UserProgress = {
 export function useUserProgress() {
   const { user, profile } = useAuth();
   const { progress, setProgress, isOnline, setIsOnline, integrityIssues, setIntegrityIssues } = useProgressStore();
+  const hasInitialSyncRef = useRef(false);
 
   // Handle online/offline status
   useEffect(() => {
@@ -55,11 +56,19 @@ export function useUserProgress() {
 
   // Merge function to combine local and server data
   const mergeProgress = useCallback((local: UserProgress, server: UserProgress): UserProgress => {
-    const mergedMastery = { ...local.mastery, ...server.mastery };
-    // Take the higher mastery score if it exists in both
-    Object.keys(mergedMastery).forEach(key => {
-      if (local.mastery[key] && server.mastery[key]) {
-        mergedMastery[key] = Math.max(local.mastery[key], server.mastery[key]);
+    const mergedMastery: Record<string, number> = {};
+    const allMasteryKeys = new Set([
+      ...Object.keys(local.mastery || {}),
+      ...Object.keys(server.mastery || {})
+    ]);
+    allMasteryKeys.forEach(key => {
+      const lVal = local.mastery?.[key];
+      const sVal = server.mastery?.[key];
+      const cleanL = typeof lVal === 'number' && !isNaN(lVal) && lVal >= 0 && lVal <= 100 ? lVal : 0;
+      const cleanS = typeof sVal === 'number' && !isNaN(sVal) && sVal >= 0 && sVal <= 100 ? sVal : 0;
+      const best = Math.max(cleanL, cleanS);
+      if (best > 0) {
+        mergedMastery[key] = best;
       }
     });
 
@@ -80,11 +89,16 @@ export function useUserProgress() {
       }
     });
 
-    const mergedBookmarks = server.bookmarks || local.bookmarks || [];
+    const bookmarkMap = new Map<string, Bookmark>();
+    [...(local.bookmarks || []), ...(server.bookmarks || [])].forEach(b => {
+      if (b && b.id) bookmarkMap.set(b.id, b);
+    });
+    const mergedBookmarks = Array.from(bookmarkMap.values());
 
     // Merge achievements
     const achievementMap = new Map<string, Achievement>();
     [...(local.achievements || []), ...(server.achievements || [])].forEach(a => {
+      if (!a || !a.id) return;
       const existing = achievementMap.get(a.id);
       if (!existing || (a.unlockedAt && (!existing.unlockedAt))) {
         achievementMap.set(a.id, a);
@@ -92,34 +106,52 @@ export function useUserProgress() {
     });
     const mergedAchievements = Array.from(achievementMap.values());
 
-    const mergedAssignments = Array.isArray(server.assignments)
+    const mergedAssignments = (Array.isArray(server.assignments) && server.assignments.length > 0)
       ? server.assignments
       : (Array.isArray(local.assignments) ? local.assignments : []);
 
+    const mergedEnrolledCourses = Array.from(new Set([
+      ...(local.enrolledCourses || []),
+      ...(server.enrolledCourses || [])
+    ])).filter(Boolean);
+
+    const mergedXp = Math.max(local.xp || 0, server.xp || 0);
+    const mergedLevel = GamificationService.calculateLevel(mergedXp).level;
+
     return {
-      xp: Math.max(local.xp, server.xp),
-      level: Math.max(local.level, server.level),
-      streak: Math.max(local.streak, server.streak),
+      xp: mergedXp,
+      level: mergedLevel,
+      streak: Math.max(local.streak || 0, server.streak || 0),
       lastStudyDate: local.lastStudyDate && server.lastStudyDate 
         ? (new Date(local.lastStudyDate) > new Date(server.lastStudyDate) ? local.lastStudyDate : server.lastStudyDate)
-        : (local.lastStudyDate || server.lastStudyDate),
+        : (local.lastStudyDate || server.lastStudyDate || null),
       mastery: mergedMastery,
       achievements: mergedAchievements,
       studyTime: mergedStudyTime,
       topicLastStudied: mergedTopicLastStudied,
       bookmarks: mergedBookmarks,
-      enrolledCourses: server.enrolledCourses || local.enrolledCourses || [],
+      enrolledCourses: mergedEnrolledCourses,
       assignments: mergedAssignments,
+      srsData: { ...(local.srsData || {}), ...(server.srsData || {}) },
+      aiPersonality: server.aiPersonality || local.aiPersonality,
+      quizHistory: (Array.isArray(server.quizHistory) && server.quizHistory.length >= (local.quizHistory?.length || 0))
+        ? server.quizHistory
+        : (local.quizHistory || server.quizHistory || []),
+      quizzesCompleted: Math.max(local.quizzesCompleted || 0, server.quizzesCompleted || 0)
     };
   }, []);
 
   // Sync with Firestore when user logs in or comes online
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      hasInitialSyncRef.current = false;
+      return;
+    }
 
     const userDocRef = doc(db, 'users', user.uid);
     
     const unsubscribe = onSnapshot(userDocRef, (docSnap) => {
+      hasInitialSyncRef.current = true;
       if (docSnap.exists()) {
         const serverData = docSnap.data() as UserProgress;
         
@@ -138,28 +170,16 @@ export function useUserProgress() {
           }
           return prev;
         });
-      } else {
-        // If new user, sync local progress to Firestore
-        if (isOnline) {
-          const { 
-            xp, level, mastery, achievements, enrolledCourses, 
-            role, plan_type, subscription_expiry, subscription_status, 
-            subscription_start_date, last_spark_reset, last_payment_ref, 
-            ai_sparks, ...allowedProgress 
-          } = progress as any;
-          setDoc(userDocRef, { ...allowedProgress, uid: user.uid }, { merge: true }).catch(err => {
-            console.error("Error syncing initial user progress to Firestore:", err);
-          });
-        }
       }
     }, (error) => {
+      hasInitialSyncRef.current = true;
       console.error("Error syncing user progress:", error);
     });
 
     return () => unsubscribe();
   }, [user, isOnline, mergeProgress]); // Re-run when online status changes to force sync
 
-  // Persist changes to LocalStorage and Firestore
+  // Persist changes to LocalStorage and Firestore (only after initial server sync completes)
   useEffect(() => {
     try {
       localStorage.setItem('uniace_user_progress', JSON.stringify(progress));
@@ -167,7 +187,7 @@ export function useUserProgress() {
       console.warn('localStorage access denied, cannot save progress locally');
     }
     
-    if (user && isOnline) {
+    if (user && isOnline && hasInitialSyncRef.current && profile) {
       const userDocRef = doc(db, 'users', user.uid);
       const { 
         xp, level, mastery, achievements, enrolledCourses, 
@@ -178,34 +198,30 @@ export function useUserProgress() {
 
       // Use a timeout to debounce writes slightly
       const timeoutId = setTimeout(() => {
+        user.getIdToken().then(token => {
+          fetch('/api/user/profile', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify(allowedProgress)
+          }).catch(() => {});
+        }).catch(() => {});
+
         setDoc(userDocRef, { ...allowedProgress, uid: user.uid }, { merge: true }).catch(err => {
           console.error("Error persisting user progress to Firestore:", err);
         });
-      }, 1000); // Increased debounce to 1s to reduce writes
+      }, 1500);
       
-      // Add a beforeunload listener to flush pending changes
-      const handleBeforeUnload = () => {
-        // We can't use async setDoc here reliably, but we can try a beacon or just hope the debounce handled it
-        // Actually, for critical data, we should have a 'flush' mechanism
-        const { 
-          xp, level, mastery, achievements, enrolledCourses, 
-          role, plan_type, subscription_expiry, subscription_status, 
-          subscription_start_date, last_spark_reset, last_payment_ref, 
-          ai_sparks, ...allowedProgressUnload 
-        } = progress as any;
-        setDoc(userDocRef, { ...allowedProgressUnload, uid: user.uid }, { merge: true }).catch(() => {});
-      };
-      window.addEventListener('beforeunload', handleBeforeUnload);
-
       return () => {
         clearTimeout(timeoutId);
-        window.removeEventListener('beforeunload', handleBeforeUnload);
       };
     }
-  }, [progress, user, isOnline]);
+  }, [progress, user, isOnline, profile]);
 
   const saveImmediately = useCallback(async (newProgress: UserProgress) => {
-    if (!user || !isOnline) return;
+    if (!user || !isOnline || !hasInitialSyncRef.current) return;
     try {
       const userDocRef = doc(db, 'users', user.uid);
       const { 
@@ -214,7 +230,22 @@ export function useUserProgress() {
         subscription_start_date, last_spark_reset, last_payment_ref, 
         ai_sparks, ...allowedProgress 
       } = newProgress as any;
-      await setDoc(userDocRef, { ...allowedProgress, uid: user.uid }, { merge: true });
+
+      user.getIdToken().then(token => {
+        fetch('/api/user/profile', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify(allowedProgress)
+        }).catch(() => {});
+      }).catch(() => {});
+
+      await Promise.race([
+        setDoc(userDocRef, { ...allowedProgress, uid: user.uid }, { merge: true }),
+        new Promise(resolve => setTimeout(resolve, 2500))
+      ]);
     } catch (err) {
       console.error("Error in immediate sync:", err);
     }
