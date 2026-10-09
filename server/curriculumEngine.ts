@@ -400,10 +400,14 @@ ${pedagogyDirective}
 4. Real-World Case Study: An authentic, fully grounded empirical application native to ${domainBrief.primaryDomain}.
 5. Key Takeaways & Practice Discussion Prompt: Dynamic summary questions for student reflection.
 
+[STRICT JSON OUTPUT FORMAT]:
+- Place the ENTIRE lesson (all sections above) inside the single "content" markdown field. Do NOT output separate keys for sections.
+- When emphasizing words or symbols inside the text, use single quotes (e.g. 'voltage', 'current') or backticks, never raw double quotes.
+
 Return strictly a JSON object:
 {
   "pedagogicalReasoning": "How this lesson satisfies university learning outcomes in ${domainBrief.primaryDomain}",
   "title": "${topicTitle}",
-  "content": "Full detailed markdown lesson text. Follow all formatting rules."
+  "content": "Full detailed markdown lesson text compiling all sections above. Follow all formatting rules."
 }`;
 }

@@ -2213,49 +2213,127 @@ function parseRobustJSON<T = any>(text: string): T {
     } as unknown as T;
   }
 
-  // Helper for safe LaTeX backslash escaping (scoped escaping)
-  const safeEscapeLatex = (str: string) => {
-    let res = str.replace(/\$\$([\s\S]*?)\$\$/g, (_, latex) => {
-      return `$$${latex.replace(/\\(?!["\\/bfnrtu]|u[0-9a-fA-F]{4})/g, '\\\\')}$$`;
-    });
-    res = res.replace(/\\(?!["\\/bfnrtu]|u[0-9a-fA-F]{4})/g, '\\\\');
-    return res;
-  };
-
-  // 5. Try jsonrepair on the candidate text
+  // 5. Try jsonrepair on candidate text directly
   try {
     const repaired = jsonrepair(candidateText);
     return JSON.parse(repaired) as T;
-  } catch (repairError) {
-    // 6. Handle unescaped backslashes with scoped LaTeX repair
-    try {
-      const escapedLatex = safeEscapeLatex(candidateText);
-      const repaired = jsonrepair(escapedLatex);
-      return JSON.parse(repaired) as T;
-    } catch (finalError) {
-      // 7. Fallback for objects with "content" containing unescaped quotes (common in lesson generation)
-      const contentMatch = cleaned.match(/"content"\s*:\s*"([\s\S]*)/i);
-      if (contentMatch) {
-        const titleMatch = cleaned.match(/"title"\s*:\s*"([^"]+)"/i);
-        let rawContent = contentMatch[1].trim();
-        if (rawContent.endsWith('"}')) {
-          rawContent = rawContent.slice(0, -2);
-        } else if (rawContent.endsWith('}')) {
-          rawContent = rawContent.slice(0, -1);
-          if (rawContent.endsWith('"')) {
-            rawContent = rawContent.slice(0, -1);
-          }
+  } catch (_) {
+    // Continue to advanced multi-pass sanitization
+  }
+
+  // Multi-pass sanitizer for unescaped inner quotes and LaTeX backslashes inside JSON
+  const sanitizeJsonForRepair = (str: string): string => {
+    // Pass A: Fix unescaped inner double-quotes inside JSON string values
+    let result = '';
+    let inString = false;
+    let i = 0;
+
+    while (i < str.length) {
+      const c = str[i];
+
+      if (c === '\\') {
+        result += c;
+        if (i + 1 < str.length) {
+          result += str[i + 1];
+          i += 2;
+          continue;
         }
-        return {
-          title: titleMatch ? titleMatch[1] : 'Lesson',
-          content: rawContent
-        } as unknown as T;
+        i++;
+        continue;
       }
 
-      console.error('Failed to parse and repair JSON:', finalError, 'Original snippet:', text.substring(0, 300) + '...');
-      throw new Error(`Zero-Fallback Policy: Failed to parse valid dynamic JSON from AI response: ${finalError instanceof Error ? finalError.message : String(finalError)}`);
+      if (c === '"') {
+        if (!inString) {
+          inString = true;
+          result += c;
+          i++;
+          continue;
+        } else {
+          const rest = str.substring(i + 1);
+          // A structural closing quote must be followed by a structural delimiter:
+          // colon (key), comma followed by quote/brace/bracket, or closing brace/bracket/EOF
+          const isStructuralClosing = /^\s*(?::|\s*,\s*"|\s*,\s*\{|\s*,\s*\[|\s*\}|\s*\]|$)/.test(rest);
+          if (isStructuralClosing) {
+            inString = false;
+            result += c;
+            i++;
+            continue;
+          } else {
+            // Unescaped inner quote (e.g., "word" followed by text or LaTeX \command)
+            result += '\\"';
+            i++;
+            continue;
+          }
+        }
+      }
+
+      result += c;
+      i++;
     }
+
+    // Pass B: Safely double-escape unescaped LaTeX backslashes so JSON parser / jsonrepair preserves them
+    result = result.replace(/\\(?!["\\/bfnrtu]|u[0-9a-fA-F]{4})/g, '\\\\');
+
+    return result;
+  };
+
+  // 6. Try jsonrepair after advanced sanitization
+  try {
+    const sanitized = sanitizeJsonForRepair(candidateText);
+    const repaired = jsonrepair(sanitized);
+    return JSON.parse(repaired) as T;
+  } catch (_) {
+    // Continue to fallback extraction
   }
+
+  // 7. Fallback: Extract structured section fields or content from candidate text
+  try {
+    const titleMatch = candidateText.match(/"title"\s*:\s*"([^"]+)"/i);
+    const title = titleMatch ? titleMatch[1] : 'Lesson';
+
+    const contentMatch = candidateText.match(/"content"\s*:\s*"([\s\S]*)/i);
+    if (contentMatch) {
+      let rawContent = contentMatch[1].trim();
+      if (rawContent.endsWith('"}')) {
+        rawContent = rawContent.slice(0, -2);
+      } else if (rawContent.endsWith('}')) {
+        rawContent = rawContent.slice(0, -1);
+        if (rawContent.endsWith('"')) {
+          rawContent = rawContent.slice(0, -1);
+        }
+      }
+      return {
+        title,
+        content: rawContent
+      } as unknown as T;
+    }
+
+    // Check for sectioned keys: introduction, theoreticalFoundations, etc.
+    const introMatch = candidateText.match(/"(?:introduction|executiveSummary)"\s*:\s*"([^"]+)"/i);
+    const theoryMatch = candidateText.match(/"(?:theoreticalFoundations|theory)"\s*:\s*"([^"]+)"/i);
+    const breakdownMatch = candidateText.match(/"(?:detailedBreakdown|breakdown)"\s*:\s*"([^"]+)"/i);
+    const caseStudyMatch = candidateText.match(/"(?:caseStudy|realWorldCaseStudy)"\s*:\s*"([^"]+)"/i);
+    const takeawaysMatch = candidateText.match(/"(?:keyTakeaways|takeaways)"\s*:\s*"([^"]+)"/i);
+
+    const sections: string[] = [];
+    if (introMatch) sections.push(`## Introduction\n\n${introMatch[1]}`);
+    if (theoryMatch) sections.push(`## Theoretical Foundations\n\n${theoryMatch[1]}`);
+    if (breakdownMatch) sections.push(`## Detailed Breakdown\n\n${breakdownMatch[1]}`);
+    if (caseStudyMatch) sections.push(`## Real-World Case Study\n\n${caseStudyMatch[1]}`);
+    if (takeawaysMatch) sections.push(`## Key Takeaways\n\n${takeawaysMatch[1]}`);
+
+    if (sections.length > 0) {
+      return {
+        title,
+        content: sections.join('\n\n')
+      } as unknown as T;
+    }
+  } catch (extractErr) {
+    console.warn('Regex extraction fallback encountered an error:', extractErr);
+  }
+
+  console.error('Failed to parse and repair JSON. Original snippet:', text.substring(0, 300) + '...');
+  throw new Error(`Zero-Fallback Policy: Failed to parse valid dynamic JSON from AI response.`);
 }
 
 // Helper to purge stale course subcollections before coordinated re-generation
@@ -3892,6 +3970,7 @@ const latexInstruction = `
     3. JSON COMPATIBILITY: You MUST double-escape all backslashes. Output \\\\frac instead of \\frac. 
     4. NESTING: For complex formulas inside JSON strings, verify your escaping.
     5. No Unicode math symbols. Use LaTeX commands (e.g., \\\\sqrt{...} not √).
+    6. IN-TEXT QUOTES: When emphasizing terminology or units inside JSON strings, use single quotes (e.g., 'current', 'voltage') or backticks (\`ohms\`) instead of raw unescaped double quotes.
 
     [CRITICAL MATHEMATICAL & SCIENTIFIC RIGOR DIRECTIVE - MANDATORY]:
     You MUST adhere to absolute mathematical and scientific accuracy. Under no circumstances should you present simplified, incorrect rules, or hallucinated mathematical theorems.

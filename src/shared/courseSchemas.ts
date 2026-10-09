@@ -86,9 +86,48 @@ export const OutlineCriticRubricSchema = z.object({
 });
 export type OutlineCriticRubric = z.infer<typeof OutlineCriticRubricSchema>;
 
-export const LessonContentSchema = z.preprocess((val) => {
+export const LessonContentSchema = z.preprocess((val: any) => {
   if (typeof val === 'string') {
     return { title: 'Lesson', content: val };
+  }
+  if (val && typeof val === 'object' && !val.content) {
+    const sections: string[] = [];
+    if (val.introduction || val.executiveSummary) {
+      sections.push(`## Executive Summary\n\n${val.introduction || val.executiveSummary}`);
+    }
+    if (val.theoreticalFoundations || val.theory) {
+      sections.push(`## Theoretical Foundations\n\n${val.theoreticalFoundations || val.theory}`);
+    }
+    if (val.detailedBreakdown || val.breakdown || val.mechanisms) {
+      sections.push(`## Detailed Breakdown\n\n${val.detailedBreakdown || val.breakdown || val.mechanisms}`);
+    }
+    if (val.caseStudy || val.realWorldCaseStudy) {
+      sections.push(`## Real-World Case Study\n\n${val.caseStudy || val.realWorldCaseStudy}`);
+    }
+    if (val.keyTakeaways || val.takeaways) {
+      sections.push(`## Key Takeaways\n\n${val.keyTakeaways || val.takeaways}`);
+    }
+    if (val.practiceDiscussion || val.discussionPrompt) {
+      sections.push(`## Practice Discussion & Exercises\n\n${val.practiceDiscussion || val.discussionPrompt}`);
+    }
+    if (Array.isArray(val.sections)) {
+      for (const s of val.sections) {
+        if (typeof s === 'string') sections.push(s);
+        else if (s && typeof s === 'object') {
+          sections.push(`### ${s.title || s.heading || 'Section'}\n\n${s.content || s.text || s.body || ''}`);
+        }
+      }
+    }
+    if (val.body) sections.push(String(val.body));
+    if (val.text) sections.push(String(val.text));
+
+    if (sections.length > 0) {
+      return {
+        ...val,
+        title: val.title || 'Lesson',
+        content: sections.join('\n\n')
+      };
+    }
   }
   return val;
 }, z.object({
