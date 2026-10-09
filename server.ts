@@ -7400,6 +7400,63 @@ async function sweepAndSyncPublicLeaderboard(firestore: admin.firestore.Firestor
   }
 }
 
+// Background absence study reminder dispatcher: notifies users who haven't logged in for > 24 hours
+async function checkAndSendAbsenceStudyReminders(firestore: admin.firestore.Firestore) {
+  try {
+    const now = Date.now();
+    const twentyFourHoursAgo = new Date(now - 24 * 60 * 60 * 1000);
+    
+    // Find users who have not made requests in > 24h
+    const usersSnap = await firestore.collection('users')
+      .where('last_request_at', '<', twentyFourHoursAgo)
+      .limit(30)
+      .get();
+
+    for (const userDoc of usersSnap.docs) {
+      const u = userDoc.data() || {};
+      const lastReminder = u.last_study_reminder_at?.toDate?.() || (u.last_study_reminder_at ? new Date(u.last_study_reminder_at) : null);
+      
+      // Throttle reminders so each absent user receives at most one reminder every 24 hours
+      if (!lastReminder || (now - lastReminder.getTime() > 24 * 60 * 60 * 1000)) {
+        await firestore.collection('notifications').add({
+          userId: userDoc.id,
+          title: 'Time to study! 🎓',
+          message: `Hey ${u.displayName || 'there'}! It's been over 24 hours since your last session. Keep your streak alive and stay on track with UniAce!`,
+          type: 'info',
+          read: false,
+          createdAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        // If user registered an FCM push token, send push notification while they are away
+        if (u.fcmToken && typeof u.fcmToken === 'string') {
+          try {
+            await admin.messaging().send({
+              token: u.fcmToken,
+              notification: {
+                title: 'Time to study! 🎓',
+                body: "It's been over 24 hours since your last session. Keep your streak alive with UniAce!"
+              },
+              data: {
+                url: '/'
+              }
+            });
+          } catch (fcmErr: any) {
+            if (fcmErr.code === 'messaging/registration-token-not-registered') {
+              await userDoc.ref.update({ fcmToken: admin.firestore.FieldValue.delete() }).catch(() => {});
+            }
+          }
+        }
+
+        await userDoc.ref.set({
+          last_study_reminder_at: admin.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+      }
+    }
+  } catch (err) {
+    console.warn('[StudyReminder] Background absence sweep error:', err);
+  }
+}
+
 // Public Leaderboard Endpoint (Sanitized, zero PII)
 app.get('/api/leaderboard', async (req, res) => {
   const app = getAdminApp();
@@ -8309,6 +8366,9 @@ async function startServer() {
       sweepAndSyncPublicLeaderboard(adminApp.firestore()).catch(err => {
         console.error('Failed initial leaderboard sweep:', err);
       });
+      checkAndSendAbsenceStudyReminders(adminApp.firestore()).catch(err => {
+        console.warn('Failed initial study absence check:', err);
+      });
       // Automatically recover and resume any interrupted course generation jobs after telemetry initializes
       setTimeout(() => {
         resumeInterruptedCourseJobs(adminApp.firestore()).catch(err => {
@@ -8321,6 +8381,9 @@ async function startServer() {
         if (app) {
           sweepAndSyncPublicLeaderboard(app.firestore()).catch(err => {
             console.error('Periodic leaderboard sweep error:', err);
+          });
+          checkAndSendAbsenceStudyReminders(app.firestore()).catch(err => {
+            console.warn('Periodic study absence check error:', err);
           });
         }
       }, 15 * 60 * 1000);

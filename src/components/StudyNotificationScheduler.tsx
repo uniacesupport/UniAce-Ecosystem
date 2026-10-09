@@ -13,41 +13,32 @@ export default function StudyNotificationScheduler() {
   const [showTestWidget, setShowTestWidget] = useState(false);
 
   useEffect(() => {
-    // Record activity on mount if logged in
+    // Record current activity timestamp on mount when user is active
     if (user) {
       const key = `uniace_last_active_${user.uid}`;
-      const saved = localStorage.getItem(key);
       const now = Date.now();
       
-      if (!saved) {
-        localStorage.setItem(key, now.toString());
-        setLastActive(now);
-      } else {
-        const parsed = parseInt(saved, 10);
-        setLastActive(parsed);
-        const elapsedHours = (now - parsed) / (1000 * 60 * 60);
-        setHoursSinceActive(elapsedHours);
+      // Since user has opened the app, they are active now - record current time
+      localStorage.setItem(key, now.toString());
+      setLastActive(now);
+      setHoursSinceActive(0);
 
-        // Check if 24 hours have elapsed
-        if (elapsedHours >= 24) {
-          triggerStudyReminder();
-        }
-      }
-
-      // Automatically update activity timestamp every 5 minutes while the app is active
+      // Periodically update activity timestamp while active in the app
       const interval = setInterval(() => {
-        localStorage.setItem(key, Date.now().toString());
+        const currentNow = Date.now();
+        localStorage.setItem(key, currentNow.toString());
+        setLastActive(currentNow);
       }, 5 * 60 * 1000);
 
       return () => clearInterval(interval);
     }
   }, [user]);
 
-  const triggerStudyReminder = async () => {
+  const triggerStudyReminder = async (isManualTest = false) => {
     if (!('Notification' in window)) return;
 
     const title = 'Time to study! 🎓';
-    const body = "Hey there! It's been 24 hours since your last session. Keep your streak alive and stay on track with UniAce!";
+    const body = "Hey there! Keep your study streak alive and stay on track with UniAce!";
 
     if (Notification.permission === 'granted') {
       try {
@@ -62,17 +53,20 @@ export default function StudyNotificationScheduler() {
             renotify: true,
             data: { url: window.location.origin }
           } as any);
-          toast.success("Study push notification dispatched successfully via Service Worker!");
         } else {
           new Notification(title, { body });
-          toast.success("Study reminder notification dispatched!");
+        }
+        if (isManualTest) {
+          toast.success("Test notification sent!");
         }
       } catch (err) {
         console.error("Failed to show service worker notification:", err);
-        new Notification(title, { body });
+        if (isManualTest) {
+          new Notification(title, { body });
+        }
       }
-    } else {
-      console.log("Notification permission not granted. Cannot dispatch study reminder.");
+    } else if (isManualTest) {
+      toast("Please enable notifications in your browser first.", { icon: '🔔' });
     }
   };
 
@@ -91,7 +85,7 @@ export default function StudyNotificationScheduler() {
       toast("Please grant notification permissions first!", { icon: '🔔' });
       requestNotificationPermission();
     } else {
-      triggerStudyReminder();
+      triggerStudyReminder(true);
     }
   };
 
@@ -194,7 +188,7 @@ export default function StudyNotificationScheduler() {
         <div className="fixed bottom-4 left-4 z-40">
           <button
             onClick={() => requestNotificationPermission()}
-            className="flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-white px-3 py-1.5 rounded-full text-[11px] font-bold shadow-lg transition-all active:scale-95 animate-bounce"
+            className="flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-white px-3 py-1.5 rounded-full text-[11px] font-bold shadow-lg transition-all active:scale-95"
           >
             <Bell size={12} />
             <span>Enable 24h Study Reminders</span>
