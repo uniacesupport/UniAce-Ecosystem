@@ -3,7 +3,6 @@ import remarkMath from 'remark-math';
 import remarkGfm from 'remark-gfm';
 import rehypeKatex from 'rehype-katex';
 import rehypeHighlight from 'rehype-highlight';
-import 'highlight.js/styles/github-dark.css';
 import { Component, ErrorInfo, ReactNode, Suspense } from 'react';
 import MermaidViewer from './renderers/MermaidViewer';
 import FunctionPlotViewer from './renderers/FunctionPlotViewer';
